@@ -1,0 +1,34 @@
+name: Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  build-preview:
+    name: Build Preview Image
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./maison-des-chefs
+          push: true
+          tags: |
+            ghcr.io/fr0ddy79/maison-des-chefs:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Preview Build Ready\n\nDocker image: \`ghcr.io/fr0ddy79/maison-des-chefs:pr-${{ github.event.pull_request.number }}\`\n\nTo run this preview locally:\n\`\`\`bash\ndocker pull ghcr.io/fr0ddy79/maison-des-chefs:pr-${{ github.event.pull_request.number }}\ndocker run -p 3000:3000 ghcr.io/fr0ddy79/maison-des-chefs:pr-${{ github.event.pull_request.number }}\n\`\`\`\n\n| PR | Image Tag |\n|---|---|\n| #${{ github.event.pull_request.number }} | \`pr-${{ github.event.pull_request.number }}\` |`
+            })
