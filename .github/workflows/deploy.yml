@@ -1,0 +1,36 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build and publish Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./maison-des-chefs
+          push: ${{ github.ref == 'refs/heads/master' }}
+          tags: |
+            ghcr.io/fr0ddy79/maison-des-chefs:latest
+            ghcr.io/fr0ddy79/maison-des-chefs:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Deploy to container host
+        if: github.ref == 'refs/heads/master'
+        run: |
+          echo "Docker image built: ghcr.io/fr0ddy79/maison-des-chefs:${{ github.sha }}"
+          echo "To deploy, run:"
+          echo "  docker pull ghcr.io/fr0ddy79/maison-des-chefs:latest"
+          echo "  docker-compose -f maison-des-chefs/docker-compose.yml up -d"

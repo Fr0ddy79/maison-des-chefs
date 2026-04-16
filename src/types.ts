@@ -1,15 +1,17 @@
 import 'dotenv/config';
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
+// Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
   interface FastifyInstance {
-    authenticate: (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => Promise<void>;
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
-  interface FastifyRequest {
-    user: {
-      userId: number;
-      email: string;
-      role: string;
-    };
-  }
+}
+
+// User payload type (decoupled from FastifyRequest to avoid conflicts with @fastify/jwt)
+export interface UserPayload {
+  userId: number;
+  email: string;
+  role?: string;
+  type?: string;
 }

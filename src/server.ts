@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { config } from './config/index.js';
 import { migrate } from './db/migrate.js';
+import { UserPayload } from './types.js';
 
 import authRoutes from './api/auth.js';
 import chefRoutes from './api/chefs.js';
@@ -15,12 +16,13 @@ declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
-  interface FastifyRequest {
-    user: {
-      userId: number;
-      email: string;
-      role: string;
-    };
+}
+
+// Extend @fastify/jwt's user type
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: UserPayload;
+    user: UserPayload;
   }
 }
 
@@ -34,11 +36,7 @@ await server.register(jwt, { secret: config.jwt.secret });
 server.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
   try {
     const decoded = await request.jwtVerify();
-    request.user = {
-      userId: (decoded as { userId: number }).userId,
-      email: (decoded as { email: string }).email,
-      role: (decoded as { role?: string }).role || 'diner',
-    };
+    // user is already typed correctly via FastifyJWT declaration above
   } catch {
     reply.status(401).send({ error: 'Unauthorized' });
   }

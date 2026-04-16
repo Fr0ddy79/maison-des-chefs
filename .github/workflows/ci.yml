@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: maison-des-chefs/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: maison-des-chefs
+        run: npm ci
+      
+      - name: Type check
+        working-directory: maison-des-chefs
+        run: npm run build
+      
+      - name: Run tests
+        working-directory: maison-des-chefs
+        run: npm test
