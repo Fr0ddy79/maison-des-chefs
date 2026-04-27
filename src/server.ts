@@ -12,6 +12,7 @@ import serviceRoutes from './api/services.js';
 import bookingRoutes from './api/bookings.js';
 import onboardingWizardRoutes from './api/onboarding-wizard.js';
 import dinerPreferencesRoutes from './api/diner-preferences.js';
+import searchRoutes from './api/search.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -51,6 +52,7 @@ server.register(serviceRoutes, { prefix: '/services' });
 server.register(bookingRoutes, { prefix: '/bookings' });
 server.register(onboardingWizardRoutes, { prefix: '/api/onboarding' });
 server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
+server.register(searchRoutes, { prefix: '/api/v1/search' });
 
 // Health check
 server.get('/health', async () => ({ status: 'ok' }));
