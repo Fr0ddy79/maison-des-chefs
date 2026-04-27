@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { users, chefProfiles } from '../db/schema.js';
+import { users, chefProfiles, services } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const profileSchema = z.object({
@@ -12,10 +12,22 @@ const profileSchema = z.object({
   available: z.boolean().optional(),
 });
 
+// Query param schema for preferences pre-fill
+const searchQuerySchema = z.object({
+  cuisines: z.string().optional(), // comma-separated cuisine tags
+  dietary: z.string().optional(), // comma-separated dietary tags
+  partySize: z.coerce.number().int().min(1).max(8).optional(),
+  delivery: z.enum(['true', 'false']).optional(),
+});
+
 export default async function chefRoutes(server: FastifyInstance) {
-  // List all chefs (public)
-  server.get('/', async () => {
-    const chefs = db.select({
+  // List all chefs / search with preferences pre-fill (public)
+  server.get('/', async (request) => {
+    const query = searchQuerySchema.parse(request.query);
+    const cuisineFilter = query.cuisines ? query.cuisines.split(',').map(c => c.trim().toLowerCase()) : null;
+    const dietaryFilter = query.dietary ? query.dietary.split(',').map(d => d.trim().toLowerCase()) : null;
+
+    let chefs = db.select({
       id: users.id,
       name: users.name,
       email: users.email,
@@ -30,6 +42,32 @@ export default async function chefRoutes(server: FastifyInstance) {
       .innerJoin(users, eq(chefProfiles.userId, users.id))
       .where(eq(chefProfiles.available, true))
       .all();
+
+    // Apply cuisine preference filter: include chef if their cuisineTypes overlap with preference
+    if (cuisineFilter && cuisineFilter.length > 0) {
+      chefs = chefs.filter(c => {
+        const chefCuisines: string[] = JSON.parse(c.cuisineTypes as string || '[]');
+        return cuisineFilter.some(pref => chefCuisines.map(x => x.toLowerCase()).includes(pref));
+      });
+    }
+
+    // If dietary filters provided, also filter by services that support those dietary needs
+    if (dietaryFilter && dietaryFilter.length > 0 && !dietaryFilter.includes('none')) {
+      const filteredChefIds = new Set<number>();
+      for (const chef of chefs) {
+        const chefServices = db.select().from(services)
+          .where(eq(services.chefId, chef.id))
+          .all()
+          .filter(s => s.status === 'published');
+
+        const hasMatchingService = chefServices.some(svc => {
+          const svcDietary: string[] = JSON.parse(svc.dietaryTags || '[]');
+          return dietaryFilter.every(d => svcDietary.map(x => x.toLowerCase()).includes(d));
+        });
+        if (hasMatchingService) filteredChefIds.add(chef.id);
+      }
+      chefs = chefs.filter(c => filteredChefIds.has(c.id));
+    }
 
     return chefs.map(c => ({
       ...c,

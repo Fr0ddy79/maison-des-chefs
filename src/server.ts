@@ -10,6 +10,8 @@ import authRoutes from './api/auth.js';
 import chefRoutes from './api/chefs.js';
 import serviceRoutes from './api/services.js';
 import bookingRoutes from './api/bookings.js';
+import onboardingWizardRoutes from './api/onboarding-wizard.js';
+import dinerPreferencesRoutes from './api/diner-preferences.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -47,6 +49,8 @@ server.register(authRoutes, { prefix: '/auth' });
 server.register(chefRoutes, { prefix: '/chefs' });
 server.register(serviceRoutes, { prefix: '/services' });
 server.register(bookingRoutes, { prefix: '/bookings' });
+server.register(onboardingWizardRoutes, { prefix: '/api/onboarding' });
+server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
 
 // Health check
 server.get('/health', async () => ({ status: 'ok' }));
