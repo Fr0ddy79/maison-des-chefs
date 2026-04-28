@@ -15,9 +15,11 @@ import onboardingWizardRoutes from './api/onboarding-wizard.js';
 import dinerPreferencesRoutes from './api/diner-preferences.js';
 import searchRoutes from './api/search.js';
 import inquiryRoutes from './api/inquiry.js';
+import chefLeadsRoutes from './api/chef-leads.js';
 import pageRoutes from './routes/pages.js';
 import buildBookingPage from './routes/booking-page.js';
 import dinerBookingsPage from './routes/diner-bookings-page.js';
+import buildChefLeadsPage from './routes/chef-leads-page.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -60,6 +62,13 @@ server.register(onboardingWizardRoutes, { prefix: '/api/onboarding' });
 server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
 server.register(searchRoutes, { prefix: '/api/v1/search' });
 server.register(inquiryRoutes, { prefix: '/api/inquiry' });
+server.register(chefLeadsRoutes, { prefix: '/api/chef' });
+
+// Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
+server.get('/chef/leads', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefLeadsPage();
+});
 
 // Diner bookings page (standalone route to avoid esbuild parsing issues with pages.ts template literals)
 server.get('/diner/bookings', async (request, reply) => {

@@ -140,5 +140,8 @@ export const leads = sqliteTable('leads', {
   slaEscalated: integer('sla_escalated', { mode: 'boolean' }).notNull().default(false),
   slaEscalatedAt: integer('sla_escalated_at', { mode: 'timestamp' }),
   inquiryConfirmSentAt: integer('inquiry_confirm_sent_at', { mode: 'timestamp' }), // MAI-751: Idempotency for diner confirmation email
+  quoteAmount: real('quote_amount'), // MAI-766: Chef's quoted price
+  quoteMessage: text('quote_message'), // MAI-766: Chef's message with quote
+  quoteSentAt: integer('quote_sent_at', { mode: 'timestamp' }), // MAI-766: When quote was sent
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

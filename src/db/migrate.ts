@@ -102,6 +102,9 @@ export function migrate() {
       sla_escalated INTEGER NOT NULL DEFAULT 0,
       sla_escalated_at INTEGER,
       inquiry_confirm_sent_at INTEGER,
+      quote_amount REAL,
+      quote_message TEXT,
+      quote_sent_at INTEGER,
       created_at INTEGER NOT NULL
     );
 
