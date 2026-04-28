@@ -120,3 +120,25 @@ export const dinerWizardEvents = sqliteTable('diner_wizard_events', {
   eventData: text('event_data').notNull().default('{}'), // JSON with cuisines_selected, dietary_selected, delivery_mode, party_size
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
+
+// Leads table - stores diner inquiries for chef services
+export const leads = sqliteTable('leads', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  serviceId: integer('service_id').notNull().references(() => services.id),
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  clientName: text('client_name'),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  eventDate: text('event_date'),
+  guestCount: integer('guest_count').notNull().default(0),
+  message: text('message'),
+  status: text('status').notNull().default('new'),
+  priceEstimateSentAt: integer('price_estimate_sent_at', { mode: 'timestamp' }),
+  firstResponseAt: integer('first_response_at', { mode: 'timestamp' }),
+  firstChefActionAt: integer('first_chef_action_at', { mode: 'timestamp' }),
+  responseWithinSla: integer('response_within_sla', { mode: 'boolean' }).notNull().default(false),
+  slaEscalated: integer('sla_escalated', { mode: 'boolean' }).notNull().default(false),
+  slaEscalatedAt: integer('sla_escalated_at', { mode: 'timestamp' }),
+  inquiryConfirmSentAt: integer('inquiry_confirm_sent_at', { mode: 'timestamp' }), // MAI-751: Idempotency for diner confirmation email
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
