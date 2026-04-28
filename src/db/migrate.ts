@@ -84,6 +84,27 @@ export function migrate() {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_id INTEGER NOT NULL REFERENCES services(id),
+      chef_id INTEGER NOT NULL REFERENCES users(id),
+      client_name TEXT,
+      email TEXT NOT NULL,
+      phone TEXT,
+      event_date TEXT,
+      guest_count INTEGER NOT NULL DEFAULT 0,
+      message TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      price_estimate_sent_at INTEGER,
+      first_response_at INTEGER,
+      first_chef_action_at INTEGER,
+      response_within_sla INTEGER NOT NULL DEFAULT 0,
+      sla_escalated INTEGER NOT NULL DEFAULT 0,
+      sla_escalated_at INTEGER,
+      inquiry_confirm_sent_at INTEGER,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS refresh_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL REFERENCES users(id),
