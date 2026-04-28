@@ -6,8 +6,8 @@ import { eq, desc } from "drizzle-orm";
 import { sendQuoteEmail } from "../services/diner-confirmation-email.js";
 
 const respondToLeadSchema = z.object({
-  quoteAmount: z.number().min(0).optional(),
-  quoteMessage: z.string().optional(),
+  amount: z.number().min(0).optional(),
+  message: z.string().optional(),
 });
 
 export default async function chefLeadsRoutes(server: FastifyInstance) {
@@ -122,8 +122,8 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .update(leads)
       .set({
         status: "responded",
-        quoteAmount: body.quoteAmount ?? null,
-        quoteMessage: body.quoteMessage ?? null,
+        quoteAmount: body.amount ?? null,
+        quoteMessage: body.message ?? null,
         quoteSentAt: now,
         firstChefActionAt: lead.firstChefActionAt ?? now,
       } as Record<string, unknown>)
@@ -141,16 +141,16 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         serviceName: service.name,
         eventDate: lead.eventDate,
         guestCount: lead.guestCount,
-        quoteAmount: body.quoteAmount,
-        quoteMessage: body.quoteMessage,
+        quoteAmount: body.amount,
+        quoteMessage: body.message,
       });
     }
 
     return { success: true, lead: updatedLead };
   });
 
-  // POST /api/chef/leads/:leadId/status — Update lead status (converted/lost)
-  server.post("/:leadId/status", { preHandler: [server.authenticate] }, async (request, reply) => {
+  // PATCH /api/chef/leads/:leadId/status — Update lead status (converted/lost)
+  server.patch("/:leadId/status", { preHandler: [server.authenticate] }, async (request, reply) => {
     const { userId, role } = request.user as { userId: number; role: string };
     if (role !== "chef") {
       return reply.status(403).send({ error: "Only chefs can update lead status" });

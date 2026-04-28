@@ -689,7 +689,19 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
   const hasEnoughReviews = sp.reviewCount >= 3;
   const showRating = hasEnoughReviews && sp.avgRating > 0;
   const showTestimonial = sp.featuredReview?.comment != null;
-  const leadFormCtaText = ctaVariant === 'testB' ? 'Request Booking' : 'Send Inquiry';
+  const leadFormCtaText = ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testC' ? 'Check Availability' : 'Send Inquiry';
+  
+  // Urgency and social proof for booking card
+  const leadCountNum = typeof leadCount === 'number' ? leadCount : 0;
+  const urgencyLine = leadCountNum > 0 
+    ? `<div style="background: #fff3cd; color: #856404; padding: 0.6rem 0.75rem; border-radius: 6px; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;"><span>📅</span><span>Typically books out 2–3 weeks in advance</span></div>`
+    : `<div style="background: #d4edda; color: #155724; padding: 0.6rem 0.75rem; border-radius: 6px; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;"><span>📅</span><span>Availability varies — submit a request to check</span></div>`;
+  
+  const demandBadge = leadCountNum > 3
+    ? `<div style="background: #e8f4f8; color: #0c5460; padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;"><span>🔥</span><span>${leadCountNum} diners are interested in this service</span></div>`
+    : leadCountNum > 0
+    ? `<div style="background: #e8f4f8; color: #0c5460; padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;"><span>🔥</span><span>${leadCountNum} diner${leadCountNum === 1 ? ' has' : 's have'} inquired about this service</span></div>`
+    : '';
   
   let testimonialText = '';
   let testimonialAuthor = '';
@@ -823,7 +835,9 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       <div class="price">${service.pricePerPerson && service.pricePerPerson > 0 ? '$' + service.pricePerPerson : 'Price'}</div>
       <div class="per-person">${service.pricePerPerson && service.pricePerPerson > 0 ? 'per person' : 'upon request'}</div>
       <p style="color: #666; margin-bottom: 1rem;">${service.minGuests}-${service.maxGuests} guests</p>
-      <a href="/book/${service.id}" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">Book This Service</a>
+      ${urgencyLine}
+      ${demandBadge}
+      <a href="/book/${service.id}" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
     </div>
   </section>
   
