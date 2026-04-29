@@ -2,12 +2,13 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { leads, services, users } from "../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { sendQuoteEmail } from "../services/diner-confirmation-email.js";
 
 const respondToLeadSchema = z.object({
   amount: z.number().min(0).optional(),
   message: z.string().optional(),
+  chefNote: z.string().max(500).optional().default(''),
 });
 
 export default async function chefLeadsRoutes(server: FastifyInstance) {
@@ -32,6 +33,8 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         quoteAmount: leads.quoteAmount,
         quoteMessage: leads.quoteMessage,
         quoteSentAt: leads.quoteSentAt,
+        chefNote: leads.chefNote,
+        hasNote: sql<boolean>`length(${leads.chefNote}) > 0`,
         createdAt: leads.createdAt,
         serviceName: services.name,
       })
@@ -66,6 +69,8 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         quoteAmount: leads.quoteAmount,
         quoteMessage: leads.quoteMessage,
         quoteSentAt: leads.quoteSentAt,
+        chefNote: leads.chefNote,
+        hasNote: sql<boolean>`length(${leads.chefNote}) > 0`,
         createdAt: leads.createdAt,
         chefId: leads.chefId,
         serviceName: services.name,
@@ -124,6 +129,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         status: "responded",
         quoteAmount: body.amount ?? null,
         quoteMessage: body.message ?? null,
+        chefNote: body.chefNote ?? '',
         quoteSentAt: now,
         firstChefActionAt: lead.firstChefActionAt ?? now,
       } as Record<string, unknown>)
@@ -143,6 +149,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         guestCount: lead.guestCount,
         quoteAmount: body.amount,
         quoteMessage: body.message,
+        chefNote: body.chefNote,
       });
     }
 

@@ -59,6 +59,9 @@ export const bookings = sqliteTable('bookings', {
   guestEmail: text('guest_email'), // guest's email address
   guestTokenHash: text('guest_token_hash'), // hashed token for managing this specific booking
   emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false), // whether guest email has been verified
+  // Guest booking recovery token (MAI-805)
+  accessToken: text('access_token'), // 64-char hex token for public booking status access
+  accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }), // token expiration (30 days from creation)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -143,5 +146,10 @@ export const leads = sqliteTable('leads', {
   quoteAmount: real('quote_amount'), // MAI-766: Chef's quoted price
   quoteMessage: text('quote_message'), // MAI-766: Chef's message with quote
   quoteSentAt: integer('quote_sent_at', { mode: 'timestamp' }), // MAI-766: When quote was sent
+  quoteReminderSentAt: integer('quote_reminder_sent_at', { mode: 'timestamp' }), // MAI-795: When reminder email was sent
+  chefNote: text('chef_note').notNull().default(''), // MAI-806: Chef's personal note to diner (max 500 chars)
+  // MAI-805: Guest booking recovery token for public status access
+  accessToken: text('access_token'), // 64-char hex token for public inquiry status access
+  accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }), // token expiration (30 days from creation)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

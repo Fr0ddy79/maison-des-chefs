@@ -61,7 +61,7 @@ function getChefAvgResponseTime(chefId: number): number | null {
     .from(leads)
     .where(and(eq(leads.chefId, chefId), isNotNull(leads.firstChefActionAt)))
     .get();
-  return result?.avgMs ?? null;
+  return (result?.avgMs as number | null) ?? null;
 }
 
 function buildResponseTimeBadge(avgResponseMs: number | null): string {
@@ -170,9 +170,9 @@ export default async function pageRoutes(server: FastifyInstance) {
     let topServiceId: number | null = null;
     let maxLeadCount = 0;
     leadCounts.forEach(l => {
-      if (l.count > maxLeadCount) {
-        maxLeadCount = l.count;
-        topServiceId = l.serviceId;
+      if ((l.count as number) > maxLeadCount) {
+        maxLeadCount = l.count as number;
+        topServiceId = l.serviceId as number | null;
       }
     });
 
@@ -189,7 +189,7 @@ export default async function pageRoutes(server: FastifyInstance) {
 
     // Sort by popularity if requested
     if (query.sort === 'popular') {
-      filteredServices.sort((a, b) => (leadCountMap.get(b.id) || 0) - (leadCountMap.get(a.id) || 0));
+      filteredServices.sort((a, b) => ((leadCountMap.get(b.id) as number) || 0) - ((leadCountMap.get(a.id) as number) || 0));
     }
 
     const servicesWithData = filteredServices.map(s => ({
@@ -222,7 +222,7 @@ export default async function pageRoutes(server: FastifyInstance) {
       pricePerPerson: services.pricePerPerson,
       minGuests: services.minGuests,
       maxGuests: services.maxGuests,
-      photos: services.photos,
+
       dietaryTags: services.dietaryTags,
       createdAt: services.createdAt,
       chefName: users.name,
@@ -243,9 +243,8 @@ export default async function pageRoutes(server: FastifyInstance) {
     }
 
     const cuisineTypes = JSON.parse(service.chefCuisineTypes || '[]');
-    const servicePhotos = JSON.parse(service.photos || '[]');
     const serviceDietaryTags = JSON.parse(service.dietaryTags || '[]');
-    const serviceWithPhotos = { ...service, photos: servicePhotos, dietaryTags: serviceDietaryTags };
+    const serviceWithPhotos = { ...service, photos: [], dietaryTags: serviceDietaryTags };
 
     trackServicePageViewEvent({
       serviceId: service.id,
@@ -282,15 +281,16 @@ export default async function pageRoutes(server: FastifyInstance) {
       .from(bookings)
       .where(eq(bookings.serviceId, service.id))
       .get();
-    const reviewCount = ratingResult?.reviewCount ?? 0;
-    const avgRating = ratingResult?.avgRating ?? 0;
+    const avgMs = ratingResult?.avgRating as number | null;
+    const reviewCount = (ratingResult?.reviewCount as number | null) ?? 0;
+    const avgRating = avgMs ?? 0;
 
     // Featured review - not available without reviews table
     const featuredReview = null;
 
     const socialProof = {
       reviewCount,
-      avgRating: reviewCount > 0 ? Math.round(avgRating * 10) / 10 : 0,
+      avgRating: reviewCount > 0 ? Math.round((avgRating as number) * 10) / 10 : 0,
       featuredReview: null,
     };
 
@@ -301,7 +301,7 @@ export default async function pageRoutes(server: FastifyInstance) {
       .from(leads)
       .where(eq(leads.serviceId, service.id))
       .get();
-    const leadCount = leadCountResult?.count ?? 0;
+    const leadCount = (leadCountResult?.count as number | null) ?? 0;
 
     reply.header('Content-Type', 'text/html; charset=utf-8');
     return buildServiceDetailPage(serviceWithPhotos, cuisineTypes, photo, verifiedBadge, blockedDates, useSimplifiedLeadForm, useNewSidebarCta, socialProof, ctaVariant, responseTimeBadge, leadCount);
@@ -845,6 +845,248 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     <div class="logo">Maison des Chefs</div>
     <p>Montreal's premier private chef marketplace.</p>
     <p>&copy; 2024 Maison des Chefs. All rights reserved.</p>
+  </footer>
+</body>
+</html>`;
+}
+
+export function buildHomePage(stats: { chefCount: number; serviceCount: number; bookingCount: number }, featuredServices: any[]): string {
+  const { chefCount, serviceCount, bookingCount } = stats;
+  
+  const featuredCards = featuredServices.length > 0
+    ? featuredServices.map(service => {
+      const photo = getChefPhoto(service.cuisineTypes || []);
+      const cuisineList = (service.cuisineTypes || []).slice(0, 3).join(', ');
+      const verifiedBadge = service.verified
+        ? '<span class="verified-chip">✓ Verified</span>'
+        : '';
+      const leadCount = service.leadCount || 0;
+      const inquiryNote = leadCount > 0
+        ? `<span class="inquiry-chip">🔥 ${leadCount} inquiry${leadCount !== 1 ? 'ies' : 'y'}</span>`
+        : '';
+      return `
+        <a href="/services/${service.id}" class="featured-card">
+          <div class="featured-photo" style="background-image: url('${photo}')"></div>
+          <div class="featured-info">
+            <h3>${service.name}</h3>
+            <p class="featured-chef">by ${service.chefName} ${verifiedBadge} ${inquiryNote}</p>
+            <p class="featured-cuisine">${cuisineList}</p>
+            <p class="featured-location">📍 ${service.location}</p>
+            <p class="featured-desc">${(service.description || '').substring(0, 100)}...</p>
+            <div class="featured-meta">
+              ${service.pricePerPerson && service.pricePerPerson > 0
+                ? `<span class="featured-price">$${service.pricePerPerson}/person</span>`
+                : `<span class="featured-price">Price upon request</span>`}
+              <span class="featured-guests">${service.minGuests}-${service.maxGuests} guests</span>
+            </div>
+          </div>
+        </a>`;
+    }).join('')
+    : `<p class="no-featured">Be the first to book a private chef experience in Montreal!</p>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Private Chefs in Montreal | Maison des Chefs</title>
+  <meta name="description" content="Book a private chef for intimate dinners, parties, and special events in Montreal. Discover verified chefs, browse curated services, and create unforgettable dining experiences at home.">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #fafaf8; }
+    nav { position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.9); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; z-index: 100; backdrop-filter: blur(10px); }
+    nav .logo { color: white; font-size: 1.5rem; font-weight: bold; text-decoration: none; }
+    nav .nav-links { display: flex; gap: 1.5rem; }
+    nav .nav-links a { color: white; text-decoration: none; transition: opacity 0.3s; }
+    nav .nav-links a:hover { opacity: 0.8; }
+    nav .nav-links a.cta-link { background: #c9a227; color: white; padding: 0.5rem 1.2rem; border-radius: 4px; font-weight: 600; }
+
+    .hero { min-height: 90vh; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8rem 2rem 4rem; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); position: relative; overflow: hidden; }
+    .hero::before { content: ''; position: absolute; inset: 0; background: url('https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1600&q=80') center/cover no-repeat; opacity: 0.15; }
+    .hero-content { position: relative; z-index: 1; max-width: 760px; }
+    .hero-eyebrow { color: #c9a227; font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 1rem; }
+    .hero h1 { color: white; font-size: clamp(2.5rem, 6vw, 4rem); line-height: 1.15; margin-bottom: 1.25rem; font-weight: 800; }
+    .hero h1 span { color: #c9a227; }
+    .hero-sub { color: rgba(255,255,255,0.85); font-size: 1.2rem; margin-bottom: 2.5rem; max-width: 560px; margin-left: auto; margin-right: auto; }
+    .hero-ctas { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .hero-cta-primary { background: #c9a227; color: white; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 1.1rem; transition: background 0.2s, transform 0.2s; }
+    .hero-cta-primary:hover { background: #b8922a; transform: translateY(-2px); }
+    .hero-cta-secondary { background: rgba(255,255,255,0.1); color: white; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1.1rem; border: 1px solid rgba(255,255,255,0.3); transition: background 0.2s; }
+    .hero-cta-secondary:hover { background: rgba(255,255,255,0.2); }
+    .hero-trust { margin-top: 2rem; color: rgba(255,255,255,0.6); font-size: 0.9rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+    .hero-trust span { display: flex; align-items: center; gap: 0.4rem; }
+
+    .stats-bar { background: white; padding: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 900px; margin: -2rem auto 0; position: relative; z-index: 2; box-shadow: 0 8px 32px rgba(0,0,0,0.12); border-radius: 12px; }
+    .stat-item { text-align: center; padding: 1rem; }
+    .stat-number { font-size: 2.2rem; font-weight: 800; color: #2c3e50; }
+    .stat-label { color: #888; font-size: 0.9rem; margin-top: 0.25rem; }
+
+    .how-it-works { padding: 5rem 2rem; text-align: center; background: white; }
+    .section-eyebrow { color: #c9a227; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.75rem; }
+    .section-title { font-size: clamp(1.8rem, 4vw, 2.5rem); color: #2c3e50; margin-bottom: 3rem; font-weight: 700; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 2rem; max-width: 900px; margin: 0 auto; }
+    .step { padding: 1.5rem; }
+    .step-icon { width: 64px; height: 64px; background: #f8f5ef; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.8rem; }
+    .step h3 { font-size: 1.15rem; color: #2c3e50; margin-bottom: 0.5rem; }
+    .step p { color: #666; font-size: 0.95rem; }
+
+    .featured { padding: 5rem 2rem; background: #f8f9fa; }
+    .featured-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; max-width: 1100px; margin: 0 auto; }
+    .featured-card { background: white; border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; box-shadow: 0 2px 12px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; display: block; }
+    .featured-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.14); }
+    .featured-photo { height: 200px; background-size: cover; background-position: center; }
+    .featured-info { padding: 1.25rem; }
+    .featured-info h3 { font-size: 1.1rem; color: #2c3e50; margin-bottom: 0.35rem; }
+    .featured-chef { color: #666; font-size: 0.9rem; margin-bottom: 0.35rem; }
+    .featured-cuisine { color: #888; font-size: 0.85rem; margin-bottom: 0.35rem; }
+    .featured-location { color: #888; font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .featured-desc { color: #555; font-size: 0.9rem; margin-bottom: 0.75rem; line-height: 1.5; }
+    .featured-meta { display: flex; justify-content: space-between; align-items: center; padding-top: 0.75rem; border-top: 1px solid #f0f0f0; }
+    .featured-price { font-weight: 700; color: #2c3e50; font-size: 1rem; }
+    .featured-guests { color: #888; font-size: 0.85rem; }
+    .verified-chip { background: #e8f5e9; color: #2e7d32; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .inquiry-chip { color: #e65100; font-size: 0.8rem; }
+    .no-featured { color: #888; text-align: center; padding: 2rem; font-style: italic; }
+
+    .trust-section { padding: 4rem 2rem; background: #2c3e50; color: white; text-align: center; }
+    .trust-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 3rem; max-width: 900px; margin: 2rem auto 0; }
+    .trust-item { display: flex; align-items: center; gap: 0.75rem; }
+    .trust-icon { font-size: 1.5rem; }
+    .trust-text { text-align: left; }
+    .trust-text strong { display: block; font-size: 1rem; }
+    .trust-text span { font-size: 0.85rem; opacity: 0.8; }
+
+    .cta-section { padding: 5rem 2rem; text-align: center; background: linear-gradient(135deg, #c9a227 0%, #e8b923 100%); }
+    .cta-section h2 { color: white; font-size: clamp(1.8rem, 4vw, 2.5rem); margin-bottom: 1rem; font-weight: 700; }
+    .cta-section p { color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; margin-left: auto; margin-right: auto; }
+    .cta-section a { background: white; color: #2c3e50; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 1.1rem; display: inline-block; transition: transform 0.2s; }
+    .cta-section a:hover { transform: translateY(-2px); }
+
+    footer { background: #1a1a1a; color: white; padding: 3rem 2rem; text-align: center; }
+    footer .logo { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; }
+    footer p { color: rgba(255,255,255,0.6); font-size: 0.9rem; }
+    footer a { color: rgba(255,255,255,0.6); text-decoration: none; }
+    footer a:hover { color: white; }
+    .footer-links { margin-top: 1.5rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+
+    @media (max-width: 768px) {
+      .stats-bar { grid-template-columns: 1fr; margin: 0 1rem 0; }
+      .hero-ctas { flex-direction: column; align-items: center; }
+      .hero-ctas a { width: 100%; max-width: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">Maison des Chefs</a>
+    <div class="nav-links">
+      <a href="/services">Browse Chefs</a>
+      <a href="/auth/login">Sign In</a>
+      <a href="/services" class="cta-link">Book a Chef</a>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-content">
+      <p class="hero-eyebrow">Montreal's Premium Private Chef Marketplace</p>
+      <h1>Your Private Chef,<br><span>For Every Occasion</span></h1>
+      <p class="hero-sub">From intimate dinner parties to corporate events — discover and book verified private chefs in Montreal in minutes.</p>
+      <div class="hero-ctas">
+        <a href="/services" class="hero-cta-primary">Browse Chefs & Services</a>
+        <a href="/services?sort=popular" class="hero-cta-secondary">🔥 See Most Popular</a>
+      </div>
+      <div class="hero-trust">
+        <span>✓ Verified chefs</span>
+        <span>✓ Free to browse</span>
+        <span>✓ No commitment to book</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="stats-bar">
+    <div class="stat-item">
+      <div class="stat-number">${chefCount}+</div>
+      <div class="stat-label">Verified Private Chefs</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">${serviceCount}</div>
+      <div class="stat-label">Curated Services</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">${bookingCount > 0 ? bookingCount + '+' : '0'}</div>
+      <div class="stat-label">Memorable Experiences</div>
+    </div>
+  </div>
+
+  <section class="how-it-works">
+    <p class="section-eyebrow">How It Works</p>
+    <h2 class="section-title">Book Your Private Chef in 3 Steps</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-icon">🔍</div>
+        <h3>Browse & Discover</h3>
+        <p>Explore verified chefs by cuisine, price, and availability. Read about their specialties and past experiences.</p>
+      </div>
+      <div class="step">
+        <div class="step-icon">📅</div>
+        <h3>Submit a Request</h3>
+        <p>Found your perfect chef? Submit a booking request with your event details. No payment required upfront.</p>
+      </div>
+      <div class="step">
+        <div class="step-icon">🍽️</div>
+        <h3>Enjoy Your Event</h3>
+        <p>The chef confirms your date, handles all the cooking, and delivers an unforgettable dining experience at your home.</p>
+      </div>
+    </div>
+  </section>
+
+  ${featuredServices.length > 0 ? `
+  <section class="featured">
+    <p class="section-eyebrow" style="text-align:center; color:#c9a227; font-size:0.85rem; font-weight:700; text-transform:uppercase; letter-spacing:0.15em; margin-bottom:0.75rem;">Popular Right Now</p>
+    <h2 class="section-title" style="text-align:center;">Featured Services</h2>
+    <div class="featured-grid">${featuredCards}</div>
+    <p style="text-align:center; margin-top:2rem;"><a href="/services" style="color:#c9a227; font-weight:600; text-decoration:none; font-size:1.05rem;">View all services →</a></p>
+  </section>
+  ` : ''}
+
+  <section class="trust-section">
+    <p class="section-eyebrow" style="text-align:center; color:#c9a227; font-size:0.85rem; font-weight:700; text-transform:uppercase; letter-spacing:0.15em; margin-bottom:0.75rem;">Why Maison des Chefs</p>
+    <h2 class="section-title" style="color:white; text-align:center;">Built on Trust. Designed for You.</h2>
+    <div class="trust-grid">
+      <div class="trust-item">
+        <div class="trust-icon">✓</div>
+        <div class="trust-text"><strong>Verified Chefs</strong><span>Every chef is vetted before joining</span></div>
+      </div>
+      <div class="trust-item">
+        <div class="trust-icon">🔒</div>
+        <div class="trust-text"><strong>Secure Booking</strong><span>Your information is always protected</span></div>
+      </div>
+      <div class="trust-item">
+        <div class="trust-icon">⚡</div>
+        <div class="trust-text"><strong>Quick Response</strong><span>Chefs typically respond within hours</span></div>
+      </div>
+      <div class="trust-item">
+        <div class="trust-icon">💬</div>
+        <div class="trust-text"><strong>Dedicated Support</strong><span>We're here to help every step of the way</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <h2>Ready for an Unforgettable Dining Experience?</h2>
+    <p>Browse our curated selection of private chefs and find the perfect match for your next event.</p>
+    <a href="/services">Browse All Services</a>
+  </section>
+
+  <footer>
+    <div class="logo">Maison des Chefs</div>
+    <p>Montreal's premier private chef marketplace.</p>
+    <div class="footer-links">
+      <a href="/services">Browse Chefs</a>
+      <a href="/services?sort=popular">Most Popular</a>
+      <a href="/auth/login">Chef Login</a>
+    </div>
+    <p style="margin-top:1.5rem;">&copy; 2024 Maison des Chefs. All rights reserved.</p>
   </footer>
 </body>
 </html>`;

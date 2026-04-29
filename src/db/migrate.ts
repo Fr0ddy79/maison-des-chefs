@@ -105,6 +105,7 @@ export function migrate() {
       quote_amount REAL,
       quote_message TEXT,
       quote_sent_at INTEGER,
+      quote_reminder_sent_at INTEGER,
       created_at INTEGER NOT NULL
     );
 
@@ -128,6 +129,103 @@ export function migrate() {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // MAI-795: Add quote_reminder_sent_at column if it doesn't exist (for existing databases)
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN quote_reminder_sent_at INTEGER`);
+    console.log('Migration: Added quote_reminder_sent_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
+  // MAI-205: Add guest checkout fields to bookings if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN guest_email TEXT`);
+    console.log('Migration: Added guest_email column to bookings');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN guest_token_hash TEXT`);
+    console.log('Migration: Added guest_token_hash column to bookings');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0`);
+    console.log('Migration: Added email_verified column to bookings');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
+  // MAI-805: Add access token fields to bookings if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN access_token TEXT`);
+    console.log('Migration: Added access_token column to bookings');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN access_token_expires_at INTEGER`);
+    console.log('Migration: Added access_token_expires_at column to bookings');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  // Create index on access_token for fast lookups
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS bookings_access_token_idx ON bookings(access_token)`);
+    console.log('Migration: Created access_token index on bookings');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
+  // MAI-695: Create abandoned_bookings table if it doesn't exist
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS abandoned_bookings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        booking_id INTEGER NOT NULL UNIQUE REFERENCES bookings(id),
+        detected_at INTEGER NOT NULL,
+        email_sent INTEGER NOT NULL DEFAULT 0,
+        sms_sent INTEGER NOT NULL DEFAULT 0,
+        recovered INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created abandoned_bookings table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+
+  // MAI-805: Add access token fields to leads if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN access_token TEXT`);
+    console.log('Migration: Added access_token column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN access_token_expires_at INTEGER`);
+    console.log('Migration: Added access_token_expires_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  // Create index on access_token for fast lookups
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS leads_access_token_idx ON leads(access_token)`);
+    console.log('Migration: Created access_token index on leads');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
+  // MAI-806: Add chef_note column to leads if it doesn't exist
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN chef_note TEXT NOT NULL DEFAULT ''`);
+    console.log('Migration: Added chef_note column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

@@ -11,25 +11,33 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "echo \"Tests not configured yet\" && exit 0"
   },
-  "keywords": ["marketplace", "private-chef", "montreal"],
+  "keywords": [
+    "marketplace",
+    "private-chef",
+    "montreal"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.0",
     "@fastify/jwt": "^9.0.0",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",
-    "drizzle-orm": "^0.38.0",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.0.0",
+    "node-cron": "^3.0.0",
+    "resend": "^6.12.2",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.0",
     "drizzle-kit": "^0.30.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.3"
   }
 }

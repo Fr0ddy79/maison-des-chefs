@@ -99,6 +99,17 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     footer { background: #1a1a1a; color: white; padding: 3rem 2rem; text-align: center; margin-top: 4rem; }
     footer .logo { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; }
     footer p { color: rgba(255,255,255,0.7); }
+    .price-callout { background: #fff9e6; border: 1px solid #ffe082; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+    .price-callout .price-label { font-size: 0.85rem; color: #666; margin-bottom: 0.25rem; }
+    .price-callout .price-value { font-size: 1.4rem; font-weight: 700; color: #c9a227; }
+    .price-callout .price-quote { font-size: 1rem; color: #666; font-style: italic; }
+    .estimated-total { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #e0e0e0; }
+    .estimated-total .total-label { font-size: 0.85rem; color: #666; }
+    .estimated-total .total-value { font-size: 1.1rem; font-weight: 600; color: #2c3e50; }
+    .next-steps { background: #f0f4ff; border: 1px solid #c5d5ff; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .next-steps h4 { font-size: 0.9rem; color: #2c3e50; margin-bottom: 0.5rem; }
+    .next-steps ul { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; color: #555; }
+    .next-steps li { margin-bottom: 0.25rem; }
     @media (max-width: 768px) { .content-grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -119,12 +130,25 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     </div>
     ${welcomeBackHtml}
     <div class="success-message" id="successMessage">
-      <strong>✓ Inquiry sent successfully!</strong>
-      <p style="margin-top: 0.5rem;">The chef will respond to your request shortly.</p>
+      <strong>✓ Your booking request was sent!</strong>
+      <p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours.</p>
+      <p style="margin-top: 0.25rem;">Check your email for updates.</p>
     </div>
     <div class="content-grid">
       <div class="form-section">
         <h2>Your Details</h2>
+        ${service.pricePerPerson && service.pricePerPerson > 0
+          ? `<div class="price-callout">
+              <div class="price-label">Price per person</div>
+              <div class="price-value">$${service.pricePerPerson}/person</div>
+              <div class="estimated-total">
+                <div class="total-label">Estimated Total</div>
+                <div class="total-value" id="estimatedTotal">$${(service.pricePerPerson * service.minGuests).toLocaleString()}</div>
+              </div>
+            </div>`
+          : `<div class="price-callout">
+              <div class="price-quote">Chef will provide a quote</div>
+            </div>`}
         <form id="inquiryForm">
           <input type="hidden" name="serviceId" value="${service.id}">
           <div class="form-row">
@@ -145,6 +169,9 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             <div class="form-group">
               <label for="guestCount">Number of Guests <span class="required">*</span></label>
               <input type="number" id="guestCount" name="guestCount" required min="${service.minGuests}" max="${service.maxGuests}" value="${service.minGuests}">
+              ${service.pricePerPerson && service.pricePerPerson > 0
+                ? `<div class="estimated-total"><div class="total-label">Estimated Total</div><div class="total-value" id="estimatedTotalInline">$${(service.pricePerPerson * service.minGuests).toLocaleString()}</div></div>`
+                : ''}
             </div>
           </div>
           <div class="form-group">
@@ -155,7 +182,14 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             <label for="message">Message to Chef</label>
             <textarea id="message" name="message" placeholder="Tell the chef about your event, dietary requirements, or any special requests..."></textarea>
           </div>
-          <button type="submit" class="submit-btn" id="submitBtn">Send Inquiry</button>
+          <div class="next-steps">
+            <h4>What happens next</h4>
+            <ul>
+              <li>The chef will confirm within 24-48 hours</li>
+              <li>You'll receive an email with the chef's response</li>
+            </ul>
+          </div>
+          <button type="submit" class="submit-btn" id="submitBtn">Request Booking</button>
           <p class="privacy-note">Your information is only used to process this booking request.</p>
         </form>
       </div>
@@ -167,9 +201,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           <p>👥 ${service.minGuests}-${service.maxGuests} guests</p>
           ${service.pricePerPerson && service.pricePerPerson > 0
             ? `<div class="price">$${service.pricePerPerson}/person</div>`
-            : `<div class="price">Price upon request</div>`}
+            : `<div class="price">Chef will provide a quote</div>`}
         </div>
-        <p style="color: #666; font-size: 0.9rem; margin-bottom: 1rem;">This is a booking request. The chef will confirm availability within 24-48 hours.</p>
       </div>
     </div>
   </div>
@@ -179,7 +212,21 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     <p>&copy; 2024 Maison des Chefs. All rights reserved.</p>
   </footer>
   <script>
+    const pricePerPerson = ${service.pricePerPerson && service.pricePerPerson > 0 ? service.pricePerPerson : 'null'};
     document.querySelectorAll('input[value]').forEach(field => { if (field.value) field.classList.add('prefilled'); });
+    const estimatedTotalEl = document.getElementById('estimatedTotal');
+    const estimatedTotalInlineEl = document.getElementById('estimatedTotalInline');
+    const guestCountInput = document.getElementById('guestCount');
+    function updateEstimatedTotal() {
+      if (pricePerPerson && guestCountInput) {
+        const guests = parseInt(guestCountInput.value) || 0;
+        const total = pricePerPerson * guests;
+        const formatted = '$' + total.toLocaleString();
+        if (estimatedTotalEl) estimatedTotalEl.textContent = formatted;
+        if (estimatedTotalInlineEl) estimatedTotalInlineEl.textContent = formatted;
+      }
+    }
+    if (guestCountInput) guestCountInput.addEventListener('change', updateEstimatedTotal);
     document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -212,7 +259,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           alert('Error: ' + (error.error || 'Failed to submit inquiry'));
         }
       } catch (err) { alert('Network error. Please try again.'); }
-      finally { submitBtn.disabled = false; submitBtn.textContent = 'Send Inquiry'; }
+      finally { submitBtn.disabled = false; submitBtn.textContent = 'Request Booking'; }
     });
   </script>
 </body>

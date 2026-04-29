@@ -17,6 +17,7 @@ interface DinerConfirmationEmailParams {
   serviceName: string;
   eventDate: string | null;
   guestCount: number;
+  bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry
 }
 
 interface QuoteEmailParams {
@@ -29,6 +30,8 @@ interface QuoteEmailParams {
   guestCount: number;
   quoteAmount: number;
   quoteMessage?: string;
+  chefNote?: string;
+  bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry
 }
 
 /**
@@ -52,7 +55,8 @@ function formatDate(dateStr: string | null): string {
  * Build the diner post-inquiry confirmation email content.
  */
 function buildDinerConfirmationEmail(params: DinerConfirmationEmailParams): { subject: string; html: string; text: string } {
-  const bookingStatusLink = `${DASHBOARD_URL}/bookings`;
+  // MAI-805: Use the provided booking status URL or default to dashboard
+  const bookingStatusLink = params.bookingStatusUrl || `${DASHBOARD_URL}/booking-status`;
   const servicesLink = SERVICES_URL;
 
   return {
@@ -86,7 +90,7 @@ function buildDinerConfirmationEmail(params: DinerConfirmationEmailParams): { su
     <ol style="color: #555; line-height: 1.8;">
       <li>Chef ${params.chefName} will review your request and respond within <strong>24 hours</strong></li>
       <li>You'll receive an email when they respond</li>
-      <li>Track your booking status → <a href="${bookingStatusLink}" style="color: #c9a227;">View Booking Status</a></li>
+      <li><strong>Track your booking status</strong> → <a href="${bookingStatusLink}" style="color: #c9a227;">View Booking Status</a></li>
     </ol>
     
     <p style="font-size: 16px; color: #555; margin-top: 20px;">In the meantime, browse more chefs → <a href="${servicesLink}" style="color: #c9a227;">Explore Services</a></p>
@@ -198,7 +202,8 @@ function formatQuoteAmount(amount: number): string {
  * Build the quote email content sent when a chef responds with a price quote.
  */
 function buildQuoteEmail(params: QuoteEmailParams): { subject: string; html: string; text: string } {
-  const bookingLink = `${DASHBOARD_URL}/bookings`;
+  // MAI-805: Use the provided booking status URL or default
+  const bookingLink = params.bookingStatusUrl || `${DASHBOARD_URL}/booking-status`;
   const formattedAmount = formatQuoteAmount(params.quoteAmount);
   
   return {
@@ -233,6 +238,13 @@ function buildQuoteEmail(params: QuoteEmailParams): { subject: string; html: str
     </div>
     ` : ''}
     
+    ${params.chefNote ? `
+    <div style="background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 4px; padding: 16px 20px; margin: 20px 0;">
+      <p style="margin: 0 0 8px; color: #2e7d32; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">👨‍🍳 Chef's Note</p>
+      <p style="margin: 0; color: #1b5e20; font-size: 15px;">${params.chefNote}</p>
+    </div>
+    ` : ''}
+    
     <div style="text-align: center; margin: 30px 0;">
       <a href="${bookingLink}" style="display: inline-block; background: #c9a227; color: white; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 16px;">Accept Quote & Book</a>
     </div>
@@ -254,6 +266,8 @@ YOUR QUOTE: ${formattedAmount}
 for ${params.guestCount} guests
 
 ${params.quoteMessage ? `Message from Chef ${params.chefName}: "${params.quoteMessage}"
+
+` : ''}${params.chefNote ? `👨‍🍳 Chef's Note: ${params.chefNote}
 
 ` : ''}Accept this quote and book your event → ${bookingLink}
 
