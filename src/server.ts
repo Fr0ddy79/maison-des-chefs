@@ -63,7 +63,7 @@ server.decorate('authenticate', async (request: FastifyRequest, reply: FastifyRe
 // Routes
 server.register(authRoutes, { prefix: '/auth' });
 server.register(chefRoutes, { prefix: '/chefs' });
-server.register(serviceRoutes, { prefix: '/services' });
+server.register(serviceRoutes, { prefix: '/api/services' });
 server.register(bookingRoutes, { prefix: '/bookings' });
 server.register(bookingStatusRoutes, { prefix: '/api/booking-status' }); // Public - no auth required
 server.register(onboardingWizardRoutes, { prefix: '/api/onboarding' });
@@ -85,9 +85,8 @@ server.get('/diner/bookings', async (request, reply) => {
   return dinerBookingsPage();
 });
 
-// Page routes - removed due to route conflicts with API
-// Only the standalone booking page route is used
-// await server.register(pageRoutes);
+// Page routes - fixed route conflict by moving API to /api/services
+await server.register(pageRoutes);
 
 // Standalone booking page route with cookie-based pre-fill
 server.get('/book/:serviceId', async (request, reply) => {

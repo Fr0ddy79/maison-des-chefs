@@ -31,6 +31,7 @@ interface QuoteEmailParams {
   quoteAmount: number;
   quoteMessage?: string;
   chefNote?: string;
+  quoteToken?: string; // MAI-766: Raw token for booking deep link
   bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry
 }
 
