@@ -7,6 +7,7 @@ import { config } from './config/index.js';
 import { migrate } from './db/migrate.js';
 import { UserPayload } from './types.js';
 import { startQuoteReminderScheduler } from './services/quote-reminder.js';
+import { startStaleLeadReEngagementScheduler } from './services/diner-stale-lead-email.js';
 import { db } from './db/index.js';
 import { users, chefProfiles, services, bookings, leads } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
@@ -26,6 +27,7 @@ import { buildHomePage } from './routes/pages.js';
 import buildBookingPage from './routes/booking-page.js';
 import dinerBookingsPage from './routes/diner-bookings-page.js';
 import buildChefLeadsPage from './routes/chef-leads-page.js';
+import buildChefDiscoveryPage from './routes/chef-discovery-page.js';
 import bookingStatusPageRoutes from './routes/booking-status-page.js';
 import referralTrackingRoutes from './routes/referral-tracking.js';
 import checkoutRoutes from './routes/checkout.js';
@@ -67,7 +69,7 @@ server.decorate('authenticate', async (request: FastifyRequest, reply: FastifyRe
 
 // Routes
 server.register(authRoutes, { prefix: '/auth' });
-server.register(chefRoutes, { prefix: '/chefs' });
+server.register(chefRoutes, { prefix: '/api/chefs' });
 server.register(serviceRoutes, { prefix: '/api/services' });
 server.register(bookingRoutes, { prefix: '/bookings' });
 server.register(bookingStatusRoutes, { prefix: '/api/booking-status' }); // Public - no auth required
@@ -87,6 +89,12 @@ server.register(webhookRoutes, { prefix: '/api/webhooks' }); // Stripe webhooks
 server.get('/chef/leads', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
   return buildChefLeadsPage();
+});
+
+// Chef discovery page (MAI-849)
+server.get('/chefs', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefDiscoveryPage();
 });
 
 // Diner bookings page (standalone route to avoid esbuild parsing issues with pages.ts template literals)
@@ -180,6 +188,7 @@ server.get('/health', async () => ({ status: 'ok' }));
 const start = async () => {
   await migrate();
   startQuoteReminderScheduler();
+  startStaleLeadReEngagementScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });
 };
 

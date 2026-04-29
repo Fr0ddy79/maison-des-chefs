@@ -156,5 +156,7 @@ export const leads = sqliteTable('leads', {
   // MAI-823: Referral tracking
   referralCode: text('referral_code'), // 8-char alphanumeric code generated on first booking conversion
   referralSource: text('referral_source'), // Source of referral (e.g., 'diner_share', 'email', 'whatsapp')
+  // MAI-845: Stale lead re-engagement email sent timestamp (for idempotency)
+  staleLeadReengagementSentAt: integer('stale_lead_reengagement_sent_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
