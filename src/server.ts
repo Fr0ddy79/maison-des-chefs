@@ -22,6 +22,7 @@ import dinerPreferencesRoutes from './api/diner-preferences.js';
 import searchRoutes from './api/search.js';
 import inquiryRoutes from './api/inquiry.js';
 import chefLeadsRoutes from './api/chef-leads.js';
+import analyticsRoutes from './api/analytics.js';
 import pageRoutes from './routes/pages.js';
 import { buildHomePage } from './routes/pages.js';
 import buildBookingPage from './routes/booking-page.js';
@@ -78,6 +79,7 @@ server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
 server.register(searchRoutes, { prefix: '/api/v1/search' });
 server.register(inquiryRoutes, { prefix: '/api/inquiry' });
 server.register(chefLeadsRoutes, { prefix: '/api/chef' });
+server.register(analyticsRoutes, { prefix: '/api/analytics' }); // Public analytics events
 server.register(bookingStatusPageRoutes); // Public booking status page
 server.register(referralTrackingRoutes); // Public referral tracking
 server.register(checkoutPageRoutes); // Public checkout success/cancel pages (must register before /:leadId)

@@ -110,6 +110,9 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     .next-steps h4 { font-size: 0.9rem; color: #2c3e50; margin-bottom: 0.5rem; }
     .next-steps ul { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; color: #555; }
     .next-steps li { margin-bottom: 0.25rem; }
+    .trust-messaging { display: flex; justify-content: center; gap: 1.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .trust-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #666; }
+    .trust-item .icon { font-size: 1rem; }
     @media (max-width: 768px) { .content-grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -189,6 +192,11 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
               <li>You'll receive an email with the chef's response</li>
             </ul>
           </div>
+          <div class="trust-messaging">
+            <div class="trust-item"><span class="icon">🔒</span><span>No payment required today</span></div>
+            <div class="trust-item"><span class="icon">✓</span><span>Free cancellation</span></div>
+            <div class="trust-item"><span class="icon">⭐</span><span>Verified chefs</span></div>
+          </div>
           <button type="submit" class="submit-btn" id="submitBtn">Request Booking</button>
           <p class="privacy-note">Your information is only used to process this booking request.</p>
         </form>
@@ -213,10 +221,50 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
   </footer>
   <script>
     const pricePerPerson = ${service.pricePerPerson && service.pricePerPerson > 0 ? service.pricePerPerson : 'null'};
+    const serviceId = ${service.id};
     document.querySelectorAll('input[value]').forEach(field => { if (field.value) field.classList.add('prefilled'); });
     const estimatedTotalEl = document.getElementById('estimatedTotal');
     const estimatedTotalInlineEl = document.getElementById('estimatedTotalInline');
     const guestCountInput = document.getElementById('guestCount');
+    
+    // MAI-834: Form state preservation through login redirect
+    const FORM_STATE_KEY = 'booking_form_state_' + serviceId;
+    function saveFormState() {
+      const form = document.getElementById('inquiryForm');
+      if (!form) return;
+      const state = {
+        clientName: form.clientName?.value || '',
+        email: form.email?.value || '',
+        phone: form.phone?.value || '',
+        guestCount: form.guestCount?.value || '',
+        eventDate: form.eventDate?.value || '',
+        message: form.message?.value || '',
+      };
+      sessionStorage.setItem(FORM_STATE_KEY, JSON.stringify(state));
+    }
+    function restoreFormState() {
+      const saved = sessionStorage.getItem(FORM_STATE_KEY);
+      if (!saved) return;
+      try {
+        const state = JSON.parse(saved);
+        const form = document.getElementById('inquiryForm');
+        if (!form) return;
+        if (state.clientName && form.clientName) form.clientName.value = state.clientName;
+        if (state.email && form.email) form.email.value = state.email;
+        if (state.phone && form.phone) form.phone.value = state.phone;
+        if (state.guestCount && form.guestCount) form.guestCount.value = state.guestCount;
+        if (state.eventDate && form.eventDate) form.eventDate.value = state.eventDate;
+        if (state.message && form.message) form.message.value = state.message;
+        sessionStorage.removeItem(FORM_STATE_KEY);
+      } catch (e) {
+        sessionStorage.removeItem(FORM_STATE_KEY);
+      }
+    }
+    // Restore form state on page load (e.g., after login redirect)
+    restoreFormState();
+    // Save form state before page unload (user navigates to login)
+    window.addEventListener('beforeunload', saveFormState);
+    
     function updateEstimatedTotal() {
       if (pricePerPerson && guestCountInput) {
         const guests = parseInt(guestCountInput.value) || 0;
@@ -227,6 +275,25 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
     }
     if (guestCountInput) guestCountInput.addEventListener('change', updateEstimatedTotal);
+    
+    // MAI-834: Track analytics with auth_status dimension
+    function trackAnalytics(event, data) {
+      const authStatus = '${isReturningDiner ? 'authenticated' : 'guest'}';
+      const analyticsData = {
+        event: event,
+        service_id: serviceId,
+        auth_status: authStatus,
+        timestamp: new Date().toISOString(),
+        ...data
+      };
+      // Fire-and-forget analytics ping (extendable to real analytics provider)
+      try {
+        navigator.sendBeacon && navigator.sendBeacon('/api/analytics/event', JSON.stringify(analyticsData));
+      } catch (e) {
+        // Silently fail - analytics should not break user flow
+      }
+    }
+    
     document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -242,6 +309,10 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         message: form.message.value || undefined,
       };
       if (!formData.email) { alert('Please enter your email address.'); return; }
+      
+      // MAI-834: Track inquiry attempt analytics
+      trackAnalytics('booking_form_submit', { service_id: formData.serviceId });
+      
       submitBtn.disabled = true;
       submitBtn.textContent = 'Sending...';
       try {
@@ -251,14 +322,20 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           body: JSON.stringify(formData),
         });
         if (response.ok) {
+          // MAI-834: Track successful inquiry analytics
+          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: (await response.clone().json()).leadId });
           form.style.display = 'none';
           successMessage.classList.add('show');
           successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {
           const error = await response.json();
+          trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: error.error || 'unknown' });
           alert('Error: ' + (error.error || 'Failed to submit inquiry'));
         }
-      } catch (err) { alert('Network error. Please try again.'); }
+      } catch (err) { 
+        trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: 'network_error' });
+        alert('Network error. Please try again.'); 
+      }
       finally { submitBtn.disabled = false; submitBtn.textContent = 'Request Booking'; }
     });
   </script>
