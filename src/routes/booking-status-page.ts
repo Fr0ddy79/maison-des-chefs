@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 
 const BOOKING_STATUS_TOKEN_EXPIRY_DAYS = 30;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
-const CHECKOUT_URL = process.env.CHECKOUT_URL || 'https://maisondeschefs.com/checkout';
+const CHECKOUT_URL = process.env.CHECKOUT_URL || 'https://maisondeschefs.com';
 
 /**
  * Format a date string for display.
@@ -251,7 +251,7 @@ function buildExpiredPage(lead: any): string {
 function buildBookingStatusPage(lead: any, token: string): string {
   const statusDisplay = getStatusDisplay(lead.status);
   const isPaymentNeeded = hasQuote(lead.status);
-  const checkoutUrl = isPaymentNeeded ? `${CHECKOUT_URL}?lead=${lead.id}&token=${token}` : null;
+  const checkoutUrl = isPaymentNeeded ? `${CHECKOUT_URL}/checkout/${lead.id}?token=${token}` : null;
   const nextSteps = getNextSteps(lead.status, checkoutUrl);
   const tokenExpiryDate = lead.accessTokenExpiresAt ? formatDate(lead.accessTokenExpiresAt.toString()) : null;
   const isConverted = lead.status === 'converted';

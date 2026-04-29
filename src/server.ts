@@ -28,6 +28,10 @@ import dinerBookingsPage from './routes/diner-bookings-page.js';
 import buildChefLeadsPage from './routes/chef-leads-page.js';
 import bookingStatusPageRoutes from './routes/booking-status-page.js';
 import referralTrackingRoutes from './routes/referral-tracking.js';
+import checkoutRoutes from './routes/checkout.js';
+import checkoutPageRoutes from './routes/checkout-page.js';
+import checkoutApiRoutes from './api/checkout.js';
+import webhookRoutes from './api/webhooks.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -74,6 +78,10 @@ server.register(inquiryRoutes, { prefix: '/api/inquiry' });
 server.register(chefLeadsRoutes, { prefix: '/api/chef' });
 server.register(bookingStatusPageRoutes); // Public booking status page
 server.register(referralTrackingRoutes); // Public referral tracking
+server.register(checkoutPageRoutes); // Public checkout success/cancel pages (must register before /:leadId)
+server.register(checkoutRoutes); // Public checkout page
+server.register(checkoutApiRoutes, { prefix: '/api/checkout' }); // Checkout API
+server.register(webhookRoutes, { prefix: '/api/webhooks' }); // Stripe webhooks
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {
