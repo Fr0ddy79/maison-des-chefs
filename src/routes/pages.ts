@@ -916,6 +916,15 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .hero-trust { margin-top: 2rem; color: rgba(255,255,255,0.6); font-size: 0.9rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
     .hero-trust span { display: flex; align-items: center; gap: 0.4rem; }
 
+    .hero-search { margin-top: 2.5rem; position: sticky; top: 70px; z-index: 50; }
+    .hero-search-form { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; max-width: 700px; margin: 0 auto; background: rgba(26, 26, 46, 0.95); padding: 1rem; border-radius: 12px; backdrop-filter: blur(10px); }
+    .search-field { display: flex; flex-direction: column; gap: 0.3rem; background: rgba(255,255,255,0.1); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); min-width: 160px; }
+    .search-field label { color: rgba(255,255,255,0.8); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .search-field input, .search-field select { background: white; border: none; border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 1rem; color: #333; min-width: 0; }
+    .search-field select { cursor: pointer; }
+    .search-submit { background: #c9a227; color: white; border: none; padding: 0 2rem; border-radius: 6px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; align-self: flex-end; min-height: 42px; }
+    .search-submit:hover { background: #b8922a; }
+
     .stats-bar { background: white; padding: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 900px; margin: -2rem auto 0; position: relative; z-index: 2; box-shadow: 0 8px 32px rgba(0,0,0,0.12); border-radius: 12px; }
     .stat-item { text-align: center; padding: 1rem; }
     .stat-number { font-size: 2.2rem; font-weight: 800; color: #2c3e50; }
@@ -994,6 +1003,30 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
       <div class="hero-ctas">
         <a href="/services" class="hero-cta-primary">Browse Chefs & Services</a>
         <a href="/services?sort=popular" class="hero-cta-secondary">🔥 See Most Popular</a>
+      </div>
+      <div class="hero-search">
+        <form class="hero-search-form" action="/services" method="get">
+          <div class="search-field">
+            <label for="search-date">When is your event?</label>
+            <input type="date" id="search-date" name="date" min="${new Date().toISOString().split('T')[0]}" required>
+          </div>
+          <div class="search-field">
+            <label for="search-guests">Number of guests</label>
+            <input type="number" id="search-guests" name="guests" min="1" max="50" placeholder="Guests" required>
+          </div>
+          <div class="search-field">
+            <label for="search-type">Event type</label>
+            <select id="search-type" name="type">
+              <option value="">Select event type</option>
+              <option value="private_dinner">Private Dinner</option>
+              <option value="cooking_class">Cooking Class</option>
+              <option value="birthday_party">Birthday Party</option>
+              <option value="corporate_event">Corporate Event</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <button type="submit" class="search-submit">Search Chefs</button>
+        </form>
       </div>
       <div class="hero-trust">
         <span>✓ Verified chefs</span>

@@ -148,6 +148,8 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     
     .cta-button { display: inline-block; background: #c9a227; color: white; padding: 0.875rem 1.75rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1rem; transition: background 0.2s; margin-top: 1rem; }
     .cta-button:hover { background: #b8922a; }
+    .cta-button.secondary { background: #6b7280; }
+    .cta-button.secondary:hover { background: #5a6268; }
     
     footer { background: #1a1a1a; color: white; padding: 2rem; text-align: center; margin-top: 2rem; }
     footer .logo { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem; }
@@ -224,7 +226,7 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
   
   <div class="page-content">
     <div class="success-icon">🎉</div>
-    <h1 class="page-title">Booking Confirmed!</h1>
+    <h1 class="page-title">Booking Confirmed ✓</h1>
     <p class="page-subtitle">Thank you, ${dinerName}! Your payment was successful.</p>
     
     <div class="confirmation-card">
@@ -273,8 +275,9 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     
     ${referralCtaHtml}
     
-    <div style="margin-top: 1.5rem;">
-      <a href="/services" class="cta-button">Browse More Services</a>
+    <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+      <a href="/diner/bookings" class="cta-button">View My Bookings</a>
+      <a href="/services" class="cta-button secondary">Browse More Services</a>
     </div>
   </div>
   
@@ -298,6 +301,162 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
       });
     }
   </script>
+</body>
+</html>`;
+  });
+
+  // GET /checkout/failure - Payment failed page
+  server.get('/checkout/failure', async (request, reply) => {
+    const query = request.query as { reason?: string; lead?: string; token?: string };
+
+    if (!query.lead || !query.token) {
+      return buildErrorPage('Missing parameters', 'Please return to your booking status.');
+    }
+
+    const leadId = parseInt(query.lead);
+    const verified = verifyLeadAccess(leadId, query.token);
+    if (!verified) {
+      return buildErrorPage('Access denied', 'Invalid or expired access token.');
+    }
+
+    const lead = db.select({
+      id: leads.id,
+      serviceName: services.name,
+      chefName: users.name,
+      eventDate: leads.eventDate,
+      guestCount: leads.guestCount,
+      quoteAmount: leads.quoteAmount,
+      clientName: leads.clientName,
+    })
+      .from(leads)
+      .innerJoin(services, eq(leads.serviceId, services.id))
+      .innerJoin(users, eq(leads.chefId, users.id))
+      .where(eq(leads.id, leadId))
+      .get();
+
+    if (!lead) {
+      return buildErrorPage('Booking not found', 'No booking was found with this ID.');
+    }
+
+    const quoteAmountDisplay = lead.quoteAmount != null ? `$${Number(lead.quoteAmount).toFixed(2)}` : null;
+    const dinerName = lead.clientName || 'there';
+    const errorMessage = query.reason ? decodeURIComponent(query.reason) : null;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Failed | Maison des Chefs</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f8f9fa; }
+    nav { position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.9); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; z-index: 100; backdrop-filter: blur(10px); }
+    nav .logo { color: white; font-size: 1.2rem; margin: 0; font-weight: bold; text-decoration: none; }
+    nav .nav-links { display: flex; gap: 1.5rem; }
+    nav .nav-links a { color: white; text-decoration: none; font-size: 0.9rem; }
+    
+    .page-content { max-width: 700px; margin: 0 auto; padding: 6rem 1.5rem 3rem; text-align: center; }
+    
+    .failure-icon { font-size: 5rem; margin-bottom: 1rem; }
+    .page-title { font-size: 2rem; color: #dc2626; margin-bottom: 0.5rem; }
+    .page-subtitle { font-size: 1.1rem; color: #666; margin-bottom: 2rem; }
+    
+    .error-card { background: #fee2e2; border: 1px solid #ef4444; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: left; }
+    .error-card p { color: #dc2626; font-size: 0.95rem; margin: 0; }
+    
+    .booking-card { background: white; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 2rem; margin-bottom: 1.5rem; text-align: left; }
+    .booking-title { font-size: 1.2rem; font-weight: 600; color: #2c3e50; margin-bottom: 1rem; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+    .detail-label { font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+    .detail-value { font-size: 1rem; color: #2c3e50; font-weight: 500; }
+    
+    .info-box { background: #f0fdf4; border: 1px solid #22c55e; border-radius: 8px; padding: 1rem; margin-top: 1.5rem; text-align: left; }
+    .info-box p { color: #15803d; font-size: 0.95rem; margin: 0; }
+    
+    .cta-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem; }
+    .cta-button { display: inline-block; background: #c9a227; color: white; padding: 0.875rem 1.75rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1rem; transition: background 0.2s; }
+    .cta-button:hover { background: #b8922a; }
+    .cta-button.secondary { background: #6b7280; }
+    .cta-button.secondary:hover { background: #5a6268; }
+    
+    footer { background: #1a1a1a; color: white; padding: 2rem; text-align: center; margin-top: 2rem; }
+    footer .logo { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem; }
+    footer p { color: rgba(255,255,255,0.6); font-size: 0.85rem; }
+    
+    @media (max-width: 600px) {
+      .detail-grid { grid-template-columns: 1fr; }
+      .page-content { padding-top: 5rem; }
+      .cta-buttons { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">Maison des Chefs</a>
+    <div class="nav-links">
+      <a href="/services">Browse Services</a>
+      <a href="/auth/login">Sign In</a>
+    </div>
+  </nav>
+  
+  <div class="page-content">
+    <div class="failure-icon">❌</div>
+    <h1 class="page-title">Payment Unsuccessful</h1>
+    <p class="page-subtitle">We're sorry, ${dinerName}. Something went wrong with your payment.</p>
+    
+    ${errorMessage ? `
+    <div class="error-card">
+      <p><strong>Error:</strong> ${errorMessage}</p>
+    </div>
+    ` : ''}
+    
+    <div class="booking-card">
+      <h2 class="booking-title">Booking Details</h2>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">Service</div>
+          <div class="detail-value">${lead.serviceName || ''}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Chef</div>
+          <div class="detail-value">${lead.chefName || ''}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Event Date</div>
+          <div class="detail-value">${formatDate(lead.eventDate)}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Guests</div>
+          <div class="detail-value">${lead.guestCount || 0}</div>
+        </div>
+        ${quoteAmountDisplay ? `
+        <div class="detail-item">
+          <div class="detail-label">Quote Amount</div>
+          <div class="detail-value">${quoteAmountDisplay}</div>
+        </div>
+        ` : ''}
+      </div>
+      <div class="info-box">
+        <p>💳 Your booking details are still saved — you can try again below.</p>
+      </div>
+    </div>
+    
+    <div class="cta-buttons">
+      <a href="/checkout/${lead.id}?token=${query.token}" class="cta-button">Try Again</a>
+      <a href="/services" class="cta-button secondary">Browse Services</a>
+    </div>
+    
+    <p style="margin-top: 1.5rem; color: #888; font-size: 0.9rem;">
+      Need help? <a href="mailto:support@maisondeschefs.com" style="color: #c9a227; text-decoration: none;">Contact Support</a>
+    </p>
+  </div>
+  
+  <footer>
+    <div class="logo">Maison des Chefs</div>
+    <p>Montreal's premier private chef marketplace.</p>
+    <p>&copy; 2024 Maison des Chefs. All rights reserved.</p>
+  </footer>
 </body>
 </html>`;
   });
