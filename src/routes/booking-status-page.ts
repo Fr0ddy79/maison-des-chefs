@@ -129,6 +129,8 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
       quoteAmount: leads.quoteAmount,
       quoteMessage: leads.quoteMessage,
       quoteSentAt: leads.quoteSentAt,
+      referralCode: leads.referralCode, // MAI-823: Referral tracking
+      referralSource: leads.referralSource, // MAI-823: Referral tracking
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -252,6 +254,7 @@ function buildBookingStatusPage(lead: any, token: string): string {
   const checkoutUrl = isPaymentNeeded ? `${CHECKOUT_URL}?lead=${lead.id}&token=${token}` : null;
   const nextSteps = getNextSteps(lead.status, checkoutUrl);
   const tokenExpiryDate = lead.accessTokenExpiresAt ? formatDate(lead.accessTokenExpiresAt.toString()) : null;
+  const isConverted = lead.status === 'converted';
 
   const nextStepsHtml = nextSteps.map(step => {
     if (step.includes('<a href=')) {
@@ -262,6 +265,31 @@ function buildBookingStatusPage(lead: any, token: string): string {
 
   // Format quote amount if available
   const quoteAmountDisplay = lead.quoteAmount != null ? `$${Number(lead.quoteAmount).toFixed(2)}` : null;
+
+  // MAI-823: Referral CTA for converted bookings
+  const referralCtaHtml = isConverted ? `
+    <div class="referral-card">
+      <h3 class="referral-title">🍽️ Share the experience & earn $25 toward your next booking</h3>
+      <p class="referral-description">Know someone who'd love this experience? Share your unique referral link and earn $25 credits each time someone books using it!</p>
+      ${lead.referralCode ? `
+      <div class="referral-code-section">
+        <p class="referral-code-label">Your Referral Code:</p>
+        <div class="referral-code-box">${lead.referralCode}</div>
+      </div>
+      ` : ''}
+      <div class="share-buttons">
+        <a href="/referral/track?code=${lead.referralCode || ''}&source=copy" class="share-btn copy-btn" onclick="copyReferralLink(this, '${lead.referralCode || ''}'); return false;">
+          <span class="share-icon">📋</span> Copy Link
+        </a>
+        <a href="/referral/track?code=${lead.referralCode || ''}&source=email" class="share-btn email-btn" onclick="return confirm('Send referral link via email?')">
+          <span class="share-icon">✉️</span> Email
+        </a>
+        <a href="/referral/track?code=${lead.referralCode || ''}&source=whatsapp" class="share-btn whatsapp-btn" target="_blank" rel="noopener">
+          <span class="share-icon">💬</span> WhatsApp
+        </a>
+      </div>
+    </div>
+  ` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -337,6 +365,89 @@ function buildBookingStatusPage(lead: any, token: string): string {
     @media (max-width: 600px) {
       .detail-grid { grid-template-columns: 1fr; }
       .page-content { padding-top: 5rem; }
+    }
+    
+    /* MAI-823: Referral CTA styles */
+    .referral-card {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 2px solid #22c55e;
+      border-radius: 16px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .referral-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #15803d;
+      margin-bottom: 0.75rem;
+    }
+    .referral-description {
+      color: #555;
+      font-size: 0.95rem;
+      margin-bottom: 1.25rem;
+      line-height: 1.5;
+    }
+    .referral-code-section {
+      margin: 1rem 0;
+    }
+    .referral-code-label {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 0.5rem;
+    }
+    .referral-code-box {
+      display: inline-block;
+      background: white;
+      border: 2px dashed #22c55e;
+      border-radius: 8px;
+      padding: 0.75rem 1.5rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #15803d;
+      letter-spacing: 0.1em;
+    }
+    .share-buttons {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+    .share-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .share-btn.copy-btn {
+      background: #22c55e;
+      color: white;
+    }
+    .share-btn.copy-btn:hover {
+      background: #16a34a;
+    }
+    .share-btn.email-btn {
+      background: #3b82f6;
+      color: white;
+    }
+    .share-btn.email-btn:hover {
+      background: #2563eb;
+    }
+    .share-btn.whatsapp-btn {
+      background: #22c55e;
+      color: white;
+    }
+    .share-btn.whatsapp-btn:hover {
+      background: #16a34a;
+    }
+    .share-icon {
+      font-size: 1.1rem;
     }
   </style>
 </head>
@@ -423,6 +534,8 @@ function buildBookingStatusPage(lead: any, token: string): string {
       ` : ''}
     </div>
     
+    ${referralCtaHtml}
+    
     <div class="help-section">
       <p>Questions about your booking?</p>
       <a href="mailto:support@maisondeschefs.com">support@maisondeschefs.com</a>
@@ -434,6 +547,22 @@ function buildBookingStatusPage(lead: any, token: string): string {
     <p>Montreal's premier private chef marketplace.</p>
     <p>&copy; 2024 Maison des Chefs. All rights reserved.</p>
   </footer>
+  
+  <script>
+    // MAI-823: Copy referral link to clipboard
+    function copyReferralLink(btn, code) {
+      const referralLink = window.location.origin + '/booking-status?ref=' + code;
+      navigator.clipboard.writeText(referralLink).then(function() {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="share-icon">✓</span> Copied!';
+        setTimeout(function() {
+          btn.innerHTML = originalText;
+        }, 2000);
+      }).catch(function() {
+        alert('Failed to copy. Please copy the link manually.');
+      });
+    }
+  </script>
 </body>
 </html>`;
 }

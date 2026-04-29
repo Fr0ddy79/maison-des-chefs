@@ -27,6 +27,7 @@ import buildBookingPage from './routes/booking-page.js';
 import dinerBookingsPage from './routes/diner-bookings-page.js';
 import buildChefLeadsPage from './routes/chef-leads-page.js';
 import bookingStatusPageRoutes from './routes/booking-status-page.js';
+import referralTrackingRoutes from './routes/referral-tracking.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -72,6 +73,7 @@ server.register(searchRoutes, { prefix: '/api/v1/search' });
 server.register(inquiryRoutes, { prefix: '/api/inquiry' });
 server.register(chefLeadsRoutes, { prefix: '/api/chef' });
 server.register(bookingStatusPageRoutes); // Public booking status page
+server.register(referralTrackingRoutes); // Public referral tracking
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {

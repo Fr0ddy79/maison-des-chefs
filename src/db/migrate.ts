@@ -226,6 +226,27 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-823: Add referral tracking columns to leads if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN referral_code TEXT`);
+    console.log('Migration: Added referral_code column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN referral_source TEXT`);
+    console.log('Migration: Added referral_source column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  // Create index on referral_code for fast lookups
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS leads_referral_code_idx ON leads(referral_code)`);
+    console.log('Migration: Created referral_code index on leads');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

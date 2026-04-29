@@ -13,6 +13,19 @@ function generateQuoteToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/**
+ * MAI-823: Generate an 8-character alphanumeric referral code.
+ */
+function generateReferralCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluding ambiguous chars (0, O, 1, I)
+  let code = '';
+  const randomBytes = crypto.randomBytes(8);
+  for (let i = 0; i < 8; i++) {
+    code += chars[randomBytes[i] % chars.length];
+  }
+  return code;
+}
+
 const respondToLeadSchema = z.object({
   amount: z.number().positive("Quote amount must be greater than 0").refine(
     (v) => {
@@ -208,9 +221,12 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       return reply.status(400).send({ error: "Only responded leads can be converted" });
     }
 
+    // MAI-823: Generate referral code on first conversion
+    const referralCode = generateReferralCode();
+
     const updatedLead = db
       .update(leads)
-      .set({ status: "converted" } as Record<string, unknown>)
+      .set({ status: "converted", referralCode } as Record<string, unknown>)
       .where(eq(leads.id, parseInt(leadId)))
       .returning()
       .all()[0];
