@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { leads, services, users, chefProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { getAddonsByIds } from '../data/addons.js';
 
 const CHECKOUT_URL = process.env.CHECKOUT_URL || 'https://maisondeschefs.com';
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
@@ -71,6 +72,7 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       quoteMessage: leads.quoteMessage,
       quoteSentAt: leads.quoteSentAt,
       referralCode: leads.referralCode,
+      selectedAddons: leads.selectedAddons,
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -106,6 +108,16 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       });
     }
 
+    // MAI-875: Parse selected addons
+    let selectedAddonIds: string[] = [];
+    try {
+      selectedAddonIds = JSON.parse(lead.selectedAddons || '[]');
+    } catch {
+      selectedAddonIds = [];
+    }
+    const selectedAddons = getAddonsByIds(selectedAddonIds);
+    const addonsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
+
     return {
       booking: {
         id: lead.id,
@@ -119,6 +131,9 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         quoteAmount: lead.quoteAmount,
         quoteMessage: lead.quoteMessage,
         status: lead.status,
+        // MAI-875: Addon info
+        selectedAddons: selectedAddons.map(a => ({ id: a.id, name: a.name, price: a.price })),
+        addonsTotal,
       },
       canPay,
       paymentDue: canPay,
@@ -151,6 +166,7 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       clientName: leads.clientName,
       quoteAmount: leads.quoteAmount,
       quoteMessage: leads.quoteMessage,
+      selectedAddons: leads.selectedAddons,
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -182,23 +198,48 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       });
     }
 
+    // MAI-875: Build line items including addons
+    const lineItems: any[] = [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: lead.serviceName,
+            description: `${lead.guestCount} guests • ${formatDate(lead.eventDate)} • Chef ${lead.chefName}`,
+          },
+          unit_amount: Math.round(lead.quoteAmount * 100), // Convert to cents
+        },
+        quantity: 1,
+      },
+    ];
+
+    // MAI-875: Add selected addons as separate line items
+    let selectedAddonIds: string[] = [];
+    try {
+      selectedAddonIds = JSON.parse(lead.selectedAddons || '[]');
+    } catch {
+      selectedAddonIds = [];
+    }
+    const selectedAddons = getAddonsByIds(selectedAddonIds);
+    for (const addon of selectedAddons) {
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: addon.name,
+            description: addon.description,
+          },
+          unit_amount: Math.round(addon.price * 100), // Convert to cents
+        },
+        quantity: 1,
+      });
+    }
+
     // Create Stripe Checkout Session
     try {
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: lead.serviceName,
-                description: `${lead.guestCount} guests • ${formatDate(lead.eventDate)} • Chef ${lead.chefName}`,
-              },
-              unit_amount: Math.round(lead.quoteAmount * 100), // Convert to cents
-            },
-            quantity: 1,
-          },
-        ],
+        line_items: lineItems,
         mode: 'payment',
         success_url: `${CHECKOUT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&lead=${lead.id}&token=${query.token}`,
         cancel_url: `${CHECKOUT_URL}/checkout/cancel?lead=${lead.id}&token=${query.token}`,
@@ -207,12 +248,15 @@ export default async function checkoutRoutes(server: FastifyInstance) {
           leadId: lead.id.toString(),
           chefId: lead.chefId.toString(),
           serviceId: lead.serviceId.toString(),
+          // MAI-875: Store selected addon IDs for success page
+          selectedAddonIds: JSON.stringify(selectedAddonIds),
         },
         payment_intent_data: {
           metadata: {
             leadId: lead.id.toString(),
             chefId: lead.chefId.toString(),
             serviceId: lead.serviceId.toString(),
+            selectedAddonIds: JSON.stringify(selectedAddonIds),
           },
         },
       });

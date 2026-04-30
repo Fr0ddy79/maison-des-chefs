@@ -35,6 +35,7 @@ import checkoutRoutes from './routes/checkout.js';
 import checkoutPageRoutes from './routes/checkout-page.js';
 import checkoutApiRoutes from './api/checkout.js';
 import webhookRoutes from './api/webhooks.js';
+import bookingAddonRoutes from './api/booking-addons.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -86,6 +87,7 @@ server.register(checkoutPageRoutes); // Public checkout success/cancel pages (mu
 server.register(checkoutRoutes); // Public checkout page
 server.register(checkoutApiRoutes, { prefix: '/api/checkout' }); // Checkout API
 server.register(webhookRoutes, { prefix: '/api/webhooks' }); // Stripe webhooks
+server.register(bookingAddonRoutes, { prefix: '/api/booking' }); // MAI-875: Booking addons
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {

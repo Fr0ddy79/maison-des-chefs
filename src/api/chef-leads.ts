@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { leads, services, users } from "../db/schema.js";
+import { leads, services, users, bookings } from "../db/schema.js";
 import { eq, desc, sql } from "drizzle-orm";
 import { sendQuoteEmail } from "../services/diner-confirmation-email.js";
 import crypto from "crypto";
@@ -230,6 +230,23 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .where(eq(leads.id, parseInt(leadId)))
       .returning()
       .all()[0];
+
+    // Create booking record so diner can see it in "My Bookings"
+    const now = new Date();
+    const totalPrice = lead.quoteAmount || 0;
+
+    db.insert(bookings).values({
+      serviceId: lead.serviceId,
+      chefId: lead.chefId,
+      dinerId: null, // diner may not be a logged-in user; link via email/guestEmail instead
+      guestEmail: lead.email || null,
+      eventDate: lead.eventDate || '',
+      guestCount: lead.guestCount || 0,
+      totalPrice,
+      status: 'confirmed',
+      notes: `Converted from lead ${lead.id}`,
+      createdAt: now,
+    }).run();
 
     return { success: true, lead_status: "converted", converted_at: updatedLead.createdAt };
   });

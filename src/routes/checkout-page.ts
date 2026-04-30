@@ -1,9 +1,16 @@
 import { FastifyInstance } from 'fastify';
+import Stripe from 'stripe';
 import { db } from '../db/index.js';
 import { leads, services, users, chefProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { getAddonsByIds } from '../data/addons.js';
 
 const CHECKOUT_URL = process.env.CHECKOUT_URL || 'https://maisondeschefs.com';
+
+// Initialize Stripe for retrieving session info
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
+  apiVersion: '2026-04-22.dahlia',
+});
 
 /**
  * Format a date string for display.
@@ -69,6 +76,7 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
       clientName: leads.clientName,
       referralCode: leads.referralCode,
       status: leads.status,
+      selectedAddons: leads.selectedAddons,
     })
       .from(leads)
       .innerJoin(services, eq(leads.serviceId, services.id))
@@ -82,7 +90,21 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     }
 
     const isConverted = lead.status === 'converted';
+    
+    // MAI-875: Parse selected addons
+    let selectedAddonIds: string[] = [];
+    try {
+      selectedAddonIds = JSON.parse(lead.selectedAddons || '[]');
+    } catch {
+      selectedAddonIds = [];
+    }
+    const selectedAddons = getAddonsByIds(selectedAddonIds);
+    const addonsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
+    const totalWithAddons = (lead.quoteAmount || 0) + addonsTotal;
+    
     const quoteAmountDisplay = lead.quoteAmount != null ? `$${Number(lead.quoteAmount).toFixed(2)}` : null;
+    const addonsTotalDisplay = addonsTotal > 0 ? `$${addonsTotal.toFixed(2)}` : null;
+    const totalWithAddonsDisplay = `$${totalWithAddons.toFixed(2)}`;
 
     // MAI-823: Referral CTA for converted bookings
     const referralCtaHtml = isConverted && lead.referralCode ? `
@@ -103,6 +125,22 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
           <a href="/referral/track?code=${lead.referralCode}&source=whatsapp" class="share-btn whatsapp-btn" target="_blank" rel="noopener">
             <span class="share-icon">💬</span> WhatsApp
           </a>
+        </div>
+      </div>
+    ` : '';
+
+    // MAI-875: Build addons display HTML
+    const addonsHtml = selectedAddons.length > 0 ? `
+      <div class="addons-card">
+        <h3 class="addons-title">✨ Enhance Your Experience</h3>
+        <div class="addons-list">
+          ${selectedAddons.map(addon => `
+            <div class="addon-item">
+              <span class="addon-icon">${addon.icon}</span>
+              <span class="addon-name">${addon.name}</span>
+              <span class="addon-price">+$${addon.price.toFixed(2)}</span>
+            </div>
+          `).join('')}
         </div>
       </div>
     ` : '';
@@ -139,6 +177,15 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     
     .message-box { background: #dcfce7; border: 1px solid #22c55e; border-radius: 8px; padding: 1rem; margin-top: 1.5rem; text-align: left; }
     .message-box p { color: #15803d; font-size: 0.95rem; margin: 0; }
+    
+    /* MAI-875: Addons card styles */
+    .addons-card { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #c9a227; border-radius: 16px; padding: 1.5rem 2rem; margin-bottom: 1.5rem; text-align: left; }
+    .addons-title { font-size: 1.1rem; font-weight: 600; color: #92400e; margin-bottom: 1rem; }
+    .addons-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .addon-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; }
+    .addon-icon { font-size: 1.25rem; }
+    .addon-name { flex: 1; color: #92400e; font-weight: 500; }
+    .addon-price { color: #c9a227; font-weight: 700; }
     
     .next-steps { background: white; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 1.5rem 2rem; margin-bottom: 1.5rem; text-align: left; }
     .next-steps-title { font-size: 1.1rem; font-weight: 600; color: #2c3e50; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
@@ -250,10 +297,20 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
         </div>
         ${quoteAmountDisplay ? `
         <div class="detail-item">
-          <div class="detail-label">Amount Paid</div>
-          <div class="detail-value large">${quoteAmountDisplay}</div>
+          <div class="detail-label">Base Service</div>
+          <div class="detail-value">${quoteAmountDisplay}</div>
         </div>
         ` : ''}
+        ${addonsTotalDisplay ? `
+        <div class="detail-item">
+          <div class="detail-label">Add-ons</div>
+          <div class="detail-value" style="color: #c9a227;">${addonsTotalDisplay}</div>
+        </div>
+        ` : ''}
+        <div class="detail-item">
+          <div class="detail-label">Total Paid</div>
+          <div class="detail-value large">${totalWithAddonsDisplay}</div>
+        </div>
         <div class="detail-item">
           <div class="detail-label">Confirmation ID</div>
           <div class="detail-value">#${lead.id}</div>
@@ -263,6 +320,8 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
         <p>📧 A confirmation email has been sent to your email address. Chef ${lead.chefName || ''} will be in touch soon with event details.</p>
       </div>
     </div>
+    
+    ${addonsHtml}
     
     <div class="next-steps">
       <h3 class="next-steps-title">📋 What Happens Next</h3>

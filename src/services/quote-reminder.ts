@@ -1,6 +1,6 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { db, schema } from '../db/index.js';
-import { eq, and, isNull, gt } from 'drizzle-orm';
+import { eq, and, isNull, lt } from 'drizzle-orm';
 import { Resend } from 'resend';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
@@ -191,14 +191,14 @@ export function stopQuoteReminderScheduler(): void {
 export async function processQuoteReminders(): Promise<void> {
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-  // Find leads: 'new' status (diner hasn't responded), quote sent MORE than 48h ago, no reminder sent yet
+  // Find leads: 'responded' status (quote sent, diner hasn't converted), quote sent MORE than 48h ago, no reminder sent yet
   const leadsToRemind = await db
     .select()
     .from(schema.leads)
     .where(
       and(
-        eq(schema.leads.status, 'new'),
-        gt(schema.leads.quoteSentAt, fortyEightHoursAgo),
+        eq(schema.leads.status, 'responded'),
+        lt(schema.leads.quoteSentAt, fortyEightHoursAgo),
         isNull(schema.leads.quoteReminderSentAt)
       )
     )

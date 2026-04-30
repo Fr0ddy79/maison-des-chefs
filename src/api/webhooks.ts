@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import Stripe from 'stripe';
 import { db } from '../db/index.js';
-import { leads } from '../db/schema.js';
+import { leads, bookings, services } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
@@ -55,25 +55,67 @@ export default async function webhookRoutes(server: FastifyInstance) {
           break;
         }
 
-        // Update lead status to converted
-        const lead = db.select().from(leads).where(eq(leads.id, parseInt(leadId))).get();
-        if (lead) {
-          // Generate referral code on first booking conversion (MAI-823)
-          let referralCode = lead.referralCode;
-          if (!referralCode) {
-            referralCode = generateReferralCode();
-          }
-
-          db.update(leads)
-            .set({
-              status: 'converted',
-              referralCode,
-            })
-            .where(eq(leads.id, parseInt(leadId)))
-            .run();
-
-          console.log(`Lead ${leadId} converted: status updated to converted, referralCode: ${referralCode}`);
+        const parsedLeadId = parseInt(leadId);
+        if (isNaN(parsedLeadId)) {
+          console.error('Invalid leadId in checkout session metadata:', leadId);
+          break;
         }
+
+        // Fetch full lead details first
+        const lead = db.select({
+          id: leads.id,
+          serviceId: leads.serviceId,
+          chefId: leads.chefId,
+          clientName: leads.clientName,
+          email: leads.email,
+          phone: leads.phone,
+          eventDate: leads.eventDate,
+          guestCount: leads.guestCount,
+          quoteAmount: leads.quoteAmount,
+          referralCode: leads.referralCode,
+        })
+          .from(leads)
+          .where(eq(leads.id, parsedLeadId))
+          .get();
+
+        if (!lead) {
+          console.error(`Lead ${leadId} not found`);
+          break;
+        }
+
+        // Generate referral code on first booking conversion (MAI-823)
+        let referralCode = lead.referralCode;
+        if (!referralCode) {
+          referralCode = generateReferralCode();
+        }
+
+        // Update lead status to converted
+        db.update(leads)
+          .set({
+            status: 'converted',
+            referralCode,
+          })
+          .where(eq(leads.id, parsedLeadId))
+          .run();
+
+        // Create booking record so diner can see it in "My Bookings"
+        const now = new Date();
+        const totalPrice = lead.quoteAmount || 0;
+
+        db.insert(bookings).values({
+          serviceId: lead.serviceId,
+          chefId: lead.chefId,
+          dinerId: null, // diner may not be a logged-in user; link via email/guestEmail instead
+          guestEmail: lead.email || null,
+          eventDate: lead.eventDate || '',
+          guestCount: lead.guestCount || 0,
+          totalPrice,
+          status: 'confirmed',
+          notes: `Converted from lead ${lead.id}`,
+          createdAt: now,
+        }).run();
+
+        console.log(`Lead ${leadId} converted: status updated and booking created`);
         break;
       }
 

@@ -206,10 +206,8 @@ let registeredTask: ScheduledTask | null = null;
 /**
  * Start the stale lead re-engagement scheduler.
  * Runs daily at 9:00 AM to find leads where:
- *   - status = 'new'
- *   - createdAt < NOW() - 48 hours
- *   - firstChefActionAt IS NULL (chef has not responded)
- *   - inquiryConfirmSentAt IS NOT NULL (confirmation was sent)
+ *   - status = 'responded' (chef sent quote, diner hasn't converted)
+ *   - quoteSentAt < NOW() - 48 hours
  *   - staleLeadReengagementSentAt IS NULL (not already sent)
  */
 export function startStaleLeadReEngagementScheduler(): void {
@@ -245,25 +243,22 @@ export function stopStaleLeadReEngagementScheduler(): void {
 /**
  * Process stale leads and send re-engagement emails.
  * Finds leads where:
- *   - status = 'new'
- *   - createdAt < NOW() - 48 hours
- *   - firstChefActionAt IS NULL (chef has not responded)
+ *   - status = 'responded' (chef sent quote, diner hasn't converted)
+ *   - quoteSentAt < NOW() - 48 hours (stale after 48h since quote)
  *   - inquiryConfirmSentAt IS NOT NULL (confirmation was sent)
  *   - staleLeadReengagementSentAt IS NULL (not already sent)
  */
 export async function processStaleLeadReEngagement(): Promise<void> {
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-  // Check if staleLeadReengagementSentAt column exists, if not use inquiryConfirmSentAt as proxy
-  // (this is for idempotency - we don't want to send multiple emails)
+  // Find leads: 'responded' status (quote sent, diner hasn't converted), quote sent MORE than 48h ago, no re-engagement sent yet
   const leadsToEngage = await db
     .select()
     .from(schema.leads)
     .where(
       and(
-        eq(schema.leads.status, 'new'),
-        lt(schema.leads.createdAt, fortyEightHoursAgo),
-        isNull(schema.leads.firstChefActionAt),
+        eq(schema.leads.status, 'responded'),
+        lt(schema.leads.quoteSentAt, fortyEightHoursAgo),
         isNull(schema.leads.staleLeadReengagementSentAt)
       )
     )

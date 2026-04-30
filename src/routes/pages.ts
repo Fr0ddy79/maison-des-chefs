@@ -765,6 +765,16 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     .booking-card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); height: fit-content; position: sticky; top: 80px; }
     .booking-card .price { font-size: 2rem; font-weight: 700; color: #2c3e50; margin-bottom: 0.5rem; }
     .booking-card .per-person { color: #888; font-size: 0.95rem; margin-bottom: 1.5rem; }
+    .guest-selector { margin-bottom: 1rem; }
+    .guest-selector-label { font-size: 0.9rem; color: #555; margin-bottom: 0.5rem; font-weight: 500; }
+    .guest-selector-controls { display: flex; align-items: center; gap: 0.75rem; }
+    .guest-btn { width: 36px; height: 36px; border: 2px solid #e0e0e0; background: white; border-radius: 50%; font-size: 1.2rem; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; color: #333; }
+    .guest-btn:hover { border-color: #c9a227; background: #fefcf5; }
+    .guest-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .guest-count-display { font-size: 1.3rem; font-weight: 700; color: #2c3e50; min-width: 40px; text-align: center; }
+    .price-calculator { background: #f8f9fa; border-radius: 8px; padding: 1rem; margin-top: 0.75rem; }
+    .price-line { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-size: 0.9rem; color: #555; }
+    .price-line:last-child { margin-bottom: 0; padding-top: 0.5rem; border-top: 1px solid #e0e0e0; font-weight: 700; font-size: 1.1rem; color: #2c3e50; }
     footer { background: #1a1a1a; color: white; padding: 3rem 2rem; text-align: center; margin-top: 4rem; }
     footer .logo { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; }
     footer p { color: rgba(255,255,255,0.7); }
@@ -835,6 +845,25 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       <div class="price">${service.pricePerPerson && service.pricePerPerson > 0 ? '$' + service.pricePerPerson : 'Price'}</div>
       <div class="per-person">${service.pricePerPerson && service.pricePerPerson > 0 ? 'per person' : 'upon request'}</div>
       <p style="color: #666; margin-bottom: 1rem;">${service.minGuests}-${service.maxGuests} guests</p>
+      ${service.pricePerPerson && service.pricePerPerson > 0 ? `
+      <div class="guest-selector">
+        <div class="guest-selector-label">How many guests?</div>
+        <div class="guest-selector-controls">
+          <button type="button" id="btn-decrease" class="guest-btn" aria-label="Decrease guests">−</button>
+          <span id="guest-count" class="guest-count-display">${Math.min(Math.max(service.minGuests, 4), service.maxGuests)}</span>
+          <button type="button" id="btn-increase" class="guest-btn" aria-label="Increase guests">+</button>
+        </div>
+        <div class="price-calculator">
+          <div class="price-line">
+            <span id="guest-multiple">4 guests × $${service.pricePerPerson}/person</span>
+            <span id="total-price">$${(Math.min(Math.max(service.minGuests, 4), service.maxGuests) * service.pricePerPerson).toLocaleString()}</span>
+          </div>
+          <div id="min-notice" class="price-line" style="display:none;">
+            <span id="min-notice-text"></span>
+          </div>
+        </div>
+      </div>`
+      : ''}
       ${urgencyLine}
       ${demandBadge}
       <a href="/book/${service.id}" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
@@ -846,6 +875,46 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     <p>Montreal's premier private chef marketplace.</p>
     <p>&copy; 2024 Maison des Chefs. All rights reserved.</p>
   </footer>
+  <script>
+    (function() {
+      const minGuests = ${service.minGuests};
+      const maxGuests = ${service.maxGuests};
+      const pricePerPerson = ${service.pricePerPerson || 0};
+      const defaultGuests = Math.min(Math.max(minGuests, 4), maxGuests);
+      let currentGuests = defaultGuests;
+
+      function updateDisplay() {
+        document.getElementById('guest-count').textContent = currentGuests;
+        document.getElementById('btn-decrease').disabled = currentGuests <= minGuests;
+        document.getElementById('btn-increase').disabled = currentGuests >= maxGuests;
+        const total = currentGuests * pricePerPerson;
+        document.getElementById('total-price').textContent = '$' + total.toLocaleString();
+        document.getElementById('guest-multiple').textContent = currentGuests + ' guest' + (currentGuests !== 1 ? 's' : '') + ' × $' + pricePerPerson + '/person';
+        document.getElementById('min-notice').style.display = currentGuests < minGuests ? 'block' : 'none';
+        document.getElementById('min-notice-text').textContent = 'Minimum ' + minGuests + ' guest' + (minGuests !== 1 ? 's' : '') + ' required';
+      }
+
+      function decreaseGuests() {
+        if (currentGuests > minGuests) {
+          currentGuests--;
+          updateDisplay();
+        }
+      }
+
+      function increaseGuests() {
+        if (currentGuests < maxGuests) {
+          currentGuests++;
+          updateDisplay();
+        }
+      }
+
+      window.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('btn-decrease').addEventListener('click', decreaseGuests);
+        document.getElementById('btn-increase').addEventListener('click', increaseGuests);
+        updateDisplay();
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
