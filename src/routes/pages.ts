@@ -866,7 +866,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       : ''}
       ${urgencyLine}
       ${demandBadge}
-      <a href="/book/${service.id}" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
+      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
     </div>
   </section>
   
@@ -1094,6 +1094,19 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
               <option value="other">Other</option>
             </select>
           </div>
+          <div class="search-field">
+            <label for="search-cuisine">Cuisine preference</label>
+            <select id="search-cuisine" name="cuisine">
+              <option value="">All Cuisines</option>
+              <option value="French">French</option>
+              <option value="Italian">Italian</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Mexican">Mexican</option>
+              <option value="Mediterranean">Mediterranean</option>
+              <option value="Latin American">Latin American</option>
+              <option value="French Fusion">French Fusion</option>
+            </select>
+          </div>
           <button type="submit" class="search-submit">Search Chefs</button>
         </form>
       </div>
@@ -1190,6 +1203,17 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     </div>
     <p style="margin-top:1.5rem;">&copy; 2024 Maison des Chefs. All rights reserved.</p>
   </footer>
+  <script>
+    document.querySelector('.hero-search-form').addEventListener('submit', function(e) {
+      const formData = new FormData(this);
+      console.log('[EVENT] homepage_search_submitted', {
+        cuisine: formData.get('cuisine'),
+        guests: formData.get('guests'),
+        date: formData.get('date'),
+        eventType: formData.get('type')
+      });
+    });
+  </script>
 </body>
 </html>`;
 }

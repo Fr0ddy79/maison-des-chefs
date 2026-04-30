@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { services, users, chefProfiles, bookings } from '../db/schema.js';
 import { eq, gte, lte, sql, and } from 'drizzle-orm';
 
-export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string): Promise<string> {
+export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number): Promise<string> {
   // Simple query without complex joins to avoid drizzle issues
   const serviceBase = db.select({
     id: services.id,
