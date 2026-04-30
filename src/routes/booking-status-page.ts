@@ -449,6 +449,28 @@ function buildBookingStatusPage(lead: any, token: string): string {
     .share-icon {
       font-size: 1.1rem;
     }
+
+    /* MAI-881: Book Again CTA styles */
+    .book-again-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .book-again-card h3 { margin: 0 0 8px 0; font-size: 1.25rem; }
+    .book-again-card p { margin: 0 0 16px 0; opacity: 0.9; }
+    .book-again-card .btn {
+      background: white;
+      color: #667eea;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .book-again-card .btn:hover { background: #f0f0f0; }
   </style>
 </head>
 <body>
@@ -535,6 +557,16 @@ function buildBookingStatusPage(lead: any, token: string): string {
     </div>
     
     ${referralCtaHtml}
+
+    ${isConverted ? `
+    <div class="book-again-card">
+      <h3>Ready for your next event?</h3>
+      <p>Book Chef ${lead.chefName} again for your next gathering.</p>
+      <a href="/services/chef/${lead.chefId}" class="btn" onclick="console.log('Book Again clicked for chef:', '${lead.chefId}', '| Chef:', '${lead.chefName}');">
+        Book Chef ${lead.chefName} Again →
+      </a>
+    </div>
+    ` : ''}
     
     <div class="help-section">
       <p>Questions about your booking?</p>
