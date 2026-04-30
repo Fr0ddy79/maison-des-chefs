@@ -117,8 +117,12 @@ server.get('/book/:serviceId', async (request, reply) => {
   const dinerEmail = cookies?.diner_email || '';
   const dinerName = cookies?.diner_name || '';
   const dinerPhone = cookies?.diner_phone || '';
+  // MAI-892: Read guests from URL query param
+  const url = new URL(request.url);
+  const prefillGuestsParam = url.searchParams.get('guests');
+  const guestCount = prefillGuestsParam ? parseInt(prefillGuestsParam, 10) : undefined;
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone);
+  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount);
 });
 
 // Homepage route

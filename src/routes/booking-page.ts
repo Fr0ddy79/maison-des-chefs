@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { services, users, chefProfiles, bookings } from '../db/schema.js';
 import { eq, gte, lte, sql, and } from 'drizzle-orm';
 
-export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number): Promise<string> {
+export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: string | null): Promise<string> {
   // Simple query without complex joins to avoid drizzle issues
   const serviceBase = db.select({
     id: services.id,
@@ -46,6 +46,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
   };
 
 
+  const defaultGuests = prefillGuests ? parseInt(prefillGuests, 10) : service.minGuests;
   const cuisineTypes = JSON.parse(service.chefCuisineTypes || '[]');
   const cuisineList = cuisineTypes.join(', ');
   const isReturningDiner = !!dinerEmail;
@@ -146,7 +147,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
               <div class="price-value">$${service.pricePerPerson}/person</div>
               <div class="estimated-total">
                 <div class="total-label">Estimated Total</div>
-                <div class="total-value" id="estimatedTotal">$${(service.pricePerPerson * service.minGuests).toLocaleString()}</div>
+                <div class="total-value" id="estimatedTotal">$${((service.pricePerPerson ?? 0) * defaultGuests).toLocaleString()}</div>
               </div>
             </div>`
           : `<div class="price-callout">
@@ -171,9 +172,9 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             </div>
             <div class="form-group">
               <label for="guestCount">Number of Guests <span class="required">*</span></label>
-              <input type="number" id="guestCount" name="guestCount" required min="${service.minGuests}" max="${service.maxGuests}" value="${service.minGuests}">
+              <input type="number" id="guestCount" name="guestCount" required min="${service.minGuests}" max="${service.maxGuests}" value="${defaultGuests}">
               ${service.pricePerPerson && service.pricePerPerson > 0
-                ? `<div class="estimated-total"><div class="total-label">Estimated Total</div><div class="total-value" id="estimatedTotalInline">$${(service.pricePerPerson * service.minGuests).toLocaleString()}</div></div>`
+                ? `<div class="estimated-total"><div class="total-label">Estimated Total</div><div class="total-value" id="estimatedTotalInline">$${((service.pricePerPerson ?? 0) * defaultGuests).toLocaleString()}</div></div>`
                 : ''}
             </div>
           </div>

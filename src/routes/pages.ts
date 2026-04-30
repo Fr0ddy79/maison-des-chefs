@@ -892,6 +892,13 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         document.getElementById('guest-multiple').textContent = currentGuests + ' guest' + (currentGuests !== 1 ? 's' : '') + ' × $' + pricePerPerson + '/person';
         document.getElementById('min-notice').style.display = currentGuests < minGuests ? 'block' : 'none';
         document.getElementById('min-notice-text').textContent = 'Minimum ' + minGuests + ' guest' + (minGuests !== 1 ? 's' : '') + ' required';
+        // MAI-892: Update book button href with current guest count
+        const bookBtn = document.getElementById('book-btn');
+        if (bookBtn) {
+          const url = new URL(bookBtn.href);
+          url.searchParams.set('guests', currentGuests);
+          bookBtn.href = url.toString();
+        }
       }
 
       function decreaseGuests() {
