@@ -212,7 +212,8 @@ export default async function pageRoutes(server: FastifyInstance) {
     const url = new URL(request.url, 'http://localhost');
     const useSimplifiedLeadForm = url.searchParams.get('lead_form') === 'simplified';
     const useNewSidebarCta = url.searchParams.get('sidebar') === 'new_cta';
-    const ctaVariant = url.searchParams.get('cta') === 'testB' ? 'testB' : 'control';
+    const ctaParam = url.searchParams.get('cta');
+    const ctaVariant = ['testA', 'testB', 'testC'].includes(ctaParam || '') ? ctaParam : 'control';
 
     const service = db.select({
       id: services.id,
