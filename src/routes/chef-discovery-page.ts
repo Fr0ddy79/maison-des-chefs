@@ -1,4 +1,4 @@
-// Chef Discovery Page — Browse/search chefs (MAI-849)
+// Chef Discovery Page - Browse/search chefs (MAI-849)
 
 import { db } from '../db/index.js';
 import { users, chefProfiles, services, leads } from '../db/schema.js';
@@ -102,9 +102,13 @@ export default function buildChefDiscoveryPage(): string {
   .sort-select { padding: 0.5rem 1rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; background: white; cursor: pointer; }
 
   .chef-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
-  .chef-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
-  .chef-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+  .chef-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s; cursor: pointer; position: relative; }
+  .chef-card.selected { box-shadow: 0 0 0 3px #c9a227, 0 8px 24px rgba(0,0,0,0.15); }
+  .chef-card.disabled { opacity: 0.6; pointer-events: none; }
   .chef-card-img { width: 100%; height: 200px; object-fit: cover; }
+  .chef-card-checkbox { position: absolute; top: 12px; left: 12px; width: 24px; height: 24px; background: white; border: 2px solid #ddd; border-radius: 50%; display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 10; }
+  .chef-card.selected .chef-card-checkbox { background: #c9a227; border-color: #c9a227; display: flex; }
+  .chef-card.selected .chef-card-checkbox::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; }
   .chef-card-body { padding: 1.25rem; }
   .chef-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
   .chef-name { font-size: 1.2rem; font-weight: 700; color: #2c3e50; }
@@ -127,6 +131,42 @@ export default function buildChefDiscoveryPage(): string {
   footer { background: #1a1a1a; color: white; padding: 2rem; text-align: center; margin-top: 4rem; }
   footer .logo { font-size: 1.3rem; font-weight: bold; margin-bottom: 0.5rem; }
   footer p { opacity: 0.7; font-size: 0.85rem; }
+
+  .inquiry-floating-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #2c3e50; color: white; padding: 1rem 2rem; display: none; align-items: center; justify-content: space-between; z-index: 200; box-shadow: 0 -4px 16px rgba(0,0,0,0.2); }
+  .inquiry-floating-bar.visible { display: flex; }
+  .inquiry-bar-info { display: flex; align-items: center; gap: 0.75rem; font-size: 1rem; }
+  .inquiry-bar-count { background: #c9a227; color: white; padding: 0.2rem 0.7rem; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
+  .inquiry-bar-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  .inquiry-bar-btn:hover { background: #b8922a; }
+  .inquiry-bar-btn:disabled { background: #888; cursor: not-allowed; }
+
+  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 300; }
+  .modal-overlay.visible { display: flex; }
+  .modal { background: white; border-radius: 12px; max-width: 560px; width: 90%; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h2 { font-size: 1.3rem; color: #2c3e50; margin: 0; }
+  .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+  .modal-close:hover { background: #f0f0f0; color: #333; }
+  .modal-body { padding: 2rem; }
+  .modal-chefs-list { background: #f8f9fa; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; max-height: 160px; overflow-y: auto; }
+  .modal-chef-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; font-size: 0.95rem; color: #333; }
+  .modal-chef-item:not(:last-child) { border-bottom: 1px solid #eee; }
+  .modal-chef-item .chef-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+  .modal-form-group { margin-bottom: 1.25rem; }
+  .modal-form-group label { display: block; font-weight: 500; color: #555; margin-bottom: 0.4rem; font-size: 0.95rem; }
+  .modal-form-group label .required { color: #e53935; }
+  .modal-form-group input, .modal-form-group textarea { width: 100%; padding: 0.75rem 1rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; font-family: inherit; transition: border-color 0.2s; box-sizing: border-box; }
+  .modal-form-group input:focus, .modal-form-group textarea:focus { outline: none; border-color: #c9a227; }
+  .modal-form-group textarea { min-height: 80px; resize: vertical; }
+  .modal-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .modal-submit-btn { width: 100%; background: #c9a227; color: white; border: none; padding: 1rem; border-radius: 6px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 0.5rem; }
+  .modal-submit-btn:hover { background: #b8922a; }
+  .modal-submit-btn:disabled { background: #ccc; cursor: not-allowed; }
+  .modal-success { text-align: center; padding: 2rem; }
+  .modal-success .success-icon { font-size: 3rem; margin-bottom: 1rem; }
+  .modal-success h3 { color: #2e7d32; margin-bottom: 0.5rem; font-size: 1.3rem; }
+  .modal-success p { color: #666; margin-bottom: 1.5rem; }
+  .modal-success .chef-list-summary { text-align: left; background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0; font-size: 0.95rem; color: #555; }
 
   @media (max-width: 1100px) { .chef-grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 768px) {
@@ -187,7 +227,7 @@ export default function buildChefDiscoveryPage(): string {
       <label>Price Range ($/person)</label>
       <div class="price-range">
         <input type="number" id="minPrice" placeholder="Min" min="0" onchange="applyFilters()">
-        <span>–</span>
+        <span>-</span>
         <input type="number" id="maxPrice" placeholder="Max" min="0" onchange="applyFilters()">
       </div>
     </div>
@@ -215,6 +255,58 @@ export default function buildChefDiscoveryPage(): string {
   <div class="logo">Maison des Chefs</div>
   <p>&copy; 2026 Maison des Chefs. All rights reserved.</p>
 </footer>
+
+<div class="inquiry-floating-bar" id="inquiryFloatingBar">
+  <div class="inquiry-bar-info">
+    <span class="inquiry-bar-count" id="selectedChefCount">0</span>
+    <span>chef<span id="pluralS">s</span> selected</span>
+  </div>
+  <button class="inquiry-bar-btn" id="openInquiryBtn" onclick="openInquiryModal()">Send Inquiry</button>
+</div>
+
+<div class="modal-overlay" id="inquiryModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Send Inquiry</h2>
+      <button class="modal-close" onclick="closeInquiryModal()">×</button>
+    </div>
+    <div class="modal-body" id="inquiryModalBody">
+      <div class="modal-chefs-list" id="modalChefsList"></div>
+      <form id="multiInquiryForm">
+        <input type="hidden" id="selectedServiceIds" name="serviceIds" value="[]">
+        <div class="modal-form-row">
+          <div class="modal-form-group">
+            <label for="modalClientName">Your Name <span class="required">*</span></label>
+            <input type="text" id="modalClientName" name="clientName" required placeholder="Full name">
+          </div>
+          <div class="modal-form-group">
+            <label for="modalEmail">Email <span class="required">*</span></label>
+            <input type="email" id="modalEmail" name="email" required placeholder="you@example.com">
+          </div>
+        </div>
+        <div class="modal-form-row">
+          <div class="modal-form-group">
+            <label for="modalPhone">Phone</label>
+            <input type="tel" id="modalPhone" name="phone" placeholder="(555) 123-4567">
+          </div>
+          <div class="modal-form-group">
+            <label for="modalGuestCount">Guests <span class="required">*</span></label>
+            <input type="number" id="modalGuestCount" name="guestCount" required min="1" value="2">
+          </div>
+        </div>
+        <div class="modal-form-group">
+          <label for="modalEventDate">Preferred Date</label>
+          <input type="date" id="modalEventDate" name="eventDate">
+        </div>
+        <div class="modal-form-group">
+          <label for="modalMessage">Message to Chefs</label>
+          <textarea id="modalMessage" name="message" placeholder="Tell the chefs about your event, dietary requirements, or any special requests..."></textarea>
+        </div>
+        <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Send Inquiry to <span id="modalChefCount">0</span> Chef<span id="modalPluralS">s</span></button>
+      </form>
+    </div>
+  </div>
+</div>
 
 <script>
 var API_BASE = '';
@@ -272,7 +364,11 @@ function renderChefCard(chef) {
     return '<span class="cuisine-badge">' + escapeHtml(c) + '</span>';
   }).join('');
   var verifiedHtml = chef.verified ? '<span class="verified-badge">✓ Verified</span>' : '';
-  return '<div class="chef-card" onclick="location.href=\'/chefs/' + chef.id + '\'">' +
+  var selectedClass = selectedChefIds.has(chef.id) ? ' selected' : '';
+  var firstService = chef.services && chef.services.length > 0 ? chef.services[0] : null;
+  var serviceId = firstService ? firstService.id : '';
+  return '<div class="chef-card' + selectedClass + '" data-chef-id="' + chef.id + '" data-service-id="' + serviceId + '" onclick="handleCardClick(event, ' + chef.id + ', ' + serviceId + ')">' +
+    '<div class="chef-card-checkbox"></div>' +
     '<img class="chef-card-img" src="' + photo + '" alt="' + escapeHtml(chef.name) + '">' +
     '<div class="chef-card-body">' +
       '<div class="chef-card-header">' +
@@ -379,13 +475,184 @@ async function loadChefs() {
   }
 }
 
-// Preload chefs from server-side rendered data
-var PRELOADED_CHEFS = ${chefsJson};
+var selectedChefIds = new Set();
+var selectedServicesMap = {}; // chefId -> serviceId
 
-loadChefs();
-</script>
+function handleCardClick(event, chefId, serviceId) {
+  // Don't toggle if clicking the card link - only toggle on checkbox area
+  // But since checkbox is inside, we use event delegation
+  if (selectedChefIds.has(chefId)) {
+    toggleChefSelection(chefId, false);
+  } else {
+    toggleChefSelection(chefId, true, serviceId);
+  }
+}
+
+function toggleChefSelection(chefId, selected, serviceId) {
+  if (selected) {
+    selectedChefIds.add(chefId);
+    selectedServicesMap[chefId] = serviceId;
+  } else {
+    selectedChefIds.delete(chefId);
+    delete selectedServicesMap[chefId];
+  }
+  updateFloatingBar();
+  updateCardStates();
+}
+
+function updateFloatingBar() {
+  var count = selectedChefIds.size;
+  var bar = document.getElementById('inquiryFloatingBar');
+  var countEl = document.getElementById('selectedChefCount');
+  var pluralS = document.getElementById('pluralS');
+  if (bar) {
+    if (count > 0) {
+      bar.classList.add('visible');
+      if (countEl) countEl.textContent = count;
+      if (pluralS) pluralS.textContent = count > 1 ? 's' : '';
+    } else {
+      bar.classList.remove('visible');
+    }
+  }
+}
+
+function updateCardStates() {
+  var cards = document.querySelectorAll('.chef-card');
+  cards.forEach(function(card) {
+    var chefId = parseInt(card.getAttribute('data-chef-id'), 10);
+    if (selectedChefIds.has(chefId)) {
+      card.classList.add('selected');
+    } else {
+      card.classList.remove('selected');
+    }
+  });
+}
+
+function getCookie(name) {
+  var match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\/^])/g, '\\$1') + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function openInquiryModal() {
+  if (selectedChefIds.size === 0) return;
+
+  // Populate modal chefs list
+  var chefsListEl = document.getElementById('modalChefsList');
+  if (chefsListEl) {
+    var html = '';
+    selectedChefIds.forEach(function(chefId) {
+      var chef = allChefs.find(function(c) { return c.id === chefId; });
+      if (chef) {
+        var photo = getChefPhoto(chef.cuisineTypes || []);
+        html += '<div class="modal-chef-item">' +
+          '<img class="chef-avatar" src="' + photo + '" alt="' + escapeHtml(chef.name) + '">' +
+          '<span>' + escapeHtml(chef.name) + '</span>' +
+        '</div>';
+      }
+    });
+    chefsListEl.innerHTML = html;
+  }
+
+  // Update submit button text
+  var count = selectedChefIds.size;
+  var modalCountEl = document.getElementById('modalChefCount');
+  var modalPluralEl = document.getElementById('modalPluralS');
+  if (modalCountEl) modalCountEl.textContent = count;
+  if (modalPluralEl) modalPluralEl.textContent = count > 1 ? 's' : '';
+
+  // Build serviceIds array (use first service per chef)
+  var serviceIds = [];
+  selectedChefIds.forEach(function(chefId) {
+    var serviceId = selectedServicesMap[chefId];
+    if (serviceId) serviceIds.push(serviceId);
+  });
+  var serviceIdsInput = document.getElementById('selectedServiceIds');
+  if (serviceIdsInput) serviceIdsInput.value = JSON.stringify(serviceIds);
+
+  // Pre-fill from cookies
+  var cookieEmail = getCookie('diner_email');
+  var cookieName = getCookie('diner_name');
+  var cookiePhone = getCookie('diner_phone');
+  var emailEl = document.getElementById('modalEmail');
+  var nameEl = document.getElementById('modalClientName');
+  var phoneEl = document.getElementById('modalPhone');
+  if (emailEl && cookieEmail) emailEl.value = cookieEmail;
+  if (nameEl && cookieName) nameEl.value = cookieName;
+  if (phoneEl && cookiePhone) phoneEl.value = cookiePhone;
+
+  document.getElementById('inquiryModal').classList.add('visible');
+}
+
+function closeInquiryModal() {
+  document.getElementById('inquiryModal').classList.remove('visible');
+}
+
+// Close modal on overlay click
+document.getElementById('inquiryModal').addEventListener('click', function(e) {
+  if (e.target === this) closeInquiryModal();
+});
+
+// Form submission
+document.getElementById('multiInquiryForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var form = e.target;
+  var submitBtn = document.getElementById('modalSubmitBtn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
+
+  var serviceIds = JSON.parse(document.getElementById('selectedServiceIds').value || '[]');
+  var formData = {
+    serviceIds: serviceIds,
+    clientName: form.clientName.value,
+    email: form.email.value,
+    phone: form.phone.value || undefined,
+    eventDate: form.eventDate.value || undefined,
+    guestCount: parseInt(form.guestCount.value, 10),
+    message: form.message.value || undefined,
+  };
+
+  try {
+    var response = await fetch('/api/multi-inquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData),
+    });
+
+    var result = await response.json();
+
+    if (!response.ok) {
+      alert('Error: ' + (result.error || 'Failed to submit inquiry'));
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
+      return;
+    }
+
+    // Show success
+    var modalBody = document.getElementById('inquiryModalBody');
+    var chefsSummaryHtml = Array.from(selectedChefIds).map(function(chefId) {
+      var chef = allChefs.find(function(c) { return c.id === chefId; });
+      return chef ? '<div class="modal-chef-item">' + escapeHtml(chef.name) + '</div>' : '';
+    }).join('');
+
+    modalBody.innerHTML = '<div class="modal-success">' +
+      '<div class="success-icon">&#x2705;</div>' +
+      '<h3>Inquiry Sent!</h3>' +
+      '<p>Your inquiry has been sent to ' + result.leadIds.length + ' chef' + (result.leadIds.length > 1 ? 's' : '') + '.</p>' +
+      '<div class="chef-list-summary">' + chefsSummaryHtml + '</div>' +
+      '<p style="font-size:0.9rem;color:#666">Each chef will respond within 24 hours.</p>' +
+      '<button class="modal-submit-btn" onclick="closeInquiryModal(); location.reload();" style="margin-top:1rem;">Back to Chefs<\/button>' +
+    '<\/div>';
+  } catch (err) {
+    alert('Network error. Please try again.');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
+  }
+});
+<\/script>
 </body>
-</html>`;
+</html>
+`;
 
   return html;
 }
+
