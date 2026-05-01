@@ -514,6 +514,41 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       .dietary-filter-collapsible .dietary-filter-content { padding-top: 0.75rem; }
       .no-results-hint { color: #888; font-size: 0.95rem; margin-top: 0.5rem; }
     }
+    .inquiry-floating-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #2c3e50; color: white; padding: 1rem 2rem; display: none; align-items: center; justify-content: space-between; z-index: 200; box-shadow: 0 -4px 16px rgba(0,0,0,0.2); }
+    .inquiry-floating-bar.visible { display: flex; }
+    .inquiry-bar-info { display: flex; align-items: center; gap: 0.75rem; font-size: 1rem; flex-wrap: wrap; }
+    .inquiry-bar-count { background: #c9a227; color: white; padding: 0.2rem 0.7rem; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
+    .inquiry-bar-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .inquiry-bar-btn:hover { background: #b8922a; }
+    .compare-bar-chef-tag { background: rgba(255,255,255,0.15); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; }
+    .remove-tag { cursor: pointer; opacity: 0.8; font-weight: bold; }
+    .remove-tag:hover { opacity: 1; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 300; }
+    .modal-overlay.visible { display: flex; }
+    .modal { background: white; border-radius: 12px; max-width: 560px; width: 90%; max-height: 90vh; overflow-y: auto; }
+    .modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { font-size: 1.3rem; color: #2c3e50; margin: 0; }
+    .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+    .modal-close:hover { background: #f0f0f0; color: #333; }
+    .modal-body { padding: 2rem; }
+    .modal-chefs-list { background: #f8f9fa; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; max-height: 160px; overflow-y: auto; }
+    .modal-chef-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; font-size: 0.95rem; color: #333; }
+    .modal-chef-item:not(:last-child) { border-bottom: 1px solid #eee; }
+    .modal-form-group { margin-bottom: 1.25rem; }
+    .modal-form-group label { display: block; font-weight: 500; color: #555; margin-bottom: 0.4rem; font-size: 0.95rem; }
+    .modal-form-group label .required { color: #e53935; }
+    .modal-form-group input, .modal-form-group textarea { width: 100%; padding: 0.75rem 1rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; font-family: inherit; transition: border-color 0.2s; box-sizing: border-box; }
+    .modal-form-group input:focus, .modal-form-group textarea:focus { outline: none; border-color: #c9a227; }
+    .modal-form-group textarea { min-height: 80px; resize: vertical; }
+    .modal-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .modal-submit-btn { width: 100%; background: #c9a227; color: white; border: none; padding: 1rem; border-radius: 6px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 0.5rem; }
+    .modal-submit-btn:hover { background: #b8922a; }
+    @media (max-width: 768px) {
+      .inquiry-floating-bar { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
+      .inquiry-bar-info { font-size: 0.9rem; }
+      .inquiry-bar-btn { width: 100%; padding: 0.6rem 1rem; }
+      .modal-form-row { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -653,6 +688,10 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       if (!bar) return;
       const selectedContainer = document.getElementById('compareBarSelected');
       const inquireBtn = document.getElementById('compareInquireBtn');
+      const chefCountEl = document.getElementById('selectedChefCount');
+      const pluralSEl = document.getElementById('pluralS');
+      if (chefCountEl) chefCountEl.textContent = String(selectedChefs.length);
+      if (pluralSEl) pluralSEl.textContent = selectedChefs.length !== 1 ? 's' : '';
       if (selectedContainer) {
         selectedContainer.innerHTML = selectedChefs.map(c => 
           '<span class="compare-bar-chef-tag">' + c.serviceName + ' <span class="remove-tag" onclick="event.preventDefault(); removeChef(' + c.chefId + ')">×</span></span>'
@@ -672,13 +711,166 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     }
     
     function openCompareModal() {
+      // Populate modal chefs list
+      var chefsListEl = document.getElementById('modalChefsList');
+      if (chefsListEl) {
+        var html = '';
+        selectedChefs.forEach(function(c) {
+          html += '<div class="modal-chef-item"><span>' + escapeHtml(c.chefName) + ' - ' + escapeHtml(c.serviceName) + '</span></div>';
+        });
+        chefsListEl.innerHTML = html;
+      }
+      
+      // Update submit button text
+      var count = selectedChefs.length;
+      var modalCountEl = document.getElementById('modalChefCount');
+      var modalPluralEl = document.getElementById('modalPluralS');
+      if (modalCountEl) modalCountEl.textContent = count;
+      if (modalPluralEl) modalPluralEl.textContent = count > 1 ? 's' : '';
+      
+      // Build serviceIds array
+      var serviceIds = selectedChefs.map(function(c) { return c.serviceId; });
+      var serviceIdsInput = document.getElementById('selectedServiceIds');
+      if (serviceIdsInput) serviceIdsInput.value = JSON.stringify(serviceIds);
+      
+      // Pre-fill from cookies
+      var cookieEmail = getCookie('diner_email');
+      var cookieName = getCookie('diner_name');
+      var cookiePhone = getCookie('diner_phone');
+      var emailEl = document.getElementById('modalEmail');
+      var nameEl = document.getElementById('modalClientName');
+      var phoneEl = document.getElementById('modalPhone');
+      if (emailEl && cookieEmail) emailEl.value = cookieEmail;
+      if (nameEl && cookieName) nameEl.value = cookieName;
+      if (phoneEl && cookiePhone) phoneEl.value = cookiePhone;
+      
       document.getElementById('compareModal').style.display = 'flex';
+    }
+    
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
     
     function closeCompareModal() {
       document.getElementById('compareModal').style.display = 'none';
     }
+    
+    // Close modal on overlay click
+    document.getElementById('compareModal').addEventListener('click', function(e) {
+      if (e.target === this) closeCompareModal();
+    });
+    
+    // Form submission
+    document.getElementById('multiInquiryForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var form = e.target;
+      var submitBtn = document.getElementById('modalSubmitBtn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Sending...';
+      
+      var serviceIds = JSON.parse(document.getElementById('selectedServiceIds').value || '[]');
+      var formData = {
+        serviceIds: serviceIds,
+        clientName: form.clientName.value,
+        email: form.email.value,
+        phone: form.phone.value || undefined,
+        eventDate: form.eventDate.value || undefined,
+        guestCount: parseInt(form.guestCount.value, 10),
+        message: form.message.value || undefined,
+      };
+      
+      try {
+        var response = await fetch('/api/multi-inquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+        
+        var result = await response.json();
+        
+        if (!response.ok) {
+          alert('Error: ' + (result.error || 'Failed to submit inquiry'));
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Send Inquiry to ' + selectedChefs.length + ' Chef' + (selectedChefs.length > 1 ? 's' : '');
+          return;
+        }
+        
+        // Show success
+        var modalBody = document.getElementById('inquiryModalBody');
+        var chefsSummaryHtml = selectedChefs.map(function(c) {
+          return '<div class="modal-chef-item">' + escapeHtml(c.chefName) + ' - ' + escapeHtml(c.serviceName) + '</div>';
+        }).join('');
+        
+        modalBody.innerHTML = '<div class="modal-success">' +
+          '<div class="success-icon">&#x2705;</div>' +
+          '<h3>Inquiry Sent!</h3>' +
+          '<p>Your inquiry has been sent to ' + result.leadIds.length + ' chef' + (result.leadIds.length > 1 ? 's' : '') + '.</p>' +
+          '<div class="chef-list-summary">' + chefsSummaryHtml + '</div>' +
+          '<p style="font-size:0.9rem;color:#666">Each chef will respond within 24 hours.</p>' +
+          '<button class="modal-submit-btn" onclick="closeCompareModal(); location.reload();" style="margin-top:1rem;">Back to Services</button>' +
+        '</div>';
+      } catch (err) {
+        alert('Network error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Inquiry to ' + selectedChefs.length + ' Chef' + (selectedChefs.length > 1 ? 's' : '');
+      }
+    });
   </script>
+
+  <div class="inquiry-floating-bar" id="compareBar">
+    <div class="inquiry-bar-info">
+      <span class="inquiry-bar-count" id="selectedChefCount">0</span>
+      <span>chef<span id="pluralS">s</span> selected</span>
+      <div id="compareBarSelected" style="display:inline-flex;gap:0.4rem;margin-left:0.5rem;flex-wrap:wrap;"></div>
+    </div>
+    <button class="inquiry-bar-btn" id="compareInquireBtn" onclick="openCompareModal()" style="display:none;">Inquire Selected</button>
+  </div>
+
+  <div class="modal-overlay" id="compareModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Send Inquiry</h2>
+        <button class="modal-close" onclick="closeCompareModal()">×</button>
+      </div>
+      <div class="modal-body" id="inquiryModalBody">
+        <div class="modal-chefs-list" id="modalChefsList"></div>
+        <form id="multiInquiryForm">
+          <input type="hidden" id="selectedServiceIds" name="serviceIds" value="[]">
+          <div class="modal-form-row">
+            <div class="modal-form-group">
+              <label for="modalClientName">Your Name <span class="required">*</span></label>
+              <input type="text" id="modalClientName" name="clientName" required placeholder="Full name">
+            </div>
+            <div class="modal-form-group">
+              <label for="modalEmail">Email <span class="required">*</span></label>
+              <input type="email" id="modalEmail" name="email" required placeholder="you@example.com">
+            </div>
+          </div>
+          <div class="modal-form-row">
+            <div class="modal-form-group">
+              <label for="modalPhone">Phone</label>
+              <input type="tel" id="modalPhone" name="phone" placeholder="(555) 123-4567">
+            </div>
+            <div class="modal-form-group">
+              <label for="modalGuestCount">Guests <span class="required">*</span></label>
+              <input type="number" id="modalGuestCount" name="guestCount" required min="1" value="2">
+            </div>
+          </div>
+          <div class="modal-form-group">
+            <label for="modalEventDate">Preferred Date</label>
+            <input type="date" id="modalEventDate" name="eventDate">
+          </div>
+          <div class="modal-form-group">
+            <label for="modalMessage">Message to Chefs</label>
+            <textarea id="modalMessage" name="message" placeholder="Tell the chefs about your event, dietary requirements, or any special requests..."></textarea>
+          </div>
+          <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Send Inquiry to <span id="modalChefCount">0</span> Chef<span id="modalPluralS">s</span></button>
+        </form>
+      </div>
+    </div>
+  </div>
 </body>
 </html>`;
 }
