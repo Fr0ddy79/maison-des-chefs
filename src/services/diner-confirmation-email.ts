@@ -20,6 +20,19 @@ interface DinerConfirmationEmailParams {
   bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry
 }
 
+interface MultiChefConfirmationParams {
+  leadIds: number[];
+  dinerName: string;
+  dinerEmail: string;
+  chefs: Array<{
+    chefName: string;
+    serviceName: string;
+    eventDate: string | null;
+    guestCount: number;
+  }>;
+  bookingStatusUrl?: string;
+}
+
 interface QuoteEmailParams {
   leadId: number;
   dinerName: string;
@@ -188,6 +201,162 @@ export async function sendDinerConfirmationEmail(params: DinerConfirmationEmailP
     return true;
   } catch (error) {
     console.error('[DinerConfirmation] Error sending confirmation email:', error);
+    return false;
+  }
+}
+
+/**
+ * Build the multi-chef inquiry confirmation email content.
+ * Sent when a diner submits a single inquiry to multiple chefs at once.
+ */
+function buildMultiChefConfirmationEmail(params: MultiChefConfirmationParams): { subject: string; html: string; text: string } {
+  const bookingStatusLink = params.bookingStatusUrl || `${DASHBOARD_URL}/booking-status`;
+  const servicesLink = SERVICES_URL;
+
+  const chefListHtml = params.chefs
+    .map(
+      (c) => `
+      <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin: 10px 0; border-left: 4px solid #c9a227;">
+        <p style="margin: 0 0 5px; font-weight: 600; color: #2c3e50;">👨‍🍳 ${c.chefName}</p>
+        <p style="margin: 0 0 5px; color: #555; font-size: 14px;">Service: ${c.serviceName}</p>
+        <p style="margin: 0 0 5px; color: #555; font-size: 14px;">Event: ${formatDate(c.eventDate)}</p>
+        <p style="margin: 0; color: #555; font-size: 14px;">Guests: ${c.guestCount}</p>
+      </div>`
+    )
+    .join("");
+
+  const chefListText = params.chefs
+    .map((c) => `• ${c.chefName} - ${c.serviceName} (${c.guestCount} guests, ${formatDate(c.eventDate)})`)
+    .join("\n");
+
+  const subject = `Your inquiry is sent to ${params.chefs.length} chef${params.chefs.length > 1 ? "s" : ""}! 🍽️`;
+
+  return {
+    subject,
+    html: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your multi-chef inquiry</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="text-align: center; padding: 20px 0; border-bottom: 2px solid #c9a227;">
+    <h1 style="color: #2c3e50; margin: 0;">🍽️ Maison des Chefs</h1>
+  </div>
+  
+  <div style="padding: 30px 0;">
+    <h2 style="color: #2c3e50;">Hi ${params.dinerName},</h2>
+    
+    <p style="font-size: 16px; color: #555;">Your inquiry has been sent to <strong>${params.chefs.length} chef${params.chefs.length > 1 ? "s" : ""}</strong>! 🎉</p>
+    
+    <div style="background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+      <p style="margin: 0; font-size: 16px; color: #2e7d32;">✓ Inquiry sent to ${params.chefs.length} chef${params.chefs.length > 1 ? "s" : ""}</p>
+    </div>
+    
+    <h3 style="color: #2c3e50; margin-top: 25px;">Chefs Contacted</h3>
+    ${chefListHtml}
+    
+    <h3 style="color: #2c3e50; margin-top: 25px;">What happens next:</h3>
+    <ol style="color: #555; line-height: 1.8;">
+      <li>Each chef will review your request and respond within <strong>24 hours</strong></li>
+      <li>You'll receive an email when any chef responds</li>
+      <li><strong>Track your booking status</strong> → <a href="${bookingStatusLink}" style="color: #c9a227;">View Booking Status</a></li>
+    </ol>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${bookingStatusLink}" style="display: inline-block; background: #c9a227; color: white; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 16px;">Track Your Booking</a>
+    </div>
+    
+    <p style="font-size: 14px; color: #888; text-align: center;">Questions? We're here to help at support@maisondeschefs.com</p>
+  </div>
+  
+  <div style="background: #2c3e50; color: white; padding: 20px; border-radius: 8px; text-align: center;">
+    <p style="margin: 0; font-size: 14px;">— The Maison des Chefs Team</p>
+    <p style="margin: 10px 0 0; font-size: 12px; opacity: 0.8;">© 2024 Maison des Chefs. Montreal's premier private chef marketplace.</p>
+  </div>
+</body>
+</html>`,
+    text: `Hi ${params.dinerName},
+
+Your inquiry has been sent to ${params.chefs.length} chef${params.chefs.length > 1 ? "s" : ""}! 🍽️
+
+CHEFS CONTACTED:
+${chefListText}
+
+What happens next:
+1. Each chef will review your request and respond within 24 hours
+2. You'll receive an email when they respond
+3. Track your booking status → ${bookingStatusLink}
+
+— The Maison des Chefs Team
+
+© 2024 Maison des Chefs`,
+  };
+}
+
+/**
+ * Send the multi-chef confirmation email.
+ * Sends one email listing all selected chefs (not one per chef).
+ * Sets inquiryConfirmSentAt on the first lead.
+ * Returns true on success, false on error.
+ */
+export async function sendMultiChefConfirmationEmail(params: MultiChefConfirmationParams): Promise<boolean> {
+  const { leadIds, dinerEmail } = params;
+
+  if (leadIds.length === 0) {
+    console.error('[MultiChefConfirmation] No lead IDs provided');
+    return false;
+  }
+
+  const firstLeadId = leadIds[0];
+
+  // Idempotency check: only send if inquiry_confirm_sent_at is null on first lead
+  const firstLead = db.select().from(leads).where(eq(leads.id, firstLeadId)).get();
+  if (!firstLead) {
+    console.error(`[MultiChefConfirmation] Lead ${firstLeadId} not found`);
+    return false;
+  }
+
+  if (firstLead.inquiryConfirmSentAt) {
+    console.log(`[MultiChefConfirmation] Email already sent for lead ${firstLeadId}, skipping`);
+    return true;
+  }
+
+  if (!resend) {
+    console.log('[MultiChefConfirmation] Resend not configured, skipping email');
+    db.update(leads).set({ inquiryConfirmSentAt: new Date() }).where(eq(leads.id, firstLeadId)).run();
+    return true;
+  }
+
+  if (RESEND_API_KEY === 're_placeholder') {
+    console.log('[MultiChefConfirmation] RESEND_API_KEY is placeholder, stubbing email send');
+    db.update(leads).set({ inquiryConfirmSentAt: new Date() }).where(eq(leads.id, firstLeadId)).run();
+    return true;
+  }
+
+  try {
+    const email = buildMultiChefConfirmationEmail(params);
+
+    const result = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: dinerEmail,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    });
+
+    if (result.error) {
+      console.error('[MultiChefConfirmation] Failed to send confirmation email:', result.error);
+      return false;
+    }
+
+    // Mark first lead as sent
+    db.update(leads).set({ inquiryConfirmSentAt: new Date() }).where(eq(leads.id, firstLeadId)).run();
+    console.log(`[MultiChefConfirmation] Confirmation email sent for ${leadIds.length} leads (first: ${firstLeadId})`);
+    return true;
+  } catch (error) {
+    console.error('[MultiChefConfirmation] Error sending confirmation email:', error);
     return false;
   }
 }

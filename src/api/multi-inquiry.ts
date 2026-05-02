@@ -28,6 +28,13 @@ function generateAccessToken(): string {
 }
 
 /**
+ * Generate a UUID v4 for linking multi-chef inquiry leads.
+ */
+function generateMultiInquiryId(): string {
+  return crypto.randomUUID();
+}
+
+/**
  * Calculate the expiration date for an access token.
  */
 function calculateTokenExpiry(): Date {
@@ -40,13 +47,16 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
   server.post("/", async (request, reply) => {
     const body = createMultiInquirySchema.parse(request.body);
 
-    // Validate all serviceIds exist and fetch chef info
+    // Validate all serviceIds exist and fetch service info (including chefId, availability, minGuests, maxGuests)
     const serviceRows = db
       .select({
         id: services.id,
         chefId: services.chefId,
         name: services.name,
         pricePerPerson: services.pricePerPerson,
+        available: services.status, // 'draft' or 'published' — only published are available
+        minGuests: services.minGuests,
+        maxGuests: services.maxGuests,
       })
       .from(services)
       .where(inArray(services.id, body.serviceIds))
@@ -62,6 +72,39 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
       });
     }
 
+    // Step 1 — Validate chef diversity: all services must belong to different chefs
+    const chefIdCounts = new Map<number, number>();
+    for (const service of serviceRows) {
+      chefIdCounts.set(service.chefId, (chefIdCounts.get(service.chefId) || 0) + 1);
+    }
+    const duplicateChefEntry = [...chefIdCounts.entries()].find(([, count]) => count > 1);
+    if (duplicateChefEntry) {
+      return reply.status(400).send({
+        error: "Same chef selected multiple times",
+        message: "Please select chefs from different providers",
+      });
+    }
+
+    // Step 2 — Validate service availability: all services must be published (available)
+    const unavailableService = serviceRows.find((s) => s.available !== "published");
+    if (unavailableService) {
+      return reply.status(400).send({
+        error: "Service not available",
+        message: "One or more services are no longer available",
+      });
+    }
+
+    // Step 3 — Validate guest count per service
+    const guestCount = body.guestCount ?? 1;
+    for (const service of serviceRows) {
+      if (guestCount < service.minGuests || guestCount > service.maxGuests) {
+        return reply.status(400).send({
+          error: "Guest count out of range",
+          message: `Guest count must be between ${service.minGuests} and ${service.maxGuests} for ${service.name}`,
+        });
+      }
+    }
+
     // Fetch chef names for all unique chefIds
     const uniqueChefIds = [...new Set(serviceRows.map((s) => s.chefId))];
     const chefRows = db
@@ -71,7 +114,8 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
       .all();
     const chefMap = new Map(chefRows.map((c) => [c.id, c.name]));
 
-    // Generate shared access token for booking status (reused across all leads in this inquiry)
+    // Generate shared multi-inquiry ID and access token
+    const multiInquiryId = generateMultiInquiryId();
     const accessToken = generateAccessToken();
     const accessTokenExpiresAt = calculateTokenExpiry();
     const DASHBOARD_URL = process.env.DASHBOARD_URL || "https://maisondeschefs.com";
@@ -99,6 +143,8 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
           guestCount: body.guestCount,
           message: body.message || null,
           status: "new",
+          inquiryType: "multi",
+          multiInquiryId,
           accessToken, // shared token across all leads in this multi-inquiry
           accessTokenExpiresAt,
         })

@@ -1451,7 +1451,7 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .search-field select { cursor: pointer; }
     .search-submit { background: #c9a227; color: white; border: none; padding: 0 2rem; border-radius: 6px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; align-self: flex-end; min-height: 42px; }
     .search-submit:hover { background: #b8922a; }
-    .search-micro-copy { color: rgba(255,255,255,0.7); font-size: 0.8rem; text-align: center; margin-top: 0.5rem; }
+    .search-micro-copy { color: #666; font-size: 13px; text-align: center; margin-top: 0.5rem; }
 
     .stats-bar { background: white; padding: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 900px; margin: -2rem auto 0; position: relative; z-index: 2; box-shadow: 0 8px 32px rgba(0,0,0,0.12); border-radius: 12px; }
     .stat-item { text-align: center; padding: 1rem; }
@@ -1567,7 +1567,7 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
             </select>
           </div>
           <button type="submit" class="search-submit">Search Chefs</button>
-          <p class="search-micro-copy">✓ Free to search &bull; ✓ No payment required &bull; ✓ Verified chefs</p>
+          <p class="search-micro-copy">No payment required &bull; Chefs respond within 24h &bull; Verified chefs only</p>
         </form>
       </div>
       <div class="hero-trust">

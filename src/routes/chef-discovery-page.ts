@@ -15,6 +15,8 @@ export default function buildChefDiscoveryPage(): string {
     pricePerPerson: chefProfiles.pricePerPerson,
     available: chefProfiles.available,
     verified: chefProfiles.verified,
+    photoUrl: chefProfiles.photoUrl,
+    createdAt: chefProfiles.createdAt,
   })
     .from(chefProfiles)
     .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -126,7 +128,13 @@ export default function buildChefDiscoveryPage(): string {
   @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   .error-state h2 { color: #c0392b; margin-bottom: 0.5rem; }
   .empty-state h2 { color: #2c3e50; margin-bottom: 0.5rem; }
-  .empty-state p { color: #666; }
+  .empty-state p { color: #666; margin-bottom: 1.5rem; }
+  .empty-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem; }
+  .empty-action-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  .empty-action-btn:hover { background: #b8922a; }
+  .empty-action-btn.secondary { background: #6c757d; }
+  .empty-action-btn.secondary:hover { background: #5a6268; }
+  .empty-hint { font-size: 0.9rem; color: #888; margin-bottom: 0; }
 
   footer { background: #1a1a1a; color: white; padding: 2rem; text-align: center; margin-top: 4rem; }
   footer .logo { font-size: 1.3rem; font-weight: bold; margin-bottom: 0.5rem; }
@@ -240,13 +248,22 @@ export default function buildChefDiscoveryPage(): string {
         <option value="price_asc">Price: Low to High</option>
         <option value="price_desc">Price: High to Low</option>
         <option value="response_time">Quickest Response</option>
-        <option value="newest">Newest</option>
+        <option value="newest">Recently Added</option>
+        <option value="best_value">Best Value</option>
       </select>
     </div>
 
     <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading chefs...</p></div>
     <div id="errorState" class="error-state" style="display:none"><h2>Something went wrong</h2><p>Unable to load chefs.</p></div>
-    <div id="emptyState" class="empty-state" style="display:none"><h2>No chefs found</h2><p>Try adjusting your filters.</p></div>
+    <div id="emptyState" class="empty-state" style="display:none">
+      <h2>No chefs found</h2>
+      <p>Try adjusting your filters or browse all chefs.</p>
+      <div class="empty-actions">
+        <button class="empty-action-btn" onclick="resetFilters()">Broaden Filters</button>
+        <button class="empty-action-btn secondary" onclick="clearAllFilters()">View All Chefs</button>
+      </div>
+      <p class="empty-hint">Tip: Our chefs offer a variety of cuisines and dietary options</p>
+    </div>
     <div id="chefGrid" class="chef-grid" style="display:none"></div>
   </main>
 </div>
@@ -356,14 +373,31 @@ function formatResponseTime(avgMs) {
 
 function renderChefCard(chef) {
   var minPrice = getMinPrice(chef);
-  var photo = getChefPhoto(chef.cuisineTypes || []);
+  // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
+  var photo = chef.photoUrl || getChefPhoto(chef.cuisineTypes || []);
   var priceHtml = minPrice != null ? '$' + minPrice.toFixed(0) + '<span>/person</span>' : 'Price on request';
   var responseTime = formatResponseTime(chef.avgResponseMs);
   var responseHtml = responseTime ? '<span class="chef-stat">⚡ ' + responseTime + '</span>' : '';
+  var responseBadge = '';
+  if (responseTime) {
+    var avgMs = chef.avgResponseMs || 0;
+    if (avgMs < 60 * 60 * 1000) {
+      responseBadge = '<span class="response-badge" style="background:#d4edda;color:#155724;">🟢 Responds &lt;1h</span>';
+    } else if (avgMs < 4 * 60 * 60 * 1000) {
+      responseBadge = '<span class="response-badge" style="background:#fff3cd;color:#856404;">🟡 Responds &lt;4h</span>';
+    } else if (avgMs < 24 * 60 * 60 * 1000) {
+      responseBadge = '<span class="response-badge" style="background:#ffe5d0;color:#c55a11;">🟠 Responds &lt;24h</span>';
+    } else {
+      responseBadge = '<span class="response-badge" style="background:#e2e3e5;color:#495057;">⚪ Slow</span>';
+    }
+  } else {
+    responseBadge = '<span class="response-badge" style="background:#e2e3e5;color:#495057;">⚪ New chef</span>';
+  }
   var badges = (chef.cuisineTypes || []).slice(0, 3).map(function(c) {
     return '<span class="cuisine-badge">' + escapeHtml(c) + '</span>';
   }).join('');
   var verifiedHtml = chef.verified ? '<span class="verified-badge">✓ Verified</span>' : '';
+  var responseBadgeHtml = responseBadge;
   var selectedClass = selectedChefIds.has(chef.id) ? ' selected' : '';
   var firstService = chef.services && chef.services.length > 0 ? chef.services[0] : null;
   var serviceId = firstService ? firstService.id : '';
@@ -378,8 +412,23 @@ function renderChefCard(chef) {
       '<div class="cuisine-badges">' + badges + '</div>' +
       '<div class="chef-price">' + priceHtml + '</div>' +
       '<div class="chef-stats">' + responseHtml + '</div>' +
+      '<div class="response-badges" style="margin-top:0.5rem;">' + responseBadgeHtml + '</div>' +
     '</div>' +
   '</div>';
+}
+
+function resetFilters() {
+  document.querySelectorAll('#cuisineFilters input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+  document.querySelectorAll('#dietaryFilters input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+  document.getElementById('minPrice').value = '';
+  document.getElementById('maxPrice').value = '';
+  applyFilters();
+}
+
+function clearAllFilters() {
+  resetFilters();
+  document.getElementById('sortSelect').value = 'price_asc';
+  applyFilters();
 }
 
 function applyFilters() {
@@ -435,6 +484,10 @@ function renderChefs() {
     filtered.sort(function(a, b) { return (getMinPrice(b) || 999999) - (getMinPrice(a) || 999999); });
   } else if (currentFilters.sort === 'response_time') {
     filtered.sort(function(a, b) { return (a.avgResponseMs || 999999999) - (b.avgResponseMs || 999999999); });
+  } else if (currentFilters.sort === 'newest') {
+    filtered.sort(function(a, b) { return ((b.createdAt ? new Date(b.createdAt).getTime() : 0) || 9999999999999999) - ((a.createdAt ? new Date(a.createdAt).getTime() : 0) || 9999999999999999); });
+  } else if (currentFilters.sort === 'best_value') {
+    filtered.sort(function(a, b) { return (getMinPrice(a) || 999999) - (getMinPrice(b) || 999999); });
   }
 
   document.getElementById('countDisplay').textContent = filtered.length;
@@ -543,7 +596,8 @@ function openInquiryModal() {
     selectedChefIds.forEach(function(chefId) {
       var chef = allChefs.find(function(c) { return c.id === chefId; });
       if (chef) {
-        var photo = getChefPhoto(chef.cuisineTypes || []);
+        // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
+        var photo = chef.photoUrl || getChefPhoto(chef.cuisineTypes || []);
         html += '<div class="modal-chef-item">' +
           '<img class="chef-avatar" src="' + photo + '" alt="' + escapeHtml(chef.name) + '">' +
           '<span>' + escapeHtml(chef.name) + '</span>' +

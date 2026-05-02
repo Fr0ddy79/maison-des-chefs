@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { leads, services, users, bookings } from "../db/schema.js";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, inArray } from "drizzle-orm";
 import { sendQuoteEmail } from "../services/diner-confirmation-email.js";
 import crypto from "crypto";
 
@@ -49,6 +49,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       return reply.status(403).send({ error: "Only chefs can access leads" });
     }
 
+    // Fetch leads with competing chef count for multi-inquiry leads
     const allLeads = db
       .select({
         id: leads.id,
@@ -66,6 +67,8 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         chefNote: leads.chefNote,
         hasNote: sql<boolean>`length(${leads.chefNote}) > 0`,
         createdAt: leads.createdAt,
+        inquiryType: leads.inquiryType,
+        multiInquiryId: leads.multiInquiryId,
         serviceName: services.name,
       })
       .from(leads)
@@ -74,7 +77,24 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .orderBy(desc(leads.createdAt))
       .all();
 
-    return allLeads;
+    // Build competingChefCount map from multiInquiryId groups
+    const multiInquiryCounts = new Map<string, number>();
+    for (const lead of allLeads) {
+      if (lead.multiInquiryId) {
+        multiInquiryCounts.set(
+          lead.multiInquiryId,
+          (multiInquiryCounts.get(lead.multiInquiryId) || 0) + 1
+        );
+      }
+    }
+
+    return allLeads.map((lead) => ({
+      ...lead,
+      // AC6: competingChefCount is the count of OTHER leads sharing the same multiInquiryId
+      competingChefCount: lead.multiInquiryId
+        ? (multiInquiryCounts.get(lead.multiInquiryId) || 1) - 1
+        : 0,
+    }));
   });
 
   // GET /api/chef/leads/:leadId — Get lead detail
