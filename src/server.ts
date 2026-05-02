@@ -3,6 +3,8 @@ import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
+import fastifyStatic from '@fastify/static';
+import { join } from 'path';
 import { config } from './config/index.js';
 import { migrate } from './db/migrate.js';
 import { UserPayload } from './types.js';
@@ -21,7 +23,9 @@ import onboardingWizardRoutes from './api/onboarding-wizard.js';
 import dinerPreferencesRoutes from './api/diner-preferences.js';
 import searchRoutes from './api/search.js';
 import inquiryRoutes from './api/inquiry.js';
+import multiInquiryRoutes from './api/multi-inquiry.js';
 import chefLeadsRoutes from './api/chef-leads.js';
+import chefPhotoRoutes from './api/chef-photo.js';
 import analyticsRoutes from './api/analytics.js';
 import pageRoutes from './routes/pages.js';
 import { buildHomePage } from './routes/pages.js';
@@ -36,6 +40,8 @@ import checkoutPageRoutes from './routes/checkout-page.js';
 import checkoutApiRoutes from './api/checkout.js';
 import webhookRoutes from './api/webhooks.js';
 import bookingAddonRoutes from './api/booking-addons.js';
+import reviewRoutes from './api/reviews.js';
+import buildChefProfilePage from './routes/chef-profile-page.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -58,6 +64,16 @@ const server = Fastify({ logger: true });
 await server.register(cors, { origin: true });
 await server.register(jwt, { secret: config.jwt.secret });
 await server.register(cookie);
+await server.register(fastifyStatic, {
+  root: join(process.cwd(), 'public'),
+  prefix: '/',
+});
+// Multipart parser for file uploads
+await server.register(import('@fastify/multipart'), {
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+});
 
 // Auth middleware
 server.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -79,7 +95,9 @@ server.register(onboardingWizardRoutes, { prefix: '/api/onboarding' });
 server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
 server.register(searchRoutes, { prefix: '/api/v1/search' });
 server.register(inquiryRoutes, { prefix: '/api/inquiry' });
+server.register(multiInquiryRoutes, { prefix: '/api/multi-inquiry' });
 server.register(chefLeadsRoutes, { prefix: '/api/chef' });
+server.register(chefPhotoRoutes, { prefix: '/api/chef' }); // MAI-921: Chef photo upload
 server.register(analyticsRoutes, { prefix: '/api/analytics' }); // Public analytics events
 server.register(bookingStatusPageRoutes); // Public booking status page
 server.register(referralTrackingRoutes); // Public referral tracking
@@ -88,11 +106,18 @@ server.register(checkoutRoutes); // Public checkout page
 server.register(checkoutApiRoutes, { prefix: '/api/checkout' }); // Checkout API
 server.register(webhookRoutes, { prefix: '/api/webhooks' }); // Stripe webhooks
 server.register(bookingAddonRoutes, { prefix: '/api/booking' }); // MAI-875: Booking addons
+server.register(reviewRoutes, { prefix: '/api' });
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
   return buildChefLeadsPage();
+});
+
+// Chef profile page (MAI-921)
+server.get('/chef/profile', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefProfilePage();
 });
 
 // Chef discovery page (MAI-849)
@@ -171,6 +196,7 @@ server.get('/', async (request, reply) => {
       location: chefProfiles.location,
       cuisineTypes: chefProfiles.cuisineTypes,
       verified: chefProfiles.verified,
+      photoUrl: chefProfiles.photoUrl,
     })
       .from(services)
       .innerJoin(users, eq(services.chefId, users.id))
