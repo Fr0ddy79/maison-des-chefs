@@ -24,3 +24,17 @@ export function trackStaleLeadReengagementSent(data: {
   }
   // In production, this would send to an analytics service
 }
+
+// MAI-995: CTA click tracking for A/B test (MAI-917/MAI-992)
+export function trackCTAClickEvent(data: {
+  variant: string;
+  serviceId: number;
+  chefId: number;
+  ctaText: string;
+  timestamp: number;
+}): void {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] CTA click:', data);
+  }
+  // TODO: Forward to analytics service
+}

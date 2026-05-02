@@ -1228,7 +1228,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       : ''}
       ${urgencyLine}
       ${demandBadge}
-      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
+      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;" onclick="trackCTAClick(this)" data-variant="${ctaVariant}" data-service-id="${service.id}" data-chef-id="${service.chefId}" data-cta-text="${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}">${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
     </div>
   </section>
   
@@ -1308,6 +1308,18 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
           serviceId: ${service.id},
           timestamp: new Date().toISOString()
         });
+      }
+
+      function trackCTAClick(btn) {
+        // MAI-995: CTA click tracking for A/B test (MAI-917/MAI-992)
+        var data = {
+          variant: btn.getAttribute('data-variant'),
+          serviceId: parseInt(btn.getAttribute('data-service-id') || '0', 10),
+          chefId: parseInt(btn.getAttribute('data-chef-id') || '0', 10),
+          ctaText: btn.getAttribute('data-cta-text') || '',
+          timestamp: Date.now()
+        };
+        console.log('[Analytics] CTA click:', data);
       }
 
       window.addEventListener('DOMContentLoaded', function() {
