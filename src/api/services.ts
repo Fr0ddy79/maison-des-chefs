@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { services, users, chefProfiles, DIETARY_TAGS, DietaryTag } from '../db/schema.js';
-import { eq, or } from 'drizzle-orm';
+import { services, users, chefProfiles, leads, DIETARY_TAGS, DietaryTag } from '../db/schema.js';
+import { eq, and, gte } from 'drizzle-orm';
 
 const createServiceSchema = z.object({
   name: z.string().min(1),
@@ -20,6 +20,7 @@ const updateServiceSchema = z.object({
   minGuests: z.number().min(1).optional(),
   maxGuests: z.number().min(1).optional(),
   dietaryTags: z.array(z.enum(DIETARY_TAGS)).optional(),
+  photos: z.array(z.string().url()).max(6).optional(),
 });
 
 // Validate dietary tags array (returns error if any tag is invalid)
@@ -29,6 +30,89 @@ function validateDietaryTags(tags: string[]): { valid: boolean; invalidTags?: st
     return { valid: false, invalidTags };
   }
   return { valid: true };
+}
+
+// Validate photos array (max 6 URLs, valid URL format)
+function validatePhotos(photos: string[]): { valid: boolean; error?: string } {
+  if (photos.length > 6) {
+    return { valid: false, error: 'Maximum 6 photos allowed' };
+  }
+  const urlPattern = /^https?:\/\/.+/i;
+  const invalidUrls = photos.filter(p => !urlPattern.test(p));
+  if (invalidUrls.length > 0) {
+    return { valid: false, error: 'All photos must be valid URLs starting with http:// or https://' };
+  }
+  return { valid: true };
+}
+
+// Helper to parse service with photos and add chef response time tier
+function parseServicePhotos(service: any) {
+  const responseTimeTier = getChefResponseTimeTier(service.chefId);
+  return {
+    ...service,
+    photos: JSON.parse(service.photos || '[]'),
+    dietaryTags: JSON.parse(service.dietaryTags || '[]'),
+    response_time_tier: responseTimeTier,
+  };
+}
+
+// Response time tier thresholds (in minutes)
+const RESPONSE_TIME_TIERS = {
+  FAST: { maxMinutes: 60, label: 'Responds in <1h', color: 'green' },
+  MEDIUM: { maxMinutes: 240, label: 'Responds in <4h', color: 'yellow' },
+  SLOW: { maxMinutes: 1440, label: 'Responds in <24h', color: 'orange' },
+};
+const MIN_LEADS_FOR_TIER = 3;
+
+interface ResponseTimeTier {
+  tier: 'fast' | 'medium' | 'slow' | 'new_chef';
+  label: string;
+  color: 'green' | 'yellow' | 'orange' | 'gray';
+  avgResponseMinutes: number | null;
+}
+
+function getChefResponseTimeTier(chefId: number): ResponseTimeTier {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  // Get leads from last 30 days with firstResponseAt set
+  const recentLeads = db
+    .select({
+      createdAt: leads.createdAt,
+      firstResponseAt: leads.firstResponseAt,
+    })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.chefId, chefId),
+        gte(leads.createdAt, thirtyDaysAgo),
+      )
+    )
+    .all();
+
+  // Filter to leads with firstResponseAt set
+  const respondedLeads = recentLeads.filter(l => l.firstResponseAt !== null);
+
+  if (respondedLeads.length < MIN_LEADS_FOR_TIER) {
+    return { tier: 'new_chef', label: 'New chef', color: 'gray', avgResponseMinutes: null };
+  }
+
+  // Calculate average response time in minutes
+  let totalMinutes = 0;
+  for (const lead of respondedLeads) {
+    const created = new Date(lead.createdAt).getTime();
+    const responded = new Date(lead.firstResponseAt!).getTime();
+    totalMinutes += (responded - created) / (1000 * 60);
+  }
+  const avgMinutes = Math.round(totalMinutes / respondedLeads.length);
+
+  if (avgMinutes <= RESPONSE_TIME_TIERS.FAST.maxMinutes) {
+    return { tier: 'fast', label: 'Responds in <1h', color: 'green', avgResponseMinutes: avgMinutes };
+  } else if (avgMinutes <= RESPONSE_TIME_TIERS.MEDIUM.maxMinutes) {
+    return { tier: 'medium', label: 'Responds in <4h', color: 'yellow', avgResponseMinutes: avgMinutes };
+  } else {
+    return { tier: 'slow', label: 'Responds in <24h', color: 'orange', avgResponseMinutes: avgMinutes };
+  }
 }
 
 export default async function serviceRoutes(server: FastifyInstance) {
@@ -53,6 +137,7 @@ export default async function serviceRoutes(server: FastifyInstance) {
       minGuests: services.minGuests,
       maxGuests: services.maxGuests,
       dietaryTags: services.dietaryTags,
+      photos: services.photos,
       chefName: users.name,
       chefLocation: chefProfiles.location,
     })
@@ -82,14 +167,15 @@ export default async function serviceRoutes(server: FastifyInstance) {
       }
     }
 
-    return allServices;
+    // Parse photos for each service
+    return allServices.map(parseServicePhotos);
   });
 
   // Get services by chef (public)
   server.get('/chef/:chefId', async (request, reply) => {
     const { chefId } = z.object({ chefId: z.string() }).parse(request.params);
     const chefServices = db.select().from(services).where(eq(services.chefId, parseInt(chefId))).all();
-    return chefServices;
+    return chefServices.map(parseServicePhotos);
   });
 
   // Get service by id (public)
@@ -104,6 +190,7 @@ export default async function serviceRoutes(server: FastifyInstance) {
       minGuests: services.minGuests,
       maxGuests: services.maxGuests,
       dietaryTags: services.dietaryTags,
+      photos: services.photos,
       chefName: users.name,
       chefLocation: chefProfiles.location,
     })
@@ -116,7 +203,7 @@ export default async function serviceRoutes(server: FastifyInstance) {
     if (!service) {
       return reply.status(404).send({ error: 'Service not found' });
     }
-    return service;
+    return parseServicePhotos(service);
   });
 
   // Create service (chef only)
@@ -148,8 +235,9 @@ export default async function serviceRoutes(server: FastifyInstance) {
       minGuests: body.minGuests,
       maxGuests: body.maxGuests,
       dietaryTags: JSON.stringify(body.dietaryTags || []),
+      photos: JSON.stringify([]),
     }).returning().all()[0];
-    return reply.status(201).send(created);
+    return reply.status(201).send(parseServicePhotos(created));
   });
 
   // Update service (chef only)
@@ -184,14 +272,25 @@ export default async function serviceRoutes(server: FastifyInstance) {
       }
     }
 
+    // Validate photos if provided
+    if (body.photos !== undefined) {
+      const validation = validatePhotos(body.photos);
+      if (!validation.valid) {
+        return reply.status(400).send({ error: validation.error });
+      }
+    }
+
     const updateData: any = { ...body };
     if (updateData.dietaryTags !== undefined) {
       updateData.dietaryTags = JSON.stringify(updateData.dietaryTags);
     }
+    if (updateData.photos !== undefined) {
+      updateData.photos = JSON.stringify(updateData.photos);
+    }
 
     db.update(services).set(updateData).where(eq(services.id, parseInt(id))).run();
     const updated = db.select().from(services).where(eq(services.id, parseInt(id))).get();
-    return updated;
+    return parseServicePhotos(updated);
   });
 
   // Delete service (chef only)

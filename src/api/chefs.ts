@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { users, chefProfiles, services } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { users, chefProfiles, services, leads, reviews } from '../db/schema.js';
+import { eq, and, gte, sql } from 'drizzle-orm';
 
 const profileSchema = z.object({
   bio: z.string().optional(),
@@ -11,6 +11,65 @@ const profileSchema = z.object({
   pricePerPerson: z.number().min(0).optional(),
   available: z.boolean().optional(),
 });
+
+// Response time tier thresholds (in minutes)
+const RESPONSE_TIME_TIERS = {
+  FAST: { maxMinutes: 60, label: 'Responds in <1h', color: 'green' },
+  MEDIUM: { maxMinutes: 240, label: 'Responds in <4h', color: 'yellow' },
+  SLOW: { maxMinutes: 1440, label: 'Responds in <24h', color: 'orange' },
+};
+const MIN_LEADS_FOR_TIER = 3;
+
+interface ResponseTimeTier {
+  tier: 'fast' | 'medium' | 'slow' | 'new_chef';
+  label: string;
+  color: 'green' | 'yellow' | 'orange' | 'gray';
+  avgResponseMinutes: number | null;
+}
+
+function calculate_response_time_tier(chefId: number): ResponseTimeTier {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  // Get leads from last 30 days with responded_at (via firstResponseAt)
+  const recentLeads = db
+    .select({
+      createdAt: leads.createdAt,
+      firstResponseAt: leads.firstResponseAt,
+    })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.chefId, chefId),
+        gte(leads.createdAt, thirtyDaysAgo),
+      )
+    )
+    .all();
+
+  // Filter to leads with firstResponseAt set
+  const respondedLeads = recentLeads.filter(l => l.firstResponseAt !== null);
+
+  if (respondedLeads.length < MIN_LEADS_FOR_TIER) {
+    return { tier: 'new_chef', label: 'New chef', color: 'gray', avgResponseMinutes: null };
+  }
+
+  // Calculate average response time in minutes
+  let totalMinutes = 0;
+  for (const lead of respondedLeads) {
+    const created = new Date(lead.createdAt).getTime();
+    const responded = new Date(lead.firstResponseAt!).getTime();
+    totalMinutes += (responded - created) / (1000 * 60);
+  }
+  const avgMinutes = Math.round(totalMinutes / respondedLeads.length);
+
+  if (avgMinutes <= RESPONSE_TIME_TIERS.FAST.maxMinutes) {
+    return { tier: 'fast', label: 'Responds in <1h', color: 'green', avgResponseMinutes: avgMinutes };
+  } else if (avgMinutes <= RESPONSE_TIME_TIERS.MEDIUM.maxMinutes) {
+    return { tier: 'medium', label: 'Responds in <4h', color: 'yellow', avgResponseMinutes: avgMinutes };
+  } else {
+    return { tier: 'slow', label: 'Responds in <24h', color: 'orange', avgResponseMinutes: avgMinutes };
+  }
+}
 
 // Query param schema for preferences pre-fill
 const searchQuerySchema = z.object({
@@ -37,6 +96,7 @@ export default async function chefRoutes(server: FastifyInstance) {
       pricePerPerson: chefProfiles.pricePerPerson,
       available: chefProfiles.available,
       verified: chefProfiles.verified,
+      photoUrl: chefProfiles.photoUrl,
     })
       .from(chefProfiles)
       .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -88,6 +148,7 @@ export default async function chefRoutes(server: FastifyInstance) {
       pricePerPerson: chefProfiles.pricePerPerson,
       available: chefProfiles.available,
       verified: chefProfiles.verified,
+      photoUrl: chefProfiles.photoUrl,
     })
       .from(chefProfiles)
       .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -97,7 +158,24 @@ export default async function chefRoutes(server: FastifyInstance) {
     if (!chef) {
       return reply.status(404).send({ error: 'Chef not found' });
     }
-    return { ...chef, cuisineTypes: JSON.parse(chef.cuisineTypes as string || '[]') };
+    const responseTimeTier = calculate_response_time_tier(chef.id);
+
+    // Get review stats for this chef
+    const reviewStats = db.select({
+      count: sql<number>`count(*)`,
+      avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
+    })
+      .from(reviews)
+      .where(eq(reviews.chefId, chef.id))
+      .get();
+
+    return {
+      ...chef,
+      cuisineTypes: JSON.parse(chef.cuisineTypes as string || '[]'),
+      response_time_tier: responseTimeTier,
+      avgRating: reviewStats ? Math.round((reviewStats.avgRating as number) * 10) / 10 : 0,
+      reviewCount: reviewStats?.count ?? 0,
+    };
   });
 
   // Create/update chef profile (chef only)
@@ -118,7 +196,13 @@ export default async function chefRoutes(server: FastifyInstance) {
         available: body.available ?? existing.available,
       }).where(eq(chefProfiles.userId, userId)).run();
       const updated = db.select().from(chefProfiles).where(eq(chefProfiles.userId, userId)).get();
-      return { ...updated, cuisineTypes: JSON.parse((updated?.cuisineTypes as string) || '[]') };
+      // Also fetch the user's name
+      const user = db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get();
+      return { 
+        ...updated, 
+        name: user?.name || '',
+        cuisineTypes: JSON.parse((updated?.cuisineTypes as string) || '[]') 
+      };
     } else {
       const created = db.insert(chefProfiles).values({
         userId,
@@ -128,7 +212,13 @@ export default async function chefRoutes(server: FastifyInstance) {
         pricePerPerson: body.pricePerPerson ?? 0,
         available: body.available ?? true,
       }).returning().all()[0];
-      return created;
+      // Also fetch the user's name
+      const user = db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get();
+      return { 
+        ...created, 
+        name: user?.name || '',
+        cuisineTypes: JSON.parse((created?.cuisineTypes as string) || '[]') 
+      };
     }
   });
 
@@ -142,6 +232,12 @@ export default async function chefRoutes(server: FastifyInstance) {
     if (!profile) {
       return reply.status(404).send({ error: 'Profile not found' });
     }
-    return { ...profile, cuisineTypes: JSON.parse(profile.cuisineTypes as string || '[]') };
+    // Also fetch the user's name
+    const user = db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get();
+    return { 
+      ...profile, 
+      name: user?.name || '',
+      cuisineTypes: JSON.parse(profile.cuisineTypes as string || '[]') 
+    };
   });
 }
