@@ -3,7 +3,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { services, users, chefProfiles, leads, bookings, DIETARY_TAGS } from '../db/schema.js';
+import { services, users, chefProfiles, leads, bookings, reviews, DIETARY_TAGS } from '../db/schema.js';
 import { eq, gte, lte, sql, and, desc, isNotNull, gte as gteCol } from 'drizzle-orm';
 import { trackServicePageViewEvent } from './analytics.js';
 
@@ -64,6 +64,22 @@ function getChefAvgResponseTime(chefId: number): number | null {
   return (result?.avgMs as number | null) ?? null;
 }
 
+function buildColorCodedResponseBadge(avgResponseMs: number | null): string {
+  if (avgResponseMs === null) {
+    return '<span class="response-badge" style="background:#e2e3e5;color:#495057;">⚪ New chef</span>';
+  }
+  const avgMinutes = Math.round(avgResponseMs / 60000);
+  if (avgMinutes < 60) {
+    return '<span class="response-badge" style="background:#d4edda;color:#155724;">🟢 Responds &lt;1h</span>';
+  } else if (avgMinutes < 240) {
+    return '<span class="response-badge" style="background:#fff3cd;color:#856404;">🟡 Responds &lt;4h</span>';
+  } else if (avgMinutes < 1440) {
+    return '<span class="response-badge" style="background:#ffe5d0;color:#c55a11;">🟠 Responds &lt;24h</span>';
+  } else {
+    return '<span class="response-badge" style="background:#e2e3e5;color:#495057;">⚪ Slow</span>';
+  }
+}
+
 function buildResponseTimeBadge(avgResponseMs: number | null): string {
   if (avgResponseMs === null) {
     return '<span class="trust-badge"><span class="icon">⚡</span><span>Quick responses</span></span>';
@@ -101,6 +117,7 @@ export default async function pageRoutes(server: FastifyInstance) {
       chefCuisineTypes: chefProfiles.cuisineTypes,
       chefVerified: chefProfiles.verified,
       chefPricePerPerson: chefProfiles.pricePerPerson,
+      chefPhotoUrl: chefProfiles.photoUrl,
     })
       .from(services)
       .innerJoin(users, eq(services.chefId, users.id))
@@ -192,15 +209,19 @@ export default async function pageRoutes(server: FastifyInstance) {
       filteredServices.sort((a, b) => ((leadCountMap.get(b.id) as number) || 0) - ((leadCountMap.get(a.id) as number) || 0));
     }
 
-    const servicesWithData = filteredServices.map(s => ({
-      ...s,
-      chefCuisineTypes: JSON.parse(s.chefCuisineTypes || '[]'),
-      dietaryTags: JSON.parse(s.dietaryTags || '[]'),
-      leadCount: leadCountMap.get(s.id) || 0,
-      bookingCount: bookingCountMap.get(s.id) || 0,
-      isTopService: s.id === topServiceId && maxLeadCount > 0,
-      isUnavailableOnDate: (selectedDate && blockedDatesMap.get(s.chefId)?.includes(selectedDate)) || false,
-    }));
+    const servicesWithData = filteredServices.map(s => {
+      const avgResponseMs = getChefAvgResponseTime(s.chefId);
+      return {
+        ...s,
+        chefCuisineTypes: JSON.parse(s.chefCuisineTypes || '[]'),
+        dietaryTags: JSON.parse(s.dietaryTags || '[]'),
+        leadCount: leadCountMap.get(s.id) || 0,
+        bookingCount: bookingCountMap.get(s.id) || 0,
+        isTopService: s.id === topServiceId && maxLeadCount > 0,
+        isUnavailableOnDate: (selectedDate && blockedDatesMap.get(s.chefId)?.includes(selectedDate)) || false,
+        avgResponseMs,
+      };
+    });
 
     reply.header('Content-Type', 'text/html; charset=utf-8');
     return buildServicesPage(servicesWithData, query, CUISINE_TYPES);
@@ -212,8 +233,11 @@ export default async function pageRoutes(server: FastifyInstance) {
     const url = new URL(request.url, 'http://localhost');
     const useSimplifiedLeadForm = url.searchParams.get('lead_form') === 'simplified';
     const useNewSidebarCta = url.searchParams.get('sidebar') === 'new_cta';
+    // CTA A/B Test: detect variant from URL param or sessionStorage
+    // Variants: control, testA (Request Your Date), testB (Request Booking), testC (Check Availability), testD (same as testA)
     const ctaParam = url.searchParams.get('cta');
-    const ctaVariant = ['testA', 'testB', 'testC'].includes(ctaParam || '') ? ctaParam : 'control';
+    const validVariants = ['control', 'testA', 'testB', 'testC', 'testD'];
+    const ctaVariant = validVariants.includes(ctaParam || '') ? ctaParam : 'control';
 
     const service = db.select({
       id: services.id,
@@ -225,12 +249,14 @@ export default async function pageRoutes(server: FastifyInstance) {
       maxGuests: services.maxGuests,
 
       dietaryTags: services.dietaryTags,
+      photos: services.photos,
       createdAt: services.createdAt,
       chefName: users.name,
       chefLocation: chefProfiles.location,
       chefCuisineTypes: chefProfiles.cuisineTypes,
       chefVerified: chefProfiles.verified,
       chefBio: chefProfiles.bio,
+      chefPhotoUrl: chefProfiles.photoUrl,
     })
       .from(services)
       .innerJoin(users, eq(services.chefId, users.id))
@@ -245,7 +271,8 @@ export default async function pageRoutes(server: FastifyInstance) {
 
     const cuisineTypes = JSON.parse(service.chefCuisineTypes || '[]');
     const serviceDietaryTags = JSON.parse(service.dietaryTags || '[]');
-    const serviceWithPhotos = { ...service, photos: [], dietaryTags: serviceDietaryTags };
+    const servicePhotos = JSON.parse(service.photos || '[]');
+    const serviceWithPhotos = { ...service, photos: servicePhotos, dietaryTags: serviceDietaryTags };
 
     trackServicePageViewEvent({
       serviceId: service.id,
@@ -254,7 +281,8 @@ export default async function pageRoutes(server: FastifyInstance) {
       cuisineType: cuisineTypes[0] || '',
     });
 
-    const photo = getChefPhoto(cuisineTypes);
+    // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
+    const photo = service.chefPhotoUrl || getChefPhoto(cuisineTypes);
     const verifiedBadge = service.chefVerified
       ? '<span class="verified-badge-tooltip">✓ Verified Chef<span class="tooltip-text">This chef has been verified by Maison des Chefs</span></span>'
       : '';
@@ -274,25 +302,70 @@ export default async function pageRoutes(server: FastifyInstance) {
       .all();
     const blockedDates = blockedDatesResult.filter(b => b.date).map(b => ({ date: b.date }));
 
-    // Reviews - using bookings as proxy (actual reviews table not available)
+    // Reviews - use real reviews table (MAI-940)
     const ratingResult = db.select({
-      reviewCount: sql `count(*)`,
-      avgRating: sql `coalesce(avg(${bookings.totalPrice}), 0)`,
+      reviewCount: sql<number>`count(*)`,
+      avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
     })
-      .from(bookings)
-      .where(eq(bookings.serviceId, service.id))
+      .from(reviews)
+      .where(eq(reviews.serviceId, service.id))
       .get();
-    const avgMs = ratingResult?.avgRating as number | null;
     const reviewCount = (ratingResult?.reviewCount as number | null) ?? 0;
-    const avgRating = avgMs ?? 0;
+    const avgRating = (ratingResult?.avgRating as number | null) ?? 0;
 
-    // Featured review - not available without reviews table
-    const featuredReview = null;
+    // Featured review (most recent review with a comment)
+    const featuredReviewRow = db.select({
+      id: reviews.id,
+      rating: reviews.rating,
+      comment: reviews.comment,
+      createdAt: reviews.createdAt,
+      dinerName: users.name,
+    })
+      .from(reviews)
+      .innerJoin(users, eq(reviews.dinerId, users.id))
+      .where(and(eq(reviews.serviceId, service.id), sql `${reviews.comment} IS NOT NULL`))
+      .orderBy(sql `${reviews.createdAt} DESC`)
+      .limit(1)
+      .get();
+
+    const featuredReview = featuredReviewRow ? {
+      id: featuredReviewRow.id,
+      rating: featuredReviewRow.rating,
+      comment: featuredReviewRow.comment,
+      createdAt: featuredReviewRow.createdAt,
+      dinerName: featuredReviewRow.dinerName,
+      dinerFirstName: featuredReviewRow.dinerName?.split(' ')[0] ?? 'Guest',
+    } : null;
+
+    // Recent reviews (up to 3, most recent first)
+    const recentReviewsRows = db.select({
+      id: reviews.id,
+      rating: reviews.rating,
+      comment: reviews.comment,
+      createdAt: reviews.createdAt,
+      dinerName: users.name,
+    })
+      .from(reviews)
+      .innerJoin(users, eq(reviews.dinerId, users.id))
+      .where(eq(reviews.serviceId, service.id))
+      .orderBy(sql `${reviews.createdAt} DESC`)
+      .limit(3)
+      .all();
+
+    const recentReviews = recentReviewsRows.map(r => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      createdAt: r.createdAt,
+      dinerName: r.dinerName,
+      dinerFirstName: r.dinerName?.split(' ')[0] ?? 'Guest',
+    }));
 
     const socialProof = {
       reviewCount,
-      avgRating: reviewCount > 0 ? Math.round((avgRating as number) * 10) / 10 : 0,
-      featuredReview: null,
+      avgRating: reviewCount > 0 ? Math.round(avgRating * 10) / 10 : 0,
+      featuredReview,
+      recentReviews,
     };
 
     const avgResponseMs = getChefAvgResponseTime(service.chefId);
@@ -348,7 +421,8 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
 
   const serviceCards = services.length > 0
     ? services.map(service => {
-      const photo = getChefPhoto(service.chefCuisineTypes || []);
+      // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
+      const photo = service.chefPhotoUrl || getChefPhoto(service.chefCuisineTypes || []);
       const cuisineList = (service.chefCuisineTypes || []).slice(0, 3).join(', ');
       const verifiedBadge = service.chefVerified
         ? '<span class="verified-badge-tooltip">✓ Verified<span class="tooltip-text">This chef has been verified by Maison des Chefs</span></span>'
@@ -386,6 +460,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
                 : `<span class="service-price no-price">Price upon request</span>`}
               <span class="service-guests">${service.minGuests}-${service.maxGuests} guests</span>
             </div>
+            <div class="response-badges" style="margin-top:0.5rem;">${buildColorCodedResponseBadge(service.avgResponseMs)}</div>
           </div>
         </a>
         <label class="compare-checkbox-label">
@@ -699,7 +774,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         ).join('');
       }
       if (inquireBtn) {
-        inquireBtn.style.display = selectedChefs.length >= 2 ? 'inline-block' : 'none';
+        inquireBtn.style.display = selectedChefs.length >= 1 ? 'inline-block' : 'none';
       }
       bar.classList.toggle('visible', selectedChefs.length > 0);
     }
@@ -878,11 +953,12 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
 
 function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: string, verifiedBadge: string, blockedDates: { date: string }[], useSimplifiedLeadForm: boolean, useNewSidebarCta: boolean, socialProof: any, ctaVariant: string, responseTimeBadge: string, leadCount: number): string {
   const cuisineList = cuisineTypes.join(', ');
-  const sp = socialProof ?? { reviewCount: 0, avgRating: 0, featuredReview: null };
+  const sp = socialProof ?? { reviewCount: 0, avgRating: 0, featuredReview: null, recentReviews: [] };
   const hasEnoughReviews = sp.reviewCount >= 3;
   const showRating = hasEnoughReviews && sp.avgRating > 0;
   const showTestimonial = sp.featuredReview?.comment != null;
-  const leadFormCtaText = ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testC' ? 'Check Availability' : 'Send Inquiry';
+  const recentReviews = sp.recentReviews ?? [];
+  const leadFormCtaText = ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service';
   
   // Urgency and social proof for booking card
   const leadCountNum = typeof leadCount === 'number' ? leadCount : 0;
@@ -920,6 +996,29 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         return info ? `<span class="dietary-badge-detail">${info.icon} ${info.label}</span>` : '';
       }).join('')
     : '';
+  
+  // Photo gallery: build grid HTML and lightbox
+  const photos = Array.isArray(service.photos) ? service.photos : [];
+  const hasPhotos = photos.length > 0;
+  const photoGridHtml = hasPhotos
+    ? photos.map((photo: string, idx: number) =>
+        `<div class="photo-gallery-item" data-index="${idx}" onclick="openLightbox(${idx})">
+          <img src="${photo}" alt="Dish photo ${idx + 1}" loading="lazy" />
+        </div>`
+      ).join('')
+    : '';
+  const photoSectionHtml = hasPhotos
+    ? `<h2>Dish Photos</h2><div class="photo-gallery">${photoGridHtml}</div>`
+    : `<h2>Dish Photos</h2><p class="no-photos">Dish photos coming soon</p>`;
+  const lightboxHtml = hasPhotos
+    ? `<div id="lightbox" class="lightbox" style="display:none;">
+        <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+        <button class="lightbox-prev" onclick="prevPhoto(event)">&#10094;</button>
+        <button class="lightbox-next" onclick="nextPhoto(event)">&#10095;</button>
+        <img id="lightbox-img" src="" alt="Dish photo" />
+        <div class="lightbox-counter"><span id="lightbox-counter">1 / ${photos.length}</span></div>
+      </div>`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -955,6 +1054,21 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     .detail-value { font-size: 1.1rem; font-weight: 600; color: #2c3e50; }
     .dietary-options-detail { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 2rem; }
     .dietary-badge-detail { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1rem; background: #f0f8e8; color: #2d5a0b; border-radius: 20px; font-size: 0.95rem; font-weight: 500; }
+    .photo-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 2rem; }
+    .photo-gallery-item { cursor: pointer; border-radius: 8px; overflow: hidden; aspect-ratio: 1; background: #f0f0f0; }
+    .photo-gallery-item img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s; }
+    .photo-gallery-item:hover img { transform: scale(1.05); }
+    .no-photos { color: #888; font-style: italic; padding: 1rem 0; }
+    .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .lightbox img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 4px; }
+    .lightbox-close { position: absolute; top: 1rem; right: 1.5rem; background: none; border: none; color: white; font-size: 2.5rem; cursor: pointer; line-height: 1; }
+    .lightbox-prev, .lightbox-next { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.15); border: none; color: white; font-size: 2rem; cursor: pointer; padding: 0.75rem 1rem; border-radius: 4px; }
+    .lightbox-prev { left: 1rem; }
+    .lightbox-next { right: 1rem; }
+    .lightbox-counter { position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%); color: white; font-size: 1rem; background: rgba(0,0,0,0.5); padding: 0.4rem 0.8rem; border-radius: 20px; }
+    @media (max-width: 768px) {
+      .photo-gallery { grid-template-columns: repeat(2, 1fr); }
+    }
     .booking-card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); height: fit-content; position: sticky; top: 80px; }
     .booking-card .price { font-size: 2rem; font-weight: 700; color: #2c3e50; margin-bottom: 0.5rem; }
     .booking-card .per-person { color: #888; font-size: 0.95rem; margin-bottom: 1.5rem; }
@@ -975,6 +1089,23 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       .content { grid-template-columns: 1fr; }
       .booking-card { position: static; }
     }
+    .reviews-section { margin-top: 2rem; }
+    .reviews-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem; }
+    .reviews-title { font-size: 1.3rem; color: #2c3e50; margin: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .reviews-summary { display: flex; align-items: center; gap: 1rem; }
+    .avg-rating { display: flex; align-items: center; gap: 0.4rem; font-size: 1.1rem; font-weight: 700; color: #2c3e50; }
+    .avg-rating .star { color: #c9a227; font-size: 1.2rem; }
+    .review-count { color: #666; font-size: 0.95rem; }
+    .review-card { background: white; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,0.05); border: 1px solid #eee; }
+    .review-card:last-child { margin-bottom: 0; }
+    .review-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+    .review-author { font-weight: 600; color: #2c3e50; }
+    .review-rating { color: #c9a227; letter-spacing: 0.1rem; }
+    .review-date { color: #888; font-size: 0.85rem; }
+    .review-comment { color: #555; line-height: 1.6; }
+    .featured-review { background: linear-gradient(135deg, #fefcf5 0%, #f9f3e8 100%); border: 2px solid #c9a227; }
+    .featured-label { display: inline-block; background: #c9a227; color: white; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05rem; }
+    .no-reviews { text-align: center; padding: 2rem; color: #888; font-style: italic; }
   </style>
 </head>
 <body>
@@ -1030,8 +1161,46 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       <div class="dietary-options-detail">${dietaryBadgesHtml}</div>
       ` : ''}
       
+      ${photoSectionHtml}
+      
       <h2>About the Chef</h2>
       <p class="description">${service.chefBio || 'A talented private chef ready to create an unforgettable dining experience for you.'}</p>
+      
+      ${sp.reviewCount > 0 ? `
+      <div class="reviews-section">
+        <div class="reviews-header">
+          <h2 class="reviews-title">Reviews</h2>
+          <div class="reviews-summary">
+            ${showRating ? `<div class="avg-rating"><span class="star">★</span> ${sp.avgRating}</div>` : ''}
+            <span class="review-count">${sp.reviewCount} review${sp.reviewCount !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        ${sp.featuredReview ? `
+        <div class="review-card featured-review">
+          <span class="featured-label">Featured</span>
+          <div class="review-header">
+            <span class="review-author">${sp.featuredReview.dinerFirstName || 'Guest'}</span>
+            <span class="review-rating">${'★'.repeat(sp.featuredReview.rating)}${'☆'.repeat(5 - sp.featuredReview.rating)}</span>
+          </div>
+          <p class="review-comment">${sp.featuredReview.comment || ''}</p>
+        </div>
+        ` : ''}
+        ${recentReviews.filter((r: any) => !sp.featuredReview || r.id !== sp.featuredReview.id).slice(0, 3).map((review: any) => `
+        <div class="review-card">
+          <div class="review-header">
+            <span class="review-author">${review.dinerFirstName || 'Guest'}</span>
+            <span class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
+          </div>
+          ${review.comment ? `<p class="review-comment">${review.comment}</p>` : ''}
+        </div>
+        `).join('')}
+      </div>
+      ` : `
+      <div class="reviews-section">
+        <h2 class="reviews-title">Reviews</h2>
+        <p class="no-reviews">No reviews yet. Be the first to review this service!</p>
+      </div>
+      `}
     </div>
     
     <div class="booking-card">
@@ -1059,9 +1228,11 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       : ''}
       ${urgencyLine}
       ${demandBadge}
-      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${ctaVariant === 'testA' ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
+      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;">${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
     </div>
   </section>
+  
+  ${lightboxHtml}
   
   <footer>
     <div class="logo">Maison des Chefs</div>
@@ -1075,6 +1246,28 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       const pricePerPerson = ${service.pricePerPerson || 0};
       const defaultGuests = Math.min(Math.max(minGuests, 4), maxGuests);
       let currentGuests = defaultGuests;
+
+      // CTA A/B Test: persist variant in sessionStorage
+      var ctaVariant = '${ctaVariant}';
+      var urlParams = new URLSearchParams(window.location.search);
+      var urlCta = urlParams.get('cta');
+      var validVariants = ['control', 'testA', 'testB', 'testC', 'testD'];
+
+      // If URL has valid cta param, use it and persist to sessionStorage
+      if (urlCta && validVariants.indexOf(urlCta) !== -1) {
+        ctaVariant = urlCta;
+        try {
+          sessionStorage.setItem('cta_variant', ctaVariant);
+        } catch (e) {}
+      } else {
+        // Otherwise try sessionStorage
+        try {
+          var stored = sessionStorage.getItem('cta_variant');
+          if (stored && validVariants.indexOf(stored) !== -1) {
+            ctaVariant = stored;
+          }
+        } catch (e) {}
+      }
 
       function updateDisplay() {
         document.getElementById('guest-count').textContent = currentGuests;
@@ -1108,10 +1301,74 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         }
       }
 
+      function fireCtaClickEvent() {
+        // Fire analytics event for CTA A/B test
+        console.log('[EVENT] cta_variant_click', {
+          variant: ctaVariant,
+          serviceId: ${service.id},
+          timestamp: new Date().toISOString()
+        });
+      }
+
       window.addEventListener('DOMContentLoaded', function() {
         document.getElementById('btn-decrease').addEventListener('click', decreaseGuests);
         document.getElementById('btn-increase').addEventListener('click', increaseGuests);
+
+        // Attach CTA click analytics
+        var bookBtn = document.getElementById('book-btn');
+        if (bookBtn) {
+          bookBtn.addEventListener('click', fireCtaClickEvent);
+        }
+
         updateDisplay();
+      });
+      
+      // Lightbox functionality
+      const photos = ${JSON.stringify(photos)};
+      let currentIndex = 0;
+      
+      function openLightbox(index) {
+        currentIndex = index;
+        updateLightbox();
+        document.getElementById('lightbox').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+      }
+      
+      function closeLightbox() {
+        document.getElementById('lightbox').style.display = 'none';
+        document.body.style.overflow = '';
+      }
+      
+      function updateLightbox() {
+        document.getElementById('lightbox-img').src = photos[currentIndex];
+        document.getElementById('lightbox-counter').textContent = (currentIndex + 1) + ' / ' + photos.length;
+      }
+      
+      function prevPhoto(e) {
+        if (e) e.stopPropagation();
+        currentIndex = (currentIndex - 1 + photos.length) % photos.length;
+        updateLightbox();
+      }
+      
+      function nextPhoto(e) {
+        if (e) e.stopPropagation();
+        currentIndex = (currentIndex + 1) % photos.length;
+        updateLightbox();
+      }
+      
+      // Keyboard navigation for lightbox
+      document.addEventListener('keydown', function(e) {
+        const lightbox = document.getElementById('lightbox');
+        if (!lightbox || lightbox.style.display === 'none') return;
+        if (e.key === 'Escape') closeLightbox();
+        if (e.key === 'ArrowLeft') prevPhoto();
+        if (e.key === 'ArrowRight') nextPhoto();
+      });
+      
+      // Close lightbox on background click
+      document.addEventListener('click', function(e) {
+        const lightbox = document.getElementById('lightbox');
+        if (e.target === lightbox) closeLightbox();
       });
     })();
   </script>
@@ -1124,7 +1381,8 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
   
   const featuredCards = featuredServices.length > 0
     ? featuredServices.map(service => {
-      const photo = getChefPhoto(service.cuisineTypes || []);
+      // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
+      const photo = service.photoUrl || getChefPhoto(service.cuisineTypes || []);
       const cuisineList = (service.cuisineTypes || []).slice(0, 3).join(', ');
       const verifiedBadge = service.verified
         ? '<span class="verified-chip">✓ Verified</span>'
@@ -1193,6 +1451,7 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .search-field select { cursor: pointer; }
     .search-submit { background: #c9a227; color: white; border: none; padding: 0 2rem; border-radius: 6px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background 0.2s; align-self: flex-end; min-height: 42px; }
     .search-submit:hover { background: #b8922a; }
+    .search-micro-copy { color: rgba(255,255,255,0.7); font-size: 0.8rem; text-align: center; margin-top: 0.5rem; }
 
     .stats-bar { background: white; padding: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 900px; margin: -2rem auto 0; position: relative; z-index: 2; box-shadow: 0 8px 32px rgba(0,0,0,0.12); border-radius: 12px; }
     .stat-item { text-align: center; padding: 1rem; }
@@ -1308,6 +1567,7 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
             </select>
           </div>
           <button type="submit" class="search-submit">Search Chefs</button>
+          <p class="search-micro-copy">✓ Free to search &bull; ✓ No payment required &bull; ✓ Verified chefs</p>
         </form>
       </div>
       <div class="hero-trust">
