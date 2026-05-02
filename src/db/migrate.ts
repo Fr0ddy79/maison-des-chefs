@@ -247,6 +247,70 @@ export function migrate() {
     // Index may already exist, which is fine
   }
 
+  // MAI-921: Add photo_url column to chef_profiles if it doesn't exist
+  try {
+    sqlite.exec(`ALTER TABLE chef_profiles ADD COLUMN photo_url TEXT`);
+    console.log('Migration: Added photo_url column to chef_profiles');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
+  // MAI-926: Add photos column to services if it doesn't exist
+  try {
+    sqlite.exec(`ALTER TABLE services ADD COLUMN photos TEXT NOT NULL DEFAULT '[]'`);
+    console.log('Migration: Added photos column to services');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
+  // MAI-940: Create reviews table if it doesn't exist
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chef_id INTEGER NOT NULL REFERENCES users(id),
+        service_id INTEGER NOT NULL REFERENCES services(id),
+        diner_id INTEGER NOT NULL REFERENCES users(id),
+        booking_id INTEGER NOT NULL REFERENCES bookings(id),
+        rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+        comment TEXT,
+        created_at INTEGER NOT NULL,
+        UNIQUE(booking_id)
+      )
+    `);
+    console.log('Migration: Created reviews table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  // Create index on service_id for fast lookups
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS reviews_service_id_idx ON reviews(service_id)`);
+    console.log('Migration: Created service_id index on reviews');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
+  // MAI-948: Add multi-chef inquiry tracking columns to leads if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN inquiry_type TEXT NOT NULL DEFAULT 'single'`);
+    console.log('Migration: Added inquiry_type column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN multi_inquiry_id TEXT`);
+    console.log('Migration: Added multi_inquiry_id column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  // Create index on multi_inquiry_id for fast lookups
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS leads_multi_inquiry_id_idx ON leads(multi_inquiry_id)`);
+    console.log('Migration: Created multi_inquiry_id index on leads');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

@@ -19,6 +19,7 @@ export const chefProfiles = sqliteTable('chef_profiles', {
   pricePerPerson: real('price_per_person').notNull().default(0),
   available: integer('available', { mode: 'boolean' }).notNull().default(true),
   verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
+  photoUrl: text('photo_url'), // URL/path to chef's profile photo
   profileCompletedAt: integer('profile_completed_at', { mode: 'timestamp' }),
   onboardingStartedAt: integer('onboarding_started_at', { mode: 'timestamp' }),
   onboardingCompletedAt: integer('onboarding_completed_at', { mode: 'timestamp' }),
@@ -42,6 +43,7 @@ export const services = sqliteTable('services', {
   status: text('status', { enum: ['draft', 'published'] }).notNull().default('draft'),
   blockedDates: text('blocked_dates').notNull().default('[]'), // JSON array of ISO date strings
   isOnboardingService: integer('is_onboarding_service', { mode: 'boolean' }).notNull().default(false),
+  photos: text('photos').notNull().default('[]'), // JSON array of photo URLs (max 6)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -125,6 +127,17 @@ export const dinerWizardEvents = sqliteTable('diner_wizard_events', {
 });
 
 // Leads table - stores diner inquiries for chef services
+export const reviews = sqliteTable('reviews', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  serviceId: integer('service_id').notNull().references(() => services.id),
+  dinerId: integer('diner_id').notNull().references(() => users.id),
+  bookingId: integer('booking_id').notNull().references(() => bookings.id),
+  rating: integer('rating').notNull(), // 1-5
+  comment: text('comment'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
 export const leads = sqliteTable('leads', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   serviceId: integer('service_id').notNull().references(() => services.id),
@@ -136,6 +149,9 @@ export const leads = sqliteTable('leads', {
   guestCount: integer('guest_count').notNull().default(0),
   message: text('message'),
   status: text('status').notNull().default('new'),
+  // MAI-948: Multi-chef inquiry tracking
+  inquiryType: text('inquiry_type', { enum: ['single', 'multi'] }).notNull().default('single'),
+  multiInquiryId: text('multi_inquiry_id'), // shared UUID linking leads from same multi-inquiry
   priceEstimateSentAt: integer('price_estimate_sent_at', { mode: 'timestamp' }),
   firstResponseAt: integer('first_response_at', { mode: 'timestamp' }),
   firstChefActionAt: integer('first_chef_action_at', { mode: 'timestamp' }),

@@ -15,6 +15,20 @@
       "when": 1777453677422,
       "tag": "0001_chubby_rick_jones",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1746134400000,
+      "tag": "0002_mai_948_multi_chef",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1746217200000,
+      "tag": "0003_mai_940_reviews",
+      "breakpoints": true
     }
   ]
 }
