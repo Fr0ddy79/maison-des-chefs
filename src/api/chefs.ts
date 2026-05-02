@@ -172,6 +172,7 @@ export default async function chefRoutes(server: FastifyInstance) {
     return {
       ...chef,
       cuisineTypes: JSON.parse(chef.cuisineTypes as string || '[]'),
+      avgResponseMinutes: responseTimeTier.avgResponseMinutes,
       response_time_tier: responseTimeTier,
       avgRating: reviewStats ? Math.round((reviewStats.avgRating as number) * 10) / 10 : 0,
       reviewCount: reviewStats?.count ?? 0,

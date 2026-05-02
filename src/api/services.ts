@@ -52,6 +52,7 @@ function parseServicePhotos(service: any) {
     ...service,
     photos: JSON.parse(service.photos || '[]'),
     dietaryTags: JSON.parse(service.dietaryTags || '[]'),
+    avgResponseMinutes: responseTimeTier.avgResponseMinutes,
     response_time_tier: responseTimeTier,
   };
 }
