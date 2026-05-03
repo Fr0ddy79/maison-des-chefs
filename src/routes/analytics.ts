@@ -4,12 +4,29 @@ export function trackServicePageViewEvent(data: {
   chefId: number;
   pricePerPerson: number;
   cuisineType: string;
+  variant?: string;
 }): void {
+  const eventData = {
+    event: 'service_page_view',
+    service_id: data.serviceId,
+    chef_id: data.chefId,
+    price_per_person: data.pricePerPerson,
+    cuisine_type: data.cuisineType,
+    variant: data.variant || 'unknown',
+    auth_status: 'guest',
+    timestamp: new Date().toISOString()
+  };
+
+  // Send to analytics API (fire-and-forget)
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+
   // Log analytics event to console in development
   if (process.env.NODE_ENV !== 'production') {
-    console.log('[Analytics] Service page view:', data);
+    console.log('[Analytics] Service page view:', eventData);
   }
-  // In production, this would send to an analytics service
 }
 
 // MAI-845: Stale lead re-engagement email sent

@@ -279,6 +279,7 @@ export default async function pageRoutes(server: FastifyInstance) {
       chefId: service.chefId,
       pricePerPerson: service.pricePerPerson,
       cuisineType: cuisineTypes[0] || '',
+      variant: ctaVariant,
     });
 
     // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
