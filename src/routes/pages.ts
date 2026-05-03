@@ -1302,12 +1302,24 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       }
 
       function fireCtaClickEvent() {
-        // Fire analytics event for CTA A/B test
-        console.log('[EVENT] cta_variant_click', {
+        // MAI-1021: Send CTA click to analytics API for persistence
+        const eventData = {
+          event: 'cta_click',
           variant: ctaVariant,
-          serviceId: ${service.id},
+          service_id: ${service.id},
+          chef_id: ${service.chefId},
+          cta_text: '${leadFormCtaText}',
+          auth_status: 'guest',
           timestamp: new Date().toISOString()
-        });
+        };
+        
+        // Send to analytics API (fire-and-forget)
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+        }
+        
+        // Log for debugging
+        console.log('[EVENT] cta_variant_click', eventData);
       }
 
       function trackCTAClick(btn) {

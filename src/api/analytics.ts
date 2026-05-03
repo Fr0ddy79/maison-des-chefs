@@ -6,10 +6,15 @@ import { join } from 'path';
 const analyticsEventSchema = z.object({
   event: z.string(),
   service_id: z.number().optional(),
+  chef_id: z.number().optional(),
   auth_status: z.string(),
   timestamp: z.string(),
   lead_id: z.number().optional(),
   error: z.string().optional(),
+  variant: z.string().optional(),
+  cta_text: z.string().optional(),
+  price_per_person: z.number().optional(),
+  cuisine_type: z.string().optional(),
 });
 
 function ensureDataDir() {
