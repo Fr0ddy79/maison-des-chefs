@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { leads, services, users, chefProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { sendStaleLeadReEngagementEmail } from '../services/diner-stale-lead-email.js';
 
 /**
  * Format a date string for display.
@@ -126,5 +127,54 @@ export default async function bookingStatusRoutes(server: FastifyInstance) {
       checkoutUrl,
       tokenExpiresAt: lead.accessTokenExpiresAt,
     };
+  });
+
+  // POST /api/booking-status/:token/reengage - Trigger stale lead re-engagement email (idempotent)
+  // MAI-1014: Only allowed for 'new' or 'pending' status leads that are >12h old
+  server.post('/:token/reengage', async (request, reply) => {
+    const { token } = z.object({ token: z.string() }).parse(request.params);
+
+
+    if (!token || token.length !== 64) {
+      return reply.status(400).send({ error: 'Invalid access token' });
+    }
+
+    const lead = db.select().from(leads).where(eq(leads.accessToken, token)).get();
+
+    if (!lead) {
+      return reply.status(404).send({ error: 'Booking not found' });
+    }
+
+    // Only allow re-engagement for 'new' or 'pending' status
+    if (!['new', 'pending'].includes(lead.status)) {
+      return reply.status(409).send({ error: 'Re-engagement is only available for new or pending inquiries' });
+    }
+
+    // Check if lead is >12 hours old
+    const twelveHoursMs = 12 * 60 * 60 * 1000;
+    const leadAge = Date.now() - new Date(lead.createdAt).getTime();
+    if (leadAge < twelveHoursMs) {
+      return reply.status(409).send({ error: 'Lead is not yet stale enough for re-engagement' });
+    }
+
+    // Idempotency: if staleLeadReengagementSentAt is set, return success without re-sending
+    if (lead.staleLeadReengagementSentAt) {
+      return { success: true, message: 'Re-engagement email already sent', alreadySent: true };
+    }
+
+    // Send the re-engagement email
+    const success = await sendStaleLeadReEngagementEmail(lead);
+
+    if (!success) {
+      return reply.status(500).send({ error: 'Failed to send re-engagement email' });
+    }
+
+    // Mark re-engagement as sent (idempotency)
+    await db
+      .update(leads)
+      .set({ staleLeadReengagementSentAt: new Date() })
+      .where(eq(leads.id, lead.id));
+
+    return { success: true, message: 'Re-engagement email sent' };
   });
 }

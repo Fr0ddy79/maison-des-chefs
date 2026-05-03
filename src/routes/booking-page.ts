@@ -295,6 +295,9 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
     }
     
+    // MAI-1010: Track booking form view on page load
+    trackAnalytics('booking_form_view', { service_id: serviceId });
+    
     document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;

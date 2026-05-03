@@ -131,4 +131,54 @@ export default async function reviewRoutes(server: FastifyInstance) {
       featuredReview: featuredReviewData,
     };
   });
+
+  // Get reviews for a chef (MAI-1013)
+  server.get('/chefs/:id/reviews', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const chefId = parseInt(id);
+
+    // Check chef exists
+    const chef = db.select().from(users).where(eq(users.id, chefId)).get();
+    if (!chef) {
+      return reply.status(404).send({ error: 'Chef not found' });
+    }
+
+    // Get reviews sorted by newest first, limit 10
+    const reviewsList = db.select({
+      id: reviews.id,
+      rating: reviews.rating,
+      comment: reviews.comment,
+      createdAt: reviews.createdAt,
+      dinerName: users.name,
+    })
+      .from(reviews)
+      .innerJoin(users, eq(reviews.dinerId, users.id))
+      .where(eq(reviews.chefId, chefId))
+      .orderBy(sql `${reviews.createdAt} DESC`)
+      .limit(10)
+      .all();
+
+    // Calculate aggregate stats
+    const stats = db.select({
+      count: sql<number>`count(*)`,
+      avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
+    })
+      .from(reviews)
+      .where(eq(reviews.chefId, chefId))
+      .get();
+
+    const reviewsWithFirstNames = reviewsList.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      createdAt: r.createdAt,
+      dinerFirstName: r.dinerName?.split(' ')[0] ?? 'Guest',
+    }));
+
+    return {
+      reviews: reviewsWithFirstNames,
+      avgRating: stats ? Math.round((stats.avgRating as number) * 10) / 10 : 0,
+      reviewCount: stats?.count ?? 0,
+    };
+  });
 }
