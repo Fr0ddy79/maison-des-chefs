@@ -98,6 +98,23 @@ function getNextSteps(status: string, checkoutUrl: string | null): string[] {
   }
 }
 
+/**
+ * MAI-1014: Determine current stage index (0-4) for the 5-stage booking timeline.
+ * Stage 0: Inquiry Sent (complete immediately on submission)
+ * Stage 1: Awaiting Response (active for new/pending)
+ * Stage 2: Quote Received (active for quoted)
+ * Stage 3: Payment (active for accepted but not converted)
+ * Stage 4: Confirmed (active for converted)
+ */
+function getCurrentStage(status: string): number {
+  if (status === 'new' || status === 'pending') return 1;
+  if (status === 'quoted') return 2;
+  if (status === 'accepted') return 3;
+  if (status === 'converted') return 4;
+  if (status === 'declined' || status === 'cancelled') return -1; // Terminal
+  return 0;
+}
+
 export default async function bookingStatusPageRoutes(server: FastifyInstance) {
   // GET /booking-status - Public booking status page
   // MAI-805: Works with leads (inquiries) to track guest booking status
@@ -256,6 +273,10 @@ function buildBookingStatusPage(lead: any, token: string): string {
   const tokenExpiryDate = lead.accessTokenExpiresAt ? formatDate(lead.accessTokenExpiresAt.toString()) : null;
   const isConverted = lead.status === 'converted';
 
+  // MAI-1014: Timeline stage calculation
+  const currentStage = getCurrentStage(lead.status);
+  const isStale = (lead.status === 'new' || lead.status === 'pending') && (Date.now() - new Date(lead.createdAt).getTime()) > 12 * 60 * 60 * 1000;
+
   const nextStepsHtml = nextSteps.map(step => {
     if (step.includes('<a href=')) {
       return `<li>${step}</li>`;
@@ -265,6 +286,59 @@ function buildBookingStatusPage(lead: any, token: string): string {
 
   // Format quote amount if available
   const quoteAmountDisplay = lead.quoteAmount != null ? `$${Number(lead.quoteAmount).toFixed(2)}` : null;
+
+  // MAI-1014: 5-stage timeline data
+  const timelineStages = [
+    { icon: '📬', label: 'Inquiry Sent', sublabel: 'Request submitted', duration: 'Complete' },
+    { icon: '⏳', label: 'Awaiting Response', sublabel: 'Chef is reviewing', duration: '4-12 hours expected' },
+    { icon: '💰', label: 'Quote Received', sublabel: 'Review & decide', duration: lead.quoteSentAt ? `Sent ${formatDate(lead.quoteSentAt.toString())}` : 'Pending' },
+    { icon: '💳', label: 'Payment', sublabel: 'Complete checkout', duration: 'Secure & easy' },
+    { icon: '✅', label: 'Confirmed', sublabel: 'Booking secured', duration: 'You\'re all set!' },
+  ];
+
+  // Build timeline HTML
+  const timelineHtml = `
+    <div class="timeline-container">
+      <h3 class="timeline-title">📍 Your Booking Journey</h3>
+      <div class="timeline">
+        ${timelineStages.map((stage, index) => {
+          const stageNum = index;
+          const isComplete = stageNum < currentStage;
+          const isActive = stageNum === currentStage;
+          const stageClass = isComplete ? 'complete' : isActive ? 'active' : 'pending';
+          return `
+          <div class="timeline-step ${stageClass}">
+            <div class="timeline-marker">
+              <div class="timeline-icon">${stage.icon}</div>
+            </div>
+            <div class="timeline-content">
+              <div class="timeline-label">${stage.label}</div>
+              <div class="timeline-sublabel">${stage.sublabel}</div>
+              <div class="timeline-duration">${stage.duration}</div>
+            </div>
+          </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  // MAI-1014: Stale lead follow-up section
+  const staleFollowupHtml = isStale ? `
+    <div class="stale-followup-card">
+      <div class="stale-followup-header">
+        <span class="stale-icon">⏰</span>
+        <h3>What if there's no response?</h3>
+      </div>
+      <p class="stale-description">It's been over 12 hours since you sent your inquiry. Chefs typically respond within 4-12 hours. If you're not getting a response, we can send a gentle reminder to the chef on your behalf.</p>
+      <button id="reengageBtn" class="reengage-button" onclick="triggerReengage('${token}', this)">
+        <span class="reengage-spinner" style="display:none;">⟳</span>
+        <span class="reengage-text">Send Reminder Email ✉️</span>
+      </button>
+      <p id="reengageSuccess" class="reengage-success" style="display:none;">✓ Reminder sent! The chef should be in touch soon.</p>
+      <p id="reengageError" class="reengage-error" style="display:none;"></p>
+    </div>
+  ` : '';
 
   // MAI-823: Referral CTA for converted bookings
   const referralCtaHtml = isConverted ? `
@@ -367,6 +441,179 @@ function buildBookingStatusPage(lead: any, token: string): string {
       .page-content { padding-top: 5rem; }
     }
     
+    /* MAI-1014: Visual Timeline styles */
+    .timeline-container {
+      padding: 1.5rem 2rem;
+      border-top: 1px solid #eee;
+      background: #fafafa;
+    }
+    .timeline-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .timeline {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+    }
+    .timeline-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      position: relative;
+    }
+    .timeline-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      position: relative;
+    }
+    .timeline-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      background: #e5e7eb;
+      border: 2px solid #d1d5db;
+      color: #9ca3af;
+      z-index: 1;
+      flex-shrink: 0;
+    }
+    .timeline-step.complete .timeline-icon {
+      background: #dcfce7;
+      border-color: #22c55e;
+    }
+    .timeline-step.active .timeline-icon {
+      background: #fef3c7;
+      border-color: #c9a227;
+      box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.15);
+    }
+    .timeline-step.pending .timeline-icon {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+    }
+    .timeline-content {
+      text-align: center;
+      margin-top: 0.5rem;
+      padding: 0 2px;
+    }
+    .timeline-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .timeline-step.complete .timeline-label { color: #15803d; }
+    .timeline-step.active .timeline-label { color: #92400e; }
+    .timeline-sublabel {
+      font-size: 0.65rem;
+      color: #aaa;
+      margin-top: 1px;
+    }
+    .timeline-duration {
+      font-size: 0.6rem;
+      color: #bbb;
+      margin-top: 2px;
+    }
+    .timeline-step.active .timeline-duration { color: #c9a227; }
+    
+    /* MAI-1014: Stale follow-up styles */
+    .stale-followup-card {
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+      border: 1px solid #f59e0b;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .stale-followup-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .stale-icon { font-size: 1.5rem; }
+    .stale-followup-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #92400e;
+      margin: 0;
+    }
+    .stale-description {
+      color: #78350f;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+    .reengage-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #f59e0b;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .reengage-button:hover { background: #d97706; }
+    .reengage-button:disabled { opacity: 0.7; cursor: not-allowed; }
+    .reengage-spinner {
+      display: inline-block;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .reengage-success { color: #15803d; font-size: 0.875rem; margin-top: 0.75rem; font-weight: 500; }
+    .reengage-error { color: #dc2626; font-size: 0.875rem; margin-top: 0.75rem; }
+    
+    /* Responsive timeline for mobile (320px) */
+    @media (max-width: 480px) {
+      .timeline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+      }
+      .timeline-step {
+        flex-direction: row;
+        align-items: flex-start;
+        flex: unset;
+        width: 100%;
+      }
+      .timeline-marker {
+        width: auto;
+        flex-shrink: 0;
+      }
+      .timeline-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 1rem;
+      }
+      .timeline-content {
+        text-align: left;
+        margin-top: 0;
+        margin-left: 0.75rem;
+        padding: 8px 0;
+      }
+      .timeline-label { font-size: 0.8rem; }
+      .timeline-sublabel, .timeline-duration { font-size: 0.75rem; }
+    }
+    
     /* MAI-823: Referral CTA styles */
     .referral-card {
       background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
@@ -388,14 +635,8 @@ function buildBookingStatusPage(lead: any, token: string): string {
       margin-bottom: 1.25rem;
       line-height: 1.5;
     }
-    .referral-code-section {
-      margin: 1rem 0;
-    }
-    .referral-code-label {
-      font-size: 0.85rem;
-      color: #888;
-      margin-bottom: 0.5rem;
-    }
+    .referral-code-section { margin: 1rem 0; }
+    .referral-code-label { font-size: 0.85rem; color: #888; margin-bottom: 0.5rem; }
     .referral-code-box {
       display: inline-block;
       background: white;
@@ -425,30 +666,13 @@ function buildBookingStatusPage(lead: any, token: string): string {
       font-size: 0.9rem;
       transition: all 0.2s;
     }
-    .share-btn.copy-btn {
-      background: #22c55e;
-      color: white;
-    }
-    .share-btn.copy-btn:hover {
-      background: #16a34a;
-    }
-    .share-btn.email-btn {
-      background: #3b82f6;
-      color: white;
-    }
-    .share-btn.email-btn:hover {
-      background: #2563eb;
-    }
-    .share-btn.whatsapp-btn {
-      background: #22c55e;
-      color: white;
-    }
-    .share-btn.whatsapp-btn:hover {
-      background: #16a34a;
-    }
-    .share-icon {
-      font-size: 1.1rem;
-    }
+    .share-btn.copy-btn { background: #22c55e; color: white; }
+    .share-btn.copy-btn:hover { background: #16a34a; }
+    .share-btn.email-btn { background: #3b82f6; color: white; }
+    .share-btn.email-btn:hover { background: #2563eb; }
+    .share-btn.whatsapp-btn { background: #22c55e; color: white; }
+    .share-btn.whatsapp-btn:hover { background: #16a34a; }
+    .share-icon { font-size: 1.1rem; }
 
     /* MAI-881: Book Again CTA styles */
     .book-again-card {
@@ -494,6 +718,8 @@ function buildBookingStatusPage(lead: any, token: string): string {
         <div class="status-label">${statusDisplay.label}</div>
         <div class="status-description">${statusDisplay.description}</div>
       </div>
+      
+      ${timelineHtml}
       
       <div class="event-info">
         <h2 class="event-title">${lead.serviceName}</h2>
@@ -542,6 +768,8 @@ function buildBookingStatusPage(lead: any, token: string): string {
         <p>This link expires on ${tokenExpiryDate || '30 days after booking'}</p>
       </div>
     </div>
+    
+    ${staleFollowupHtml}
     
     <div class="next-steps-card">
       <h3 class="next-steps-title">📋 What Happens Next</h3>
@@ -592,6 +820,55 @@ function buildBookingStatusPage(lead: any, token: string): string {
         }, 2000);
       }).catch(function() {
         alert('Failed to copy. Please copy the link manually.');
+      });
+    }
+    
+    // MAI-1014: Trigger stale lead re-engagement email
+    function triggerReengage(token, btn) {
+      const spinner = btn.querySelector('.reengage-spinner');
+      const text = btn.querySelector('.reengage-text');
+      const successMsg = document.getElementById('reengageSuccess');
+      const errorMsg = document.getElementById('reengageError');
+      
+      if (successMsg) successMsg.style.display = 'none';
+      if (errorMsg) errorMsg.style.display = 'none';
+      
+      btn.disabled = true;
+      if (spinner) spinner.style.display = 'inline-block';
+      if (text) text.textContent = 'Sending...';
+      
+      fetch('/api/booking-status/' + token + '/reengage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.json().then(function(err) {
+            throw new Error(err.error || 'Failed to send reminder');
+          });
+        }
+        return response.json();
+      })
+      .then(function(data) {
+        btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+        if (text) text.textContent = 'Reminder Sent ✓';
+        btn.style.background = '#15803d';
+        if (successMsg) {
+          successMsg.style.display = 'block';
+          if (data.alreadySent) {
+            successMsg.textContent = '✓ A reminder was already sent previously.';
+          }
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+        if (text) text.textContent = 'Send Reminder Email ✉️';
+        if (errorMsg) {
+          errorMsg.textContent = err.message || 'Failed to send reminder. Please try again.';
+          errorMsg.style.display = 'block';
+        }
       });
     }
   </script>

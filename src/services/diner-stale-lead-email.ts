@@ -139,7 +139,7 @@ Questions? We're here to help at support@maisondeschefs.com
  * Send stale lead re-engagement email to a diner.
  * Returns true on success, false on error.
  */
-async function sendStaleLeadReEngagementEmail(lead: StaleLead): Promise<boolean> {
+export async function sendStaleLeadReEngagementEmail(lead: StaleLead): Promise<boolean> {
   const { id: leadId, email } = lead;
 
   if (!email) {
