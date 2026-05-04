@@ -29,6 +29,32 @@ export function trackServicePageViewEvent(data: {
   }
 }
 
+// MAI-1036: Referral share tracking for channel performance analysis
+export function trackReferralShareEvent(data: {
+  code: string;
+  channel: 'copy' | 'email' | 'whatsapp';
+  serviceId?: number;
+}): void {
+  const eventData = {
+    event: 'referral_share',
+    code: data.code,
+    channel: data.channel,
+    service_id: data.serviceId || null,
+    auth_status: 'guest',
+    timestamp: new Date().toISOString()
+  };
+
+  // Send to analytics API (fire-and-forget)
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  // Log for debugging
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Referral share:', eventData);
+  }
+}
+
 // MAI-845: Stale lead re-engagement email sent
 export function trackStaleLeadReengagementSent(data: {
   leadId: number;

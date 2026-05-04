@@ -119,10 +119,10 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
           <a href="/referral/track?code=${lead.referralCode}&source=copy" class="share-btn copy-btn" onclick="copyReferralLink(this, '${lead.referralCode}'); return false;">
             <span class="share-icon">📋</span> Copy Link
           </a>
-          <a href="/referral/track?code=${lead.referralCode}&source=email" class="share-btn email-btn" onclick="return confirm('Send referral link via email?');">
+          <a href="/referral/track?code=${lead.referralCode}&source=email" class="share-btn email-btn" onclick="trackReferralShare('email', '${lead.referralCode}'); return true;">
             <span class="share-icon">✉️</span> Email
           </a>
-          <a href="/referral/track?code=${lead.referralCode}&source=whatsapp" class="share-btn whatsapp-btn" target="_blank" rel="noopener">
+          <a href="/referral/track?code=${lead.referralCode}&source=whatsapp" class="share-btn whatsapp-btn" target="_blank" rel="noopener" onclick="trackReferralShare('whatsapp', '${lead.referralCode}'); return true;">
             <span class="share-icon">💬</span> WhatsApp
           </a>
         </div>
@@ -355,9 +355,25 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
         setTimeout(function() {
           btn.innerHTML = originalText;
         }, 2000);
+        // MAI-1036: Track referral share after successful copy
+        trackReferralShare('copy', code);
       }).catch(function() {
         alert('Failed to copy. Please copy the link manually.');
       });
+    }
+
+    function trackReferralShare(channel, code) {
+      // MAI-1036: Track referral share analytics event
+      var analyticsData = {
+        event: 'referral_share',
+        channel: channel,
+        code: code,
+        auth_status: 'guest',
+        timestamp: new Date().toISOString()
+      };
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify(analyticsData));
+      }
     }
   </script>
 </body>

@@ -15,6 +15,9 @@ const analyticsEventSchema = z.object({
   cta_text: z.string().optional(),
   price_per_person: z.number().optional(),
   cuisine_type: z.string().optional(),
+  // MAI-1036: Referral share tracking
+  code: z.string().optional(),
+  channel: z.enum(['copy', 'email', 'whatsapp']).optional(),
 });
 
 function ensureDataDir() {
