@@ -65,9 +65,11 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '    .hidden { display: none !important; }\n';
   html += '    /* Reviews section styles (MAI-1013) */\n';
   html += '    .reviews-section { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #eee; }\n';
-  html += '    .reviews-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }\n';
-  html += '    .reviews-header h3 { font-size: 1.1rem; color: #2c3e50; }\n';
-  html += '    .reviews-summary { display: flex; align-items: center; gap: 0.5rem; color: #666; font-size: 0.9rem; }\n';
+  html += '    .reviews-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }\n';
+  html += '    .reviews-rating-big { font-size: 2.5rem; font-weight: 700; color: #2c3e50; line-height: 1; margin-bottom: 0.25rem; }\n';
+  html += '    .reviews-meta { display: flex; flex-direction: column; gap: 0.25rem; }\n';
+  html += '    .reviews-stars-big { color: #ffc107; font-size: 1.2rem; letter-spacing: 2px; }\n';
+  html += '    .reviews-count { color: #888; font-size: 0.85rem; }\n';
   html += '    .reviews-list { list-style: none; }\n';
   html += '    .review-item { padding: 1rem 0; border-bottom: 1px solid #f0f0f0; }\n';
   html += '    .review-item:last-child { border-bottom: none; }\n';
@@ -76,8 +78,6 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '    .review-author { font-weight: 600; color: #2c3e50; font-size: 0.95rem; }\n';
   html += '    .review-date { color: #999; font-size: 0.85rem; }\n';
   html += '    .review-comment { color: #555; font-size: 0.9rem; line-height: 1.5; margin-top: 0.25rem; }\n';
-  html += '    .no-reviews { text-align: center; padding: 2rem; color: #888; font-size: 0.95rem; }\n';
-  html += '    .no-reviews-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5; }\n';
   html += '    /* Signature dishes styles (MAI-1047) */\n';
   html += '    .signature-dishes-section { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #eee; }\n';
   html += '    .signature-dishes-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }\n';
@@ -122,7 +122,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '    \n';
   html += '    function renderStars(rating) { var stars = \'\'; for (var i = 1; i <= 5; i++) { stars += i <= rating ? \'★\' : \'☆\'; } return stars; }\n';
   html += '    \n';
-  html += '    function renderReviews(reviewsData) { var html = \'<div class="reviews-section">\'; html += \'<div class="reviews-header">\'; html += \'<h3>Reviews</h3>\'; if (reviewsData.reviewCount > 0) { html += \'<div class="reviews-summary">\'; html += \'<span>★ \' + escapeHtml(String(reviewsData.avgRating)) + \' (\' + reviewsData.reviewCount + \' reviews)</span>\'; html += \'</div>\'; } html += \'</div>\'; if (reviewsData.reviews && reviewsData.reviews.length > 0) { html += \'<ul class="reviews-list">\'; reviewsData.reviews.forEach(function(r) { html += \'<li class="review-item">\'; html += \'<div class="review-header">\'; html += \'<span class="review-stars">\' + renderStars(r.rating) + \'</span>\'; html += \'<span class="review-author">\' + escapeHtml(r.dinerFirstName || \'Guest\') + \'</span>\'; html += \'<span class="review-date">\' + formatDate(r.createdAt) + \'</span>\'; html += \'</div>\'; if (r.comment) { html += \'<p class="review-comment">\' + escapeHtml(r.comment) + \'</p>\'; } html += \'</li>\'; }); html += \'</ul>\'; } else { html += \'<div class="no-reviews">\'; html += \'<div class="no-reviews-icon\">📝</div>\'; html += \'<p>No reviews yet</p>\'; html += \'</div>\'; } html += \'</div>\'; return html; }\n';
+  html += '    function renderReviews(reviewsData) { if (!reviewsData || reviewsData.reviewCount === 0) return \'\'; var html = \'<div class="reviews-section">\'; html += \'<div class="reviews-header">\'; html += \'<div class="reviews-meta">\'; html += \'<div class="reviews-rating-big">\' + escapeHtml(String(reviewsData.avgRating)) + \'</div>\'; html += \'<div class="reviews-stars-big">\' + renderStars(Math.round(reviewsData.avgRating)) + \'</div>\'; html += \'<div class="reviews-count">\' + reviewsData.reviewCount + \' \' + (reviewsData.reviewCount === 1 ? \'review\' : \'reviews\') + \'</div>\'; html += \'</div>\' html += \'</div>\'; if (reviewsData.reviews && reviewsData.reviews.length > 0) { html += \'<ul class="reviews-list">\'; reviewsData.reviews.forEach(function(r) { html += \'<li class="review-item">\'; html += \'<div class="review-header">\'; html += \'<span class="review-stars">\' + renderStars(r.rating) + \'</span>\'; html += \'<span class="review-author">\' + escapeHtml(r.dinerFirstName || \'Verified Diner\') + \'</span>\'; html += \'<span class="review-date">\' + formatDate(r.createdAt) + \'</span>\'; html += \'</div>\'; if (r.comment) { html += \'<p class="review-comment">\' + escapeHtml(r.comment) + \'</p>\'; } html += \'</li>\'; }); html += \'</ul>\'; } } html += \'</div>\'; return html; }\n';
   html += '    \n';
   html += '    function renderSignatureDishesDisplay(signatureDishes) { if (!signatureDishes || signatureDishes.length === 0) return \'\'; var html = \'<div class="signature-dishes-section">\'; html += \'<div class="signature-dishes-header">\'; html += \'<h3>Signature Dishes</h3>\'; html += \'</div>\'; html += \'<ul class="signature-dishes-list">\'; signatureDishes.forEach(function(dish) { if (dish.name) { html += \'<li class="signature-dish-item">\'; html += \'<div class="signature-dish-name\">\' + escapeHtml(dish.name) + \'</div>\'; if (dish.description) { html += \'<div class="signature-dish-description\">\' + escapeHtml(dish.description) + \'</div>\'; } html += \'</li>\'; } }); html += \'</ul>\'; html += \'</div>\'; return html; }\n';
   html += '    \n';
