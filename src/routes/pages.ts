@@ -233,11 +233,14 @@ export default async function pageRoutes(server: FastifyInstance) {
     const url = new URL(request.url, 'http://localhost');
     const useSimplifiedLeadForm = url.searchParams.get('lead_form') === 'simplified';
     const useNewSidebarCta = url.searchParams.get('sidebar') === 'new_cta';
-    // CTA A/B Test: detect variant from URL param or sessionStorage
+    // CTA A/B Test: detect variant from URL param, cookie, or default to control
     // Variants: control, testA (Request Your Date), testB (Request Booking), testC (Check Availability), testD (same as testA)
     const ctaParam = url.searchParams.get('cta');
+    const cookies = request.cookies as Record<string, string>;
+    const cookieVariant = cookies?.cta_variant;
     const validVariants = ['control', 'testA', 'testB', 'testC', 'testD'];
-    const ctaVariant = validVariants.includes(ctaParam || '') ? ctaParam : 'control';
+    // Priority: URL param > cookie > control
+    const ctaVariant = validVariants.includes(ctaParam || '') ? ctaParam : (validVariants.includes(cookieVariant || '') ? cookieVariant : 'control');
 
     const service = db.select({
       id: services.id,
@@ -1254,11 +1257,15 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       var urlCta = urlParams.get('cta');
       var validVariants = ['control', 'testA', 'testB', 'testC', 'testD'];
 
-      // If URL has valid cta param, use it and persist to sessionStorage
+      // If URL has valid cta param, use it and persist to sessionStorage AND cookie (for SSR)
       if (urlCta && validVariants.indexOf(urlCta) !== -1) {
         ctaVariant = urlCta;
         try {
           sessionStorage.setItem('cta_variant', ctaVariant);
+        } catch (e) {}
+        // MAI-1074: Also set cookie for SSR to read on subsequent navigations
+        try {
+          document.cookie = 'cta_variant=' + ctaVariant + '; path=/; max-age=86400; SameSite=Lax';
         } catch (e) {}
       } else {
         // Otherwise try sessionStorage

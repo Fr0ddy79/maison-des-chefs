@@ -18,6 +18,15 @@ const analyticsEventSchema = z.object({
   // MAI-1036: Referral share tracking
   code: z.string().optional(),
   channel: z.enum(['copy', 'email', 'whatsapp']).optional(),
+  // MAI-1075: Booking attribution tracking
+  bookingId: z.number().optional(),
+  guestCount: z.number().optional(),
+  originating_service_id: z.number().optional(),
+  // MAI-1079: Chef discovery analytics
+  filter_type: z.string().optional(),
+  filter_value: z.string().optional(),
+  selected_count: z.number().optional(),
+  cuisine_types: z.array(z.string()).optional(),
 });
 
 function ensureDataDir() {
@@ -41,6 +50,7 @@ function persistEvent(body: unknown, filename: string) {
 function isABTestEvent(body: z.infer<typeof analyticsEventSchema>): boolean {
   return (
     body.event?.startsWith('ab_') ||
+    body.event === 'booking_created' || // MAI-1075: Track booking events in AB test log
     (body as any).variant !== undefined ||
     (body as any).ab_test_id !== undefined
   );

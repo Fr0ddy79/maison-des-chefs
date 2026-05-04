@@ -66,6 +66,7 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
 
     const lead = db.select({
       id: leads.id,
+      serviceId: leads.serviceId, // MAI-1075: Add for booking_created analytics
       serviceName: services.name,
       serviceDescription: services.description,
       chefName: users.name,
@@ -90,6 +91,38 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     }
 
     const isConverted = lead.status === 'converted';
+    
+    // MAI-1075: Track booking_created event with service attribution
+    // Fire-and-forget - should not block page rendering
+    const bookingCreatedScript = `
+    (function() {
+      var cookies = document.cookie.split(';');
+      var lastViewedServiceId = null;
+      for (var i = 0; i < cookies.length; i++) {
+        var cookie = cookies[i].trim();
+        var eqPos = cookie.indexOf('=');
+        if (eqPos > -1 && cookie.substring(0, eqPos) === 'last_viewed_service_id') {
+          lastViewedServiceId = cookie.substring(eqPos + 1);
+          break;
+        }
+      }
+      var originatingServiceId = lastViewedServiceId && lastViewedServiceId !== String(${lead.serviceId}) ? parseInt(lastViewedServiceId, 10) : undefined;
+      var bookingEventData = {
+        event: 'booking_created',
+        bookingId: ${lead.id},
+        serviceId: ${lead.serviceId},
+        originating_service_id: originatingServiceId,
+        lead_id: ${lead.id},
+        guestCount: ${lead.guestCount || 0},
+        variant: 'unknown',
+        auth_status: 'guest',
+        timestamp: new Date().toISOString()
+      };
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify(bookingEventData));
+      }
+    })();
+    `;
     
     // MAI-875: Parse selected addons
     let selectedAddonIds: string[] = [];

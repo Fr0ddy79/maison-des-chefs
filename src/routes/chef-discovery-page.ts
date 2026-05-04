@@ -1,8 +1,10 @@
 // Chef Discovery Page - Browse/search chefs (MAI-849)
+// MAI-1079: Added chef discovery analytics tracking
 
 import { db } from '../db/index.js';
 import { users, chefProfiles, services, leads } from '../db/schema.js';
 import { eq, sql, isNotNull, and, desc } from 'drizzle-orm';
+import { trackChefDiscoveryEvent } from './analytics.js';
 
 export default function buildChefDiscoveryPage(): string {
   // Fetch all available chefs with services
@@ -330,6 +332,11 @@ var API_BASE = '';
 var allChefs = [];
 var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null, sort: 'price_asc' };
 
+// MAI-1079: Track chef discovery page view on load
+(function() {
+  trackChefDiscoveryEvent({ event: 'chef_discovery_view' });
+})();
+
 function escapeHtml(text) {
   if (!text) return '';
   var div = document.createElement('div');
@@ -444,6 +451,18 @@ function applyFilters() {
   currentFilters.maxPrice = maxPriceEl.value ? parseFloat(maxPriceEl.value) : null;
   currentFilters.sort = document.getElementById('sortSelect').value;
 
+  // MAI-1079: Track filter application
+  var activeFilters = currentFilters.cuisines.length + currentFilters.dietary.length +
+    (currentFilters.minPrice ? 1 : 0) + (currentFilters.maxPrice ? 1 : 0) + (currentFilters.sort !== 'price_asc' ? 1 : 0);
+  if (activeFilters > 0) {
+    trackChefDiscoveryEvent({
+      event: 'filter_applied',
+      filterType: 'multiple',
+      filterValue: currentFilters.cuisines.join(',') + '|' + currentFilters.dietary.join(','),
+      selectedCount: activeFilters
+    });
+  }
+
   renderChefs();
 }
 
@@ -545,9 +564,24 @@ function toggleChefSelection(chefId, selected, serviceId) {
   if (selected) {
     selectedChefIds.add(chefId);
     selectedServicesMap[chefId] = serviceId;
+    // MAI-1079: Track chef selection
+    var chef = allChefs.find(function(c) { return c.id === chefId; });
+    trackChefDiscoveryEvent({
+      event: 'chef_select',
+      chefId: chefId,
+      serviceId: serviceId || null,
+      selectedCount: selectedChefIds.size,
+      cuisineTypes: chef ? chef.cuisineTypes : []
+    });
   } else {
     selectedChefIds.delete(chefId);
     delete selectedServicesMap[chefId];
+    // MAI-1079: Track chef deselection
+    trackChefDiscoveryEvent({
+      event: 'chef_deselect',
+      chefId: chefId,
+      selectedCount: selectedChefIds.size
+    });
   }
   updateFloatingBar();
   updateCardStates();
@@ -588,6 +622,16 @@ function getCookie(name) {
 
 function openInquiryModal() {
   if (selectedChefIds.size === 0) return;
+
+  // MAI-1079: Track inquiry modal open
+  var selectedChefIdList = Array.from(selectedChefIds);
+  var serviceIdList = selectedChefIdList.map(function(chefId) {
+    return selectedServicesMap[chefId] || null;
+  });
+  trackChefDiscoveryEvent({
+    event: 'inquiry_modal_open',
+    selectedCount: selectedChefIds.size
+  });
 
   // Populate modal chefs list
   var chefsListEl = document.getElementById('modalChefsList');
@@ -677,9 +721,16 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
     if (!response.ok) {
       alert('Error: ' + (result.error || 'Failed to submit inquiry'));
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
+      submitBtn.textText = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
       return;
     }
+
+    // MAI-1079: Track successful inquiry submission
+    trackChefDiscoveryEvent({
+      event: 'inquiry_modal_submit',
+      selectedCount: selectedChefIds.size,
+      guestCount: parseInt(formData.guestCount, 10)
+    });
 
     // Show success
     var modalBody = document.getElementById('inquiryModalBody');
