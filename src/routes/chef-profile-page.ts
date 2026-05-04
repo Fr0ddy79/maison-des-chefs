@@ -1,9 +1,10 @@
-// Chef Profile Page - View and edit chef profile with photo upload (MAI-921) + Reviews display (MAI-1013)
+// Chef Profile Page - View and edit chef profile with photo upload (MAI-921) + Reviews display (MAI-1013) + Signature Dishes (MAI-1047)
 
 import { db } from '../db/index.js';
 import { users, chefProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
+declare var currentChef: any;
 export default function buildChefProfilePage(chefId?: number): string {
   // If chefId provided, fetch that chef's profile (public view)
   // Otherwise, show the profile editor (chef-only)
@@ -77,6 +78,19 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '    .review-comment { color: #555; font-size: 0.9rem; line-height: 1.5; margin-top: 0.25rem; }\n';
   html += '    .no-reviews { text-align: center; padding: 2rem; color: #888; font-size: 0.95rem; }\n';
   html += '    .no-reviews-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5; }\n';
+  html += '    /* Signature dishes styles (MAI-1047) */\n';
+  html += '    .signature-dishes-section { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #eee; }\n';
+  html += '    .signature-dishes-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }\n';
+  html += '    .signature-dishes-header h3 { font-size: 1.1rem; color: #2c3e50; }\n';
+  html += '    .signature-dishes-list { list-style: none; }\n';
+  html += '    .signature-dish-item { padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; }\n';
+  html += '    .signature-dish-item:last-child { border-bottom: none; }\n';
+  html += '    .signature-dish-name { font-weight: 600; color: #2c3e50; font-size: 1rem; margin-bottom: 0.25rem; }\n';
+  html += '    .signature-dish-description { color: #666; font-size: 0.9rem; line-height: 1.4; }\n';
+  html += '    .dish-entry { margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; }\n';
+  html += '    .dish-entry input, .dish-entry textarea { margin-bottom: 0.5rem; }\n';
+  html += '    .dish-entry:last-child { margin-bottom: 0; }\n';
+  html += '    .section-hint { font-size: 0.85rem; color: #888; font-weight: 400; }\n';
   html += '    @media (max-width: 768px) { .profile-header { flex-direction: column; text-align: center; } .reviews-header { flex-direction: column; align-items: flex-start; } }\n';
   html += '  </style>\n';
   html += '</head>\n';
@@ -108,7 +122,9 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '    \n';
   html += '    function renderStars(rating) { var stars = \'\'; for (var i = 1; i <= 5; i++) { stars += i <= rating ? \'★\' : \'☆\'; } return stars; }\n';
   html += '    \n';
-  html += '    function renderReviews(reviewsData) { var html = \'<div class="reviews-section">\'; html += \'<div class="reviews-header">\'; html += \'<h3>Reviews</h3>\'; if (reviewsData.reviewCount > 0) { html += \'<div class="reviews-summary">\'; html += \'<span>★ \' + escapeHtml(String(reviewsData.avgRating)) + \' (\' + reviewsData.reviewCount + \' reviews)</span>\'; html += \'</div>\'; } html += \'</div>\'; if (reviewsData.reviews && reviewsData.reviews.length > 0) { html += \'<ul class="reviews-list">\'; reviewsData.reviews.forEach(function(r) { html += \'<li class="review-item">\'; html += \'<div class="review-header">\'; html += \'<span class="review-stars">\' + renderStars(r.rating) + \'</span>\'; html += \'<span class="review-author">\' + escapeHtml(r.dinerFirstName || \'Guest\') + \'</span>\'; html += \'<span class="review-date">\' + formatDate(r.createdAt) + \'</span>\'; html += \'</div>\'; if (r.comment) { html += \'<p class="review-comment">\' + escapeHtml(r.comment) + \'</p>\'; } html += \'</li>\'; }); html += \'</ul>\'; } else { html += \'<div class="no-reviews">\'; html += \'<div class="no-reviews-icon">📝</div>\'; html += \'<p>No reviews yet</p>\'; html += \'</div>\'; } html += \'</div>\'; return html; }\n';
+  html += '    function renderReviews(reviewsData) { var html = \'<div class="reviews-section">\'; html += \'<div class="reviews-header">\'; html += \'<h3>Reviews</h3>\'; if (reviewsData.reviewCount > 0) { html += \'<div class="reviews-summary">\'; html += \'<span>★ \' + escapeHtml(String(reviewsData.avgRating)) + \' (\' + reviewsData.reviewCount + \' reviews)</span>\'; html += \'</div>\'; } html += \'</div>\'; if (reviewsData.reviews && reviewsData.reviews.length > 0) { html += \'<ul class="reviews-list">\'; reviewsData.reviews.forEach(function(r) { html += \'<li class="review-item">\'; html += \'<div class="review-header">\'; html += \'<span class="review-stars">\' + renderStars(r.rating) + \'</span>\'; html += \'<span class="review-author">\' + escapeHtml(r.dinerFirstName || \'Guest\') + \'</span>\'; html += \'<span class="review-date">\' + formatDate(r.createdAt) + \'</span>\'; html += \'</div>\'; if (r.comment) { html += \'<p class="review-comment">\' + escapeHtml(r.comment) + \'</p>\'; } html += \'</li>\'; }); html += \'</ul>\'; } else { html += \'<div class="no-reviews">\'; html += \'<div class="no-reviews-icon\">📝</div>\'; html += \'<p>No reviews yet</p>\'; html += \'</div>\'; } html += \'</div>\'; return html; }\n';
+  html += '    \n';
+  html += '    function renderSignatureDishesDisplay(signatureDishes) { if (!signatureDishes || signatureDishes.length === 0) return \'\'; var html = \'<div class="signature-dishes-section">\'; html += \'<div class="signature-dishes-header">\'; html += \'<h3>Signature Dishes</h3>\'; html += \'</div>\'; html += \'<ul class="signature-dishes-list">\'; signatureDishes.forEach(function(dish) { if (dish.name) { html += \'<li class="signature-dish-item">\'; html += \'<div class="signature-dish-name\">\' + escapeHtml(dish.name) + \'</div>\'; if (dish.description) { html += \'<div class="signature-dish-description\">\' + escapeHtml(dish.description) + \'</div>\'; } html += \'</li>\'; } }); html += \'</ul>\'; html += \'</div>\'; return html; }\n';
   html += '    \n';
   html += '    function renderProfile(chef) {\n';
   html += '      currentChef = chef;\n';
@@ -119,7 +135,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '      } else {\n';
   html += '        photoHtml = \'<div class="chef-photo-placeholder">\' + getInitials(chef.name) + \'</div>\';\n';
   html += '      }\n';
-  html += '      var verifiedHtml = chef.verified ? \'<span class="verified-badge">✓ Verified Chef</span>\' : \'\';\n';
+  html += '      var verifiedHtml = chef.verified ? \'<span class="verified-badge\">✓ Verified Chef</span>\' : \'\';\n';
   html += '      var html = \'<div class="profile-header">\';\n';
   html += '        html += \'<div class="photo-section">\';\n';
   html += '          html += photoHtml;\n';
@@ -143,6 +159,20 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '          html += \'<label for="location">Location</label>\';\n';
   html += '          html += \'<input type="text" id="location" name="location" placeholder="e.g., Montreal, QC" value="\' + escapeHtml(chef.location || \'\') + \'">\';\n';
   html += '        html += \'</div>\';\n';
+  html += '        html += \'<div class="form-group">\';\n';
+  html += '          html += \'<label>Signature Dishes <span class="section-hint">(up to 3)</span></label>\';\n';
+  html += '          html += \'<div id="signatureDishesContainer">\';\n';
+  // @ts-ignore
+  var dishes = (currentChef || {}).signatureDishes || [];
+  for (var d = 0; d < 3; d++) {
+    var dish = dishes[d] || { name: '', description: '' };
+    html += '            <div class="dish-entry">';
+    html += '              <input type="text" name="dishName' + d + '" placeholder="Dish name" maxlength="100" value="\' + escapeHtml(dish.name || \'\') + \'">';
+    html += '              <textarea name="dishDesc' + d + '" placeholder="Short description..." maxlength="500" rows="2">\' + escapeHtml(dish.description || \'\') + \'</textarea>';
+    html += '            </div>';
+  }
+  html += '          </div>\';\n';
+  html += '        html += \'</div>\';\n';
   html += '        html += \'<button type="submit" class="btn" id="saveBtn">Save Profile</button>\';\n';
   html += '        html += \' <button type="button" class="btn btn-secondary" onclick="loadProfile()">Cancel</button>\';\n';
   html += '      html += \'</form>\';\n';
@@ -157,7 +187,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '    function handlePhotoSelect(input) {\n';
   html += '      if (!input.files || !input.files[0]) return;\n';
   html += '      var file = input.files[0];\n';
-  html += '      var validTypes = [\'image/jpeg\', \'image/png\', \'image/webp\'];\n';
+  html += '      var validTypes = [\'image/jpeg\',\'image/png\',\'image/webp\'];\n';
   html += '      if (!validTypes.includes(file.type)) {\n';
   html += '        showError(\'Please upload a JPG, PNG, or WebP image.\');\n';
   html += '        input.value = \'\';\n';
@@ -226,6 +256,18 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '      }\n';
   html += '    }\n';
   html += '    \n';
+  html += '    function collectSignatureDishes() {\n';
+  html += '      var dishes = [];\n';
+  html += '      for (var i = 0; i < 3; i++) {\n';
+  html += '        var nameInput = document.getElementById(\'profileForm\').querySelector(\'[name="dishName\' + i + \'"]\');\n';
+  html += '        var descInput = document.getElementById(\'profileForm\').querySelector(\'[name="dishDesc\' + i + \'"]\');\n';
+  html += '        if (nameInput && nameInput.value.trim()) {\n';
+  html += '          dishes.push({ name: nameInput.value.trim(), description: (descInput && descInput.value.trim()) || \'\' });\n';
+  html += '        }\n';
+  html += '      }\n';
+  html += '      return dishes;\n';
+  html += '    }\n';
+  html += '    \n';
   html += '    async function saveProfile(e) {\n';
   html += '      e.preventDefault();\n';
   html += '      var btn = document.getElementById(\'saveBtn\');\n';
@@ -236,6 +278,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '      \n';
   html += '      var bio = document.getElementById(\'bio\').value;\n';
   html += '      var location = document.getElementById(\'location\').value;\n';
+  html += '      var signatureDishes = collectSignatureDishes();\n';
   html += '      \n';
   html += '      try {\n';
   html += '        var token = localStorage.getItem(\'token\');\n';
@@ -245,7 +288,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '            \'Authorization\': \'Bearer \' + token,\n';
   html += '            \'Content-Type\': \'application/json\'\n';
   html += '          },\n';
-  html += '          body: JSON.stringify({ bio: bio, location: location })\n';
+  html += '          body: JSON.stringify({ bio: bio, location: location, signatureDishes: signatureDishes })\n';
   html += '        });\n';
   html += '        \n';
   html += '        if (response.status === 401) {\n';

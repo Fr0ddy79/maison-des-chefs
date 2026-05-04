@@ -20,6 +20,7 @@ export const chefProfiles = sqliteTable('chef_profiles', {
   available: integer('available', { mode: 'boolean' }).notNull().default(true),
   verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
   photoUrl: text('photo_url'), // URL/path to chef's profile photo
+  signatureDishes: text('signature_dishes').notNull().default('[]'), // JSON array: [{"name":"Dish","description":"..."}]
   profileCompletedAt: integer('profile_completed_at', { mode: 'timestamp' }),
   onboardingStartedAt: integer('onboarding_started_at', { mode: 'timestamp' }),
   onboardingCompletedAt: integer('onboarding_completed_at', { mode: 'timestamp' }),

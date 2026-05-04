@@ -10,6 +10,10 @@ const profileSchema = z.object({
   location: z.string().optional(),
   pricePerPerson: z.number().min(0).optional(),
   available: z.boolean().optional(),
+  signatureDishes: z.array(z.object({
+    name: z.string().min(1).max(100),
+    description: z.string().max(500),
+  })).max(3).optional(),
 });
 
 // Response time tier thresholds (in minutes)
@@ -97,6 +101,7 @@ export default async function chefRoutes(server: FastifyInstance) {
       available: chefProfiles.available,
       verified: chefProfiles.verified,
       photoUrl: chefProfiles.photoUrl,
+      signatureDishes: chefProfiles.signatureDishes,
     })
       .from(chefProfiles)
       .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -132,6 +137,7 @@ export default async function chefRoutes(server: FastifyInstance) {
     return chefs.map(c => ({
       ...c,
       cuisineTypes: JSON.parse(c.cuisineTypes as string || '[]'),
+      signatureDishes: JSON.parse(c.signatureDishes as string || '[]'),
     }));
   });
 
@@ -149,6 +155,7 @@ export default async function chefRoutes(server: FastifyInstance) {
       available: chefProfiles.available,
       verified: chefProfiles.verified,
       photoUrl: chefProfiles.photoUrl,
+      signatureDishes: chefProfiles.signatureDishes,
     })
       .from(chefProfiles)
       .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -172,6 +179,7 @@ export default async function chefRoutes(server: FastifyInstance) {
     return {
       ...chef,
       cuisineTypes: JSON.parse(chef.cuisineTypes as string || '[]'),
+      signatureDishes: JSON.parse(chef.signatureDishes as string || '[]'),
       avgResponseMinutes: responseTimeTier.avgResponseMinutes,
       response_time_tier: responseTimeTier,
       avgRating: reviewStats ? Math.round((reviewStats.avgRating as number) * 10) / 10 : 0,
@@ -195,6 +203,7 @@ export default async function chefRoutes(server: FastifyInstance) {
         location: body.location ?? existing.location,
         pricePerPerson: body.pricePerPerson ?? existing.pricePerPerson,
         available: body.available ?? existing.available,
+        signatureDishes: body.signatureDishes ? JSON.stringify(body.signatureDishes) : existing.signatureDishes,
       }).where(eq(chefProfiles.userId, userId)).run();
       const updated = db.select().from(chefProfiles).where(eq(chefProfiles.userId, userId)).get();
       // Also fetch the user's name
@@ -202,7 +211,8 @@ export default async function chefRoutes(server: FastifyInstance) {
       return { 
         ...updated, 
         name: user?.name || '',
-        cuisineTypes: JSON.parse((updated?.cuisineTypes as string) || '[]') 
+        cuisineTypes: JSON.parse((updated?.cuisineTypes as string) || '[]'),
+        signatureDishes: JSON.parse((updated?.signatureDishes as string) || '[]'),
       };
     } else {
       const created = db.insert(chefProfiles).values({
@@ -212,13 +222,15 @@ export default async function chefRoutes(server: FastifyInstance) {
         location: body.location ?? '',
         pricePerPerson: body.pricePerPerson ?? 0,
         available: body.available ?? true,
+        signatureDishes: body.signatureDishes ? JSON.stringify(body.signatureDishes) : '[]',
       }).returning().all()[0];
       // Also fetch the user's name
       const user = db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get();
       return { 
         ...created, 
         name: user?.name || '',
-        cuisineTypes: JSON.parse((created?.cuisineTypes as string) || '[]') 
+        cuisineTypes: JSON.parse((created?.cuisineTypes as string) || '[]'),
+        signatureDishes: JSON.parse((created?.signatureDishes as string) || '[]'),
       };
     }
   });
@@ -238,7 +250,8 @@ export default async function chefRoutes(server: FastifyInstance) {
     return { 
       ...profile, 
       name: user?.name || '',
-      cuisineTypes: JSON.parse(profile.cuisineTypes as string || '[]') 
+      cuisineTypes: JSON.parse(profile.cuisineTypes as string || '[]'),
+      signatureDishes: JSON.parse(profile.signatureDishes as string || '[]'),
     };
   });
 }

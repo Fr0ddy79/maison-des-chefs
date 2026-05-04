@@ -311,6 +311,14 @@ export function migrate() {
     // Index may already exist, which is fine
   }
 
+  // MAI-1051: Add signature_dishes column to chef_profiles if it doesn't exist
+  try {
+    sqlite.exec(`ALTER TABLE chef_profiles ADD COLUMN signature_dishes TEXT NOT NULL DEFAULT '[]'`);
+    console.log('Migration: Added signature_dishes column to chef_profiles');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }
