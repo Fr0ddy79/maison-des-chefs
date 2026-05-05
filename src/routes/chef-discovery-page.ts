@@ -110,8 +110,8 @@ export default function buildChefDiscoveryPage(): string {
   .chef-card.selected { box-shadow: 0 0 0 3px #c9a227, 0 8px 24px rgba(0,0,0,0.15); }
   .chef-card.disabled { opacity: 0.6; pointer-events: none; }
   .chef-card-img { width: 100%; height: 200px; object-fit: cover; }
-  .chef-card-checkbox { position: absolute; top: 12px; left: 12px; width: 24px; height: 24px; background: white; border: 2px solid #ddd; border-radius: 50%; display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 10; }
-  .chef-card.selected .chef-card-checkbox { background: #c9a227; border-color: #c9a227; display: flex; }
+  .chef-card-checkbox { position: absolute; top: 12px; left: 12px; width: 24px; height: 24px; background: white; border: 2px solid #ddd; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; transition: background 0.2s, border-color 0.2s; }
+  .chef-card.selected .chef-card-checkbox { background: #c9a227; border-color: #c9a227; }
   .chef-card.selected .chef-card-checkbox::after { content: '✓'; color: white; font-size: 14px; font-weight: bold; }
   .chef-card-body { padding: 1.25rem; }
   .chef-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
@@ -142,13 +142,16 @@ export default function buildChefDiscoveryPage(): string {
   footer .logo { font-size: 1.3rem; font-weight: bold; margin-bottom: 0.5rem; }
   footer p { opacity: 0.7; font-size: 0.85rem; }
 
-  .inquiry-floating-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #2c3e50; color: white; padding: 1rem 2rem; display: none; align-items: center; justify-content: space-between; z-index: 200; box-shadow: 0 -4px 16px rgba(0,0,0,0.2); }
-  .inquiry-floating-bar.visible { display: flex; }
-  .inquiry-bar-info { display: flex; align-items: center; gap: 0.75rem; font-size: 1rem; }
-  .inquiry-bar-count { background: #c9a227; color: white; padding: 0.2rem 0.7rem; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
-  .inquiry-bar-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-  .inquiry-bar-btn:hover { background: #b8922a; }
-  .inquiry-bar-btn:disabled { background: #888; cursor: not-allowed; }
+  .compare-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #2c3e50; color: white; padding: 1rem 2rem; display: none; align-items: center; justify-content: space-between; z-index: 200; box-shadow: 0 -4px 16px rgba(0,0,0,0.2); }
+  .compare-bar.visible { display: flex; }
+  .compare-bar-info { display: flex; align-items: center; gap: 0.75rem; font-size: 1rem; }
+  .compare-bar-count { background: #c9a227; color: white; padding: 0.2rem 0.7rem; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
+  .compare-bar-actions { display: flex; gap: 0.75rem; }
+  .compare-bar-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-flex; align-items: center; }
+  .compare-bar-btn:hover { background: #b8922a; }
+  .compare-bar-btn.inquiry-btn { background: #6c757d; }
+  .compare-bar-btn.inquiry-btn:hover { background: #5a6268; }
+  .compare-bar-btn:disabled { background: #888; cursor: not-allowed; }
 
   .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 300; }
   .modal-overlay.visible { display: flex; }
@@ -275,12 +278,15 @@ export default function buildChefDiscoveryPage(): string {
   <p>&copy; 2026 Maison des Chefs. All rights reserved.</p>
 </footer>
 
-<div class="inquiry-floating-bar" id="inquiryFloatingBar">
-  <div class="inquiry-bar-info">
-    <span class="inquiry-bar-count" id="selectedChefCount">0</span>
-    <span>chef<span id="pluralS">s</span> selected</span>
+<div class="compare-bar" id="compareBar">
+  <div class="compare-bar-info">
+    <span class="compare-bar-count" id="compareChefCount">0</span>
+    <span>chef<span id="comparePluralS">s</span> selected for comparison</span>
   </div>
-  <button class="inquiry-bar-btn" id="openInquiryBtn" onclick="openInquiryModal()">Send Inquiry</button>
+  <div class="compare-bar-actions">
+    <button class="compare-bar-btn inquiry-btn" id="compareClearBtn" onclick="clearChefSelection()">Clear</button>
+    <button class="compare-bar-btn" id="compareGoBtn" onclick="goToCompare()">Compare Chefs</button>
+  </div>
 </div>
 
 <div class="modal-overlay" id="inquiryModal">
@@ -583,17 +589,18 @@ function toggleChefSelection(chefId, selected, serviceId) {
       selectedCount: selectedChefIds.size
     });
   }
-  updateFloatingBar();
+  updateCompareBar();
   updateCardStates();
 }
 
-function updateFloatingBar() {
+function updateCompareBar() {
   var count = selectedChefIds.size;
-  var bar = document.getElementById('inquiryFloatingBar');
-  var countEl = document.getElementById('selectedChefCount');
-  var pluralS = document.getElementById('pluralS');
+  var bar = document.getElementById('compareBar');
+  var countEl = document.getElementById('compareChefCount');
+  var pluralS = document.getElementById('comparePluralS');
+  var goBtn = document.getElementById('compareGoBtn');
   if (bar) {
-    if (count > 0) {
+    if (count >= 2) {
       bar.classList.add('visible');
       if (countEl) countEl.textContent = count;
       if (pluralS) pluralS.textContent = count > 1 ? 's' : '';
@@ -601,6 +608,19 @@ function updateFloatingBar() {
       bar.classList.remove('visible');
     }
   }
+}
+
+function clearChefSelection() {
+  selectedChefIds.clear();
+  selectedServicesMap = {};
+  updateCompareBar();
+  updateCardStates();
+}
+
+function goToCompare() {
+  if (selectedChefIds.size < 2) return;
+  var ids = Array.from(selectedChefIds).join(',');
+  window.location.href = '/compare?chefs=' + ids;
 }
 
 function updateCardStates() {

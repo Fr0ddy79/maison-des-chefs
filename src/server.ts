@@ -11,7 +11,7 @@ import { UserPayload } from './types.js';
 import { startQuoteReminderScheduler } from './services/quote-reminder.js';
 import { startStaleLeadReEngagementScheduler } from './services/diner-stale-lead-email.js';
 import { db } from './db/index.js';
-import { users, chefProfiles, services, bookings, leads } from './db/schema.js';
+import { users, chefProfiles, services, bookings, leads, dinerPreferences } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
 
 import authRoutes from './api/auth.js';
@@ -33,6 +33,7 @@ import buildBookingPage from './routes/booking-page.js';
 import dinerBookingsPage from './routes/diner-bookings-page.js';
 import buildChefLeadsPage from './routes/chef-leads-page.js';
 import buildChefDiscoveryPage from './routes/chef-discovery-page.js';
+import buildChefComparePage from './routes/chef-compare-page.js';
 import bookingStatusPageRoutes from './routes/booking-status-page.js';
 import referralTrackingRoutes from './routes/referral-tracking.js';
 import checkoutRoutes from './routes/checkout.js';
@@ -126,6 +127,14 @@ server.get('/chefs', async (request, reply) => {
   return buildChefDiscoveryPage();
 });
 
+// Chef compare page (MAI-903/MAI-1124)
+server.get('/compare', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  const url = new URL(request.url);
+  const chefIds = url.searchParams.get('chefs') || '';
+  return buildChefComparePage(chefIds);
+});
+
 // Diner bookings page (standalone route to avoid esbuild parsing issues with pages.ts template literals)
 server.get('/diner/bookings', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
@@ -211,8 +220,29 @@ server.get('/', async (request, reply) => {
     }));
   }
 
+
+  // MAI-1120: Pre-fill homepage search from diner preferences
+  const cookies = request.cookies as Record<string, string>;
+  const authToken = cookies?.auth_token;
+  let homePrefs: { cuisines: string[]; dietaryRestrictions: string[]; defaultPartySize?: number } | null = null;
+  if (authToken) {
+    try {
+      const decoded = await request.jwtVerify() as { userId: number; role: string };
+      if (decoded.role === 'diner') {
+        const prefs = db.select().from(dinerPreferences).where(eq(dinerPreferences.userId, decoded.userId)).get();
+        if (prefs && prefs.wizardCompletionStatus === 'completed') {
+          homePrefs = {
+            cuisines: JSON.parse(prefs.cuisines),
+            dietaryRestrictions: JSON.parse(prefs.dietaryRestrictions),
+            defaultPartySize: prefs.defaultPartySize,
+          };
+        }
+      }
+    } catch { /* invalid token - ignore */ }
+  }
+
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildHomePage({ chefCount: chefCount as number, serviceCount: serviceCount as number, bookingCount: bookingCount as number }, featuredServices);
+  return buildHomePage({ chefCount: chefCount as number, serviceCount: serviceCount as number, bookingCount: bookingCount as number }, featuredServices, homePrefs);
 });
 
 // Health check
