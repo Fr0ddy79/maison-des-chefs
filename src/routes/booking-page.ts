@@ -137,6 +137,13 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       <strong>✓ Your booking request was sent!</strong>
       <p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours.</p>
       <p style="margin-top: 0.25rem;">Check your email for updates.</p>
+      <div id="bookingStatusUrlSection" style="display:none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #a5d6a7;">
+        <p style="margin-bottom: 0.5rem;">Track your inquiry status:</p>
+        <div style="background: #f0f8e8; border: 1px solid #a5d6a7; border-radius: 6px; padding: 0.75rem 1rem; word-break: break-all;">
+          <a href="#" id="bookingStatusUrlLink" style="color: #2e7d32; font-weight: 600; text-decoration: none;"></a>
+        </div>
+        <p style="font-size: 0.85rem; color: #888; margin-top: 0.5rem;">Save this link to check your inquiry status at any time.</p>
+      </div>
     </div>
     <div class="content-grid">
       <div class="form-section">
@@ -326,9 +333,18 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           body: JSON.stringify(formData),
         });
         if (response.ok) {
+          const result = await response.clone().json();
           // MAI-834: Track successful inquiry analytics
-          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: (await response.clone().json()).leadId });
+          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
           form.style.display = 'none';
+          // Show booking status URL if available
+          const statusUrlSection = document.getElementById('bookingStatusUrlSection');
+          const statusUrlLink = document.getElementById('bookingStatusUrlLink');
+          if (statusUrlSection && statusUrlLink && result.bookingStatusUrl) {
+            statusUrlLink.href = result.bookingStatusUrl;
+            statusUrlLink.textContent = result.bookingStatusUrl;
+            statusUrlSection.style.display = 'block';
+          }
           successMessage.classList.add('show');
           successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {

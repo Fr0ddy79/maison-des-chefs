@@ -67,6 +67,11 @@ function getChefPhoto(cuisineTypes: string[]): string {
   return 'https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=400&h=400&fit=crop&crop=face';
 }
 
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
 function getChefAvgResponseTime(chefId: number): number | null {
   const result = db.select({
     avgMs: sql `coalesce(avg(${leads.firstChefActionAt} - ${leads.createdAt}), NULL)`
@@ -533,6 +538,9 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
           <span class="compare-checkbox-custom"></span>
           <span class="compare-checkbox-text">Compare</span>
         </label>
+        <div class="card-actions">
+          <button class="card-inquire-btn" onclick="openServiceInquiryModal(${service.id}, '${escapeHtml(service.name)}', '${escapeHtml(service.chefName)}')" type="button">Inquire</button>
+        </div>
         </div>`;
     }).join('')
     : `<div class="no-results">
@@ -691,6 +699,19 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     .modal-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     .modal-submit-btn { width: 100%; background: #c9a227; color: white; border: none; padding: 1rem; border-radius: 6px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 0.5rem; }
     .modal-submit-btn:hover { background: #b8922a; }
+    .card-actions { display: flex; gap: 0.5rem; padding: 0 1.5rem 1.5rem; }
+    .card-inquire-btn { flex: 1; background: #c9a227; color: white; border: none; padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .card-inquire-btn:hover { background: #b8922a; }
+    .service-inquiry-modal .modal-chef-summary { background: #f8f9fa; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.95rem; color: #333; }
+    .service-inquiry-modal .modal-chef-summary strong { color: #2c3e50; }
+    .modal-success { text-align: center; padding: 1rem 0; }
+    .modal-success .success-icon { font-size: 3rem; margin-bottom: 1rem; }
+    .modal-success h3 { font-size: 1.4rem; color: #2c3e50; margin-bottom: 0.75rem; }
+    .modal-success p { color: #555; margin-bottom: 0.75rem; }
+    .modal-success .status-url { background: #f0f8e8; border: 1px solid #a5d6a7; border-radius: 6px; padding: 0.75rem 1rem; margin: 1rem 0; word-break: break-all; }
+    .modal-success .status-url a { color: #2e7d32; font-weight: 600; text-decoration: none; }
+    .modal-success .status-url a:hover { text-decoration: underline; }
+    .modal-success .trust-note { font-size: 0.85rem; color: #888; margin-top: 0.5rem; }
     @media (max-width: 768px) {
       .inquiry-floating-bar { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
       .inquiry-bar-info { font-size: 0.9rem; }
@@ -966,6 +987,98 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         submitBtn.textContent = 'Send Inquiry to ' + selectedChefs.length + ' Chef' + (selectedChefs.length > 1 ? 's' : '');
       }
     });
+
+    // Service inquiry modal functions
+    function openServiceInquiryModal(serviceId, serviceName, chefName) {
+      var modal = document.getElementById('serviceInquiryModal');
+      var summary = document.getElementById('serviceInquiryChefSummary');
+      var serviceIdInput = document.getElementById('serviceInquiryServiceId');
+      var form = document.getElementById('serviceInquiryForm');
+      if (summary) summary.innerHTML = '<strong>' + escapeHtml(serviceName) + '</strong> by ' + escapeHtml(chefName);
+      if (serviceIdInput) serviceIdInput.value = serviceId;
+      if (form) form.reset();
+      var submitBtn = document.getElementById('serviceInquirySubmitBtn');
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send Inquiry'; }
+      // Reset to form view if modal was showing success
+      var modalBody = document.getElementById('serviceInquiryModalBody');
+      if (modalBody && !modalBody.querySelector('#serviceInquiryForm')) {
+        // Re-build the form HTML if success state was shown
+        modalBody.innerHTML = document.getElementById('serviceInquiryModalBody').dataset.originalBody || '';
+      }
+      // Store original body for reset
+      try {
+        var formEl = document.getElementById('serviceInquiryForm');
+        if (formEl && !formEl.dataset.originalSet) {
+          modalBody.dataset.originalBody = modalBody.innerHTML;
+          formEl.dataset.originalSet = 'true';
+        }
+      } catch(e) {}
+      if (modal) modal.style.display = 'flex';
+      // Pre-fill from cookies
+      var cookieEmail = getCookie('diner_email');
+      var cookieName = getCookie('diner_name');
+      var cookiePhone = getCookie('diner_phone');
+      var emailEl = document.getElementById('serviceInquiryEmail');
+      var nameEl = document.getElementById('serviceInquiryClientName');
+      var phoneEl = document.getElementById('serviceInquiryPhone');
+      if (emailEl && cookieEmail) emailEl.value = cookieEmail;
+      if (nameEl && cookieName) nameEl.value = cookieName;
+      if (phoneEl && cookiePhone) phoneEl.value = cookiePhone;
+    }
+
+    function closeServiceInquiryModal() {
+      var modal = document.getElementById('serviceInquiryModal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    document.getElementById('serviceInquiryModal').addEventListener('click', function(e) {
+      if (e.target === this) closeServiceInquiryModal();
+    });
+
+    document.getElementById('serviceInquiryForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var form = e.target;
+      var submitBtn = document.getElementById('serviceInquirySubmitBtn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Sending...';
+      var formData = {
+        serviceId: parseInt(document.getElementById('serviceInquiryServiceId').value, 10),
+        clientName: form.clientName.value,
+        email: form.email.value,
+        phone: form.phone.value || undefined,
+        eventDate: form.eventDate.value || undefined,
+        guestCount: parseInt(form.guestCount.value, 10) || 1,
+        message: form.message.value || undefined,
+      };
+      try {
+        var response = await fetch('/api/inquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+        var result = await response.json();
+        if (!response.ok) {
+          alert('Error: ' + (result.error || 'Failed to submit inquiry'));
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Send Inquiry';
+          return;
+        }
+        var modalBody = document.getElementById('serviceInquiryModalBody');
+        var statusUrl = result.bookingStatusUrl || ('/booking-status?token=' + (result.accessToken || ''));
+        modalBody.innerHTML = '<div class="modal-success">' +
+          '<div class="success-icon">&#x2705;</div>' +
+          '<h3>Inquiry Sent!</h3>' +
+          '<p>We\'ve received your inquiry and the chef will respond within 24-48 hours.</p>' +
+          '<div class="status-url">Track your inquiry: <a href="' + statusUrl + '" target="_blank">' + statusUrl + '</a></div>' +
+          '<p class="trust-note">No payment is required today. This is just an inquiry — the chef will confirm availability and pricing.</p>' +
+          '<button class="modal-submit-btn" onclick="closeServiceInquiryModal();" style="margin-top:1rem;">Back to Services</button>' +
+        '</div>';
+      } catch (err) {
+        alert('Network error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Inquiry';
+      }
+    });
   </script>
 
   <div class="inquiry-floating-bar" id="compareBar">
@@ -1016,6 +1129,50 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
             <textarea id="modalMessage" name="message" placeholder="Tell the chefs about your event, dietary requirements, or any special requests..."></textarea>
           </div>
           <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Send Inquiry to <span id="modalChefCount">0</span> Chef<span id="modalPluralS">s</span></button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="serviceInquiryModal" style="display:none;">
+    <div class="modal service-inquiry-modal">
+      <div class="modal-header">
+        <h2>Inquire About Service</h2>
+        <button class="modal-close" onclick="closeServiceInquiryModal()">×</button>
+      </div>
+      <div class="modal-body" id="serviceInquiryModalBody">
+        <div class="modal-chef-summary" id="serviceInquiryChefSummary"></div>
+        <form id="serviceInquiryForm">
+          <input type="hidden" id="serviceInquiryServiceId" name="serviceId" value="">
+          <div class="modal-form-row">
+            <div class="modal-form-group">
+              <label for="serviceInquiryClientName">Your Name <span class="required">*</span></label>
+              <input type="text" id="serviceInquiryClientName" name="clientName" required placeholder="Full name">
+            </div>
+            <div class="modal-form-group">
+              <label for="serviceInquiryEmail">Email <span class="required">*</span></label>
+              <input type="email" id="serviceInquiryEmail" name="email" required placeholder="you@example.com">
+            </div>
+          </div>
+          <div class="modal-form-row">
+            <div class="modal-form-group">
+              <label for="serviceInquiryPhone">Phone</label>
+              <input type="tel" id="serviceInquiryPhone" name="phone" placeholder="(555) 123-4567">
+            </div>
+            <div class="modal-form-group">
+              <label for="serviceInquiryGuestCount">Guests <span class="required">*</span></label>
+              <input type="number" id="serviceInquiryGuestCount" name="guestCount" required min="1" value="2">
+            </div>
+          </div>
+          <div class="modal-form-group">
+            <label for="serviceInquiryEventDate">Preferred Date</label>
+            <input type="date" id="serviceInquiryEventDate" name="eventDate">
+          </div>
+          <div class="modal-form-group">
+            <label for="serviceInquiryMessage">Message to Chef</label>
+            <textarea id="serviceInquiryMessage" name="message" placeholder="Tell the chef about your event, dietary requirements, or any special requests..."></textarea>
+          </div>
+          <button type="submit" class="modal-submit-btn" id="serviceInquirySubmitBtn">Send Inquiry</button>
         </form>
       </div>
     </div>
