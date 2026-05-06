@@ -144,6 +144,19 @@ export function trackChefDiscoveryEvent(data: {
   }
 }
 
+// MAI-1177: Track chef service published event (from onboarding)
+export function trackChefServicePublished(data: {
+  userId: number;
+  serviceId: number;
+  serviceName: string;
+  onboarding: boolean;
+}): void {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Chef service published:', data);
+  }
+  // TODO: Forward to analytics service (Mixpanel, Segment, etc.)
+}
+
 // MAI-1075: Track booking_created event with service attribution from cookie
 export function trackBookingCreatedEvent(data: {
   bookingId: number;

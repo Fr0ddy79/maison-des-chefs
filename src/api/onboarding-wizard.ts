@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { chefProfiles, services, chefOnboardingState, users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { sendChefOnboardingCompleteEmail } from '../services/chef-onboarding-complete-email.js';
+import { trackChefServicePublished } from '../routes/analytics.js';
 
 // Schema definitions
 const cuisineTags = ['french', 'italian', 'japanese', 'mexican', 'indian', 'thai', 'american', 'mediterranean', 'korean', 'chinese', 'vietnamese', 'spanish', 'greek', 'middle_eastern', 'nordic'] as const;
@@ -308,10 +309,13 @@ export default async function onboardingWizardRoutes(server: FastifyInstance) {
       profileCompletedAt: new Date(),
     }).where(eq(chefProfiles.userId, userId)).run();
 
-    // Clear onboarding state
-    db.delete(chefOnboardingState).where(eq(chefOnboardingState.chefId, userId)).run();
+    // MAI-1177: Mark onboarding complete on user record
+    db.update(users).set({ hasCompletedOnboarding: true }).where(eq(users.id, userId)).run();
 
     const updatedService = db.select().from(services).where(eq(services.id, service.id)).get();
+
+    // MAI-1177: Track chef service published event
+    trackChefServicePublished({ userId, serviceId: service.id, serviceName: service.name, onboarding: true });
 
     // Send welcome email to chef (fire-and-forget, don't block response)
     const chef = db.select().from(users).where(eq(users.id, userId)).get();
