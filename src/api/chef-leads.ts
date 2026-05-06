@@ -194,6 +194,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         quoteSentAt: now,
         quoteToken,
         firstChefActionAt: lead.firstChefActionAt ?? now,
+        firstResponseAt: lead.firstResponseAt ?? now,
       } as Record<string, unknown>)
       .where(eq(leads.id, parseInt(leadId)))
       .returning()
