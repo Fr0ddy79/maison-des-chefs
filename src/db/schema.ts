@@ -150,8 +150,10 @@ export const leads = sqliteTable('leads', {
   guestCount: integer('guest_count').notNull().default(0),
   message: text('message'),
   status: text('status').notNull().default('new'),
+  // MAI-1144: Link lead to booking for direct booking inquiries
+  bookingId: integer('booking_id').references(() => bookings.id),
   // MAI-948: Multi-chef inquiry tracking
-  inquiryType: text('inquiry_type', { enum: ['single', 'multi'] }).notNull().default('single'),
+  inquiryType: text('inquiry_type', { enum: ['single', 'multi', 'direct_booking'] }).notNull().default('single'),
   multiInquiryId: text('multi_inquiry_id'), // shared UUID linking leads from same multi-inquiry
   priceEstimateSentAt: integer('price_estimate_sent_at', { mode: 'timestamp' }),
   firstResponseAt: integer('first_response_at', { mode: 'timestamp' }),

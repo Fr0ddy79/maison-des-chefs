@@ -45,6 +45,9 @@ export default function buildDinerBookingsPage(): string {
     .booking-meta { text-align: right; }
     .booking-price { font-size: 1.5rem; font-weight: 700; color: #2c3e50; }
     .booking-price-label { font-size: 0.8rem; color: #888; font-weight: normal; }
+    .book-again-btn { background: #c9a227; color: white; padding: 0.5rem 1rem; text-decoration: none; border-radius: 4px; font-weight: 600; transition: background 0.2s; border: none; cursor: pointer; font-size: 0.9rem; display: inline-block; margin-top: 0.75rem; }
+    .book-again-btn:hover { background: #b8922a; }
+    .booking-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
     .status-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin-top: 0.5rem; }
     .status-pending { background: #fff3cd; color: #856404; }
     .status-confirmed { background: #d4edda; color: #155724; }
@@ -60,6 +63,7 @@ export default function buildDinerBookingsPage(): string {
       .booking-card { flex-direction: column; }
       .booking-meta { text-align: left; margin-top: 1rem; }
       .booking-details { flex-direction: column; gap: 0.5rem; }
+      .booking-actions { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
     }
   </style>
 </head>
@@ -186,7 +190,11 @@ export default function buildDinerBookingsPage(): string {
         weekday: 'short', year: 'numeric', month: 'long', day: 'numeric'
       });
       var formattedPrice = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(booking.totalPrice);
-      return '\n        <div class="booking-card">\n          <div class="booking-main">\n            <div class="booking-service">' + escapeHtml(booking.serviceName) + '</div>\n            <div class="booking-chef">with ' + escapeHtml(booking.chefName) + '</div>\n            <div class="booking-details">\n              <span class="booking-detail">📅 ' + formattedDate + '</span>\n              <span class="booking-detail">👥 ' + booking.guestCount + ' guest' + (booking.guestCount !== 1 ? 's' : '') + '</span>\n            </div>\n            <span class="status-badge ' + statusClass + '">' + statusLabel + '</span>\n          </div>\n          <div class="booking-meta">\n            <div class="booking-price">' + formattedPrice + '</div>\n            <div class="booking-price-label">total</div>\n            <a href="/services/' + booking.serviceId + '" class="btn btn-secondary" style="margin-top: 0.75rem; padding: 0.5rem 1rem; font-size: 0.9rem;">View Service</a>\n          </div>\n        </div>\n      ';
+      var isBookAgainEligible = booking.status === 'completed' || booking.status === 'confirmed';
+      var bookAgainBtn = isBookAgainEligible
+        ? '<a href="/book/' + booking.serviceId + '?guests=' + booking.guestCount + '" class="book-again-btn">Book Again</a>'
+        : '';
+      return '\n        <div class="booking-card">\n          <div class="booking-main">\n            <div class="booking-service">' + escapeHtml(booking.serviceName) + '</div>\n            <div class="booking-chef">with ' + escapeHtml(booking.chefName) + '</div>\n            <div class="booking-details">\n              <span class="booking-detail">📅 ' + formattedDate + '</span>\n              <span class="booking-detail">👥 ' + booking.guestCount + ' guest' + (booking.guestCount !== 1 ? 's' : '') + '</span>\n            </div>\n            <span class="status-badge ' + statusClass + '">' + statusLabel + '</span>\n          </div>\n          <div class="booking-meta">\n            <div class="booking-price">' + formattedPrice + '</div>\n            <div class="booking-price-label">total</div>\n          </div>\n          <div class="booking-actions">\n            ' + bookAgainBtn + '\n            <a href="/services/' + booking.serviceId + '" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">View Service</a>\n          </div>\n        </div>\n      ';
     }
     function escapeHtml(text) {
       var div = document.createElement('div');

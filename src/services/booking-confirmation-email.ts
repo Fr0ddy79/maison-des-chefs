@@ -92,6 +92,14 @@ function buildBookingConfirmationEmail(params: BookingConfirmationParams): { sub
       <p style="margin: 0; color: #5d4037; font-size: 15px;">Chef ${params.chefName} will reach out within 24 hours to confirm details and discuss any dietary requirements or special requests.</p>
     </div>
     
+    <!-- Referral Credit Section -->
+    <div style="background: linear-gradient(135deg, #e8f0fe 0%, #d4e4ff 100%); border: 2px solid #4285f4; border-radius: 12px; padding: 24px; margin: 25px 0; text-align: center;">
+      <p style="font-size: 13px; color: #1a73e8; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">🎁 Share the Love</p>
+      <p style="font-size: 18px; color: #2c3e50; margin: 0 0 12px; font-weight: 600;">Give $25, Get $25</p>
+      <p style="font-size: 14px; color: #555; margin: 0 0 18px; line-height: 1.5;">Know someone who'd love a private chef experience? Share your referral code and you'll both get $25 credit toward your next booking!</p>
+      <a href="${dinerBookingsLink}" style="display: inline-block; background: #4285f4; color: white; padding: 12px 24px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">Get My Referral Code →</a>
+    </div>
+    
     <h3 style="color: #2c3e50; margin-top: 25px;">Need to reach us?</h3>
     <p style="color: #555;">Questions about your booking? We're here to help at <a href="mailto:support@maisondeschefs.com" style="color: #c9a227;">support@maisondeschefs.com</a></p>
     
@@ -121,6 +129,10 @@ CONFIRMATION #: ${params.bookingId}
 
 What's Next:
 Chef ${params.chefName} will reach out within 24 hours to confirm details and discuss any dietary requirements or special requests.
+
+🎁 SHARE THE LOVE — Give $25, Get $25!
+Know someone who'd love a private chef experience? Share your referral code and you'll both get $25 credit toward your next booking!
+Get your referral code → ${dinerBookingsLink}
 
 View your bookings → ${dinerBookingsLink}
 

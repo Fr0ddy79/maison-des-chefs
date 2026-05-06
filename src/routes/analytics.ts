@@ -1,3 +1,17 @@
+// MAI-1074: Read ab_variant cookie directly for accurate A/B test tracking
+function getVariantFromCookie(): string {
+  if (typeof (globalThis as any).document !== 'undefined') {
+    const cookies = (globalThis as any).document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'ab_variant') {
+        return value;
+      }
+    }
+  }
+  return '';
+}
+
 // Analytics tracking module for service page views
 // MAI-1075: Also persist last_viewed_service_id cookie for attribution
 export function trackServicePageViewEvent(data: {
@@ -7,13 +21,19 @@ export function trackServicePageViewEvent(data: {
   cuisineType: string;
   variant?: string;
 }): void {
+  // MAI-1074: Read ab_variant cookie directly for accurate A/B test tracking
+  // Cookie is set by client-side code when variant is determined
+  // This ensures SSR-called events use the correct variant from cookie
+  const cookieVariant = getVariantFromCookie();
+  const variant = cookieVariant || data.variant || 'unknown';
+
   const eventData = {
     event: 'service_page_view',
     service_id: data.serviceId,
     chef_id: data.chefId,
     price_per_person: data.pricePerPerson,
     cuisine_type: data.cuisineType,
-    variant: data.variant || 'unknown',
+    variant,
     auth_status: 'guest',
     timestamp: new Date().toISOString()
   };

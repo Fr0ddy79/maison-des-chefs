@@ -290,6 +290,14 @@ export function migrate() {
     // Index may already exist, which is fine
   }
 
+  // MAI-1144: Add booking_id column to leads for direct booking linkage
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN booking_id INTEGER REFERENCES bookings(id)`);
+    console.log('Migration: Added booking_id column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   // MAI-948: Add multi-chef inquiry tracking columns to leads if they don't exist
   try {
     sqlite.exec(`ALTER TABLE leads ADD COLUMN inquiry_type TEXT NOT NULL DEFAULT 'single'`);

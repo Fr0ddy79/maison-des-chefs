@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { chefProfiles, services, chefOnboardingState, users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { sendChefOnboardingCompleteEmail } from '../services/chef-onboarding-complete-email.js';
 
 // Schema definitions
 const cuisineTags = ['french', 'italian', 'japanese', 'mexican', 'indian', 'thai', 'american', 'mediterranean', 'korean', 'chinese', 'vietnamese', 'spanish', 'greek', 'middle_eastern', 'nordic'] as const;
@@ -311,6 +312,20 @@ export default async function onboardingWizardRoutes(server: FastifyInstance) {
     db.delete(chefOnboardingState).where(eq(chefOnboardingState.chefId, userId)).run();
 
     const updatedService = db.select().from(services).where(eq(services.id, service.id)).get();
+
+    // Send welcome email to chef (fire-and-forget, don't block response)
+    const chef = db.select().from(users).where(eq(users.id, userId)).get();
+    if (chef) {
+      sendChefOnboardingCompleteEmail({
+        chefId: userId,
+        chefEmail: chef.email,
+        chefName: chef.name,
+        serviceName: service.name,
+        serviceId: service.id,
+      }).catch(err => {
+        console.error('[OnboardingPublish] Failed to send onboarding complete email:', err);
+      });
+    }
 
     return { 
       success: true, 

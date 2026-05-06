@@ -106,7 +106,7 @@ export default function buildChefLeadsPage(): string {
   html += '  </style>\n';
   html += '</head>\n';
   html += '<body>\n';
-  html += '<nav><a href="/" class="logo">Maison des Chefs</a><div class="nav-links"><a href="/chef/profile">My Profile</a><a href="/chef/leads">My Leads</a><a href="/services">Services</a><a href="/auth/login">Sign In</a></div></nav>\n';
+  html += '<nav><a href="/" class="logo">Maison des Chefs</a><div class="nav-links"><a href="/chef/profile">My Profile</a><a href="/chef/leads">My Leads</a><a href="/chef/bookings">My Bookings</a><a href="/services">Services</a><a href="/auth/login">Sign In</a></div></nav>\n';
   html += '<section class="page-header"><div class="page-header-inner"><div><h1>Lead Management</h1><p>View and respond to diner inquiries</p></div></div></section>\n';
   html += '<div class="leads-container">\n';
   html += '<div class="stats-row" id="statsRow"><div class="stat-card"><div class="stat-value" id="statNew">-</div><div class="stat-label">New</div></div><div class="stat-card"><div class="stat-value" id="statResponded">-</div><div class="stat-label">Responded</div></div><div class="stat-card"><div class="stat-value" id="statConverted">-</div><div class="stat-label">Converted</div></div><div class="stat-card"><div class="stat-value" id="statLost">-</div><div class="stat-label">Lost</div></div></div>\n';

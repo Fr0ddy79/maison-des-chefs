@@ -148,6 +148,7 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
       quoteSentAt: leads.quoteSentAt,
       referralCode: leads.referralCode, // MAI-823: Referral tracking
       referralSource: leads.referralSource, // MAI-823: Referral tracking
+      selectedAddons: leads.selectedAddons, // MAI-1147: Upsell tracking
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -173,6 +174,60 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
     // Build the booking status page
     return buildBookingStatusPage(lead, token);
   });
+
+  // MAI-1147: POST /api/booking-status/:token/request-addon
+  // Sends email to chef requesting an add-on upgrade
+  server.post<{ Params: { token: string } }>(
+    '/api/booking-status/:token/request-addon',
+    async (request, reply) => {
+      const { token } = request.params;
+      const { addonId, addonName, addonPrice } = request.body as { addonId: string; addonName: string; addonPrice: number };
+
+      if (!token || token.length !== 64) {
+        return reply.status(400).send({ error: 'Invalid token' });
+      }
+
+      if (!addonId || !addonName || addonPrice == null) {
+        return reply.status(400).send({ error: 'Invalid addon data' });
+      }
+
+      // Find lead by access token
+      const lead = db.select({
+        id: leads.id,
+        email: leads.email,
+        clientName: leads.clientName,
+        eventDate: leads.eventDate,
+        guestCount: leads.guestCount,
+        chefId: leads.chefId,
+        serviceId: leads.serviceId,
+        status: leads.status,
+      })
+        .from(leads)
+        .where(eq(leads.accessToken, token))
+        .get();
+
+      if (!lead) {
+        return reply.status(404).send({ error: 'Booking not found' });
+      }
+
+      // Only allow for confirmed (converted) bookings
+      if (lead.status !== 'converted') {
+        return reply.status(400).send({ error: 'Add-ons can only be requested for confirmed bookings' });
+      }
+
+      // In MVP, we just log the request (email sending would be implemented here)
+      // For now, log and return success
+      console.log(`[MAI-1147] Addon request: lead=${lead.id}, addon=${addonId}, chef=${lead.chefId}`);
+
+      return {
+        success: true,
+        message: `Request sent to chef for ${addonName}`,
+        addonId,
+        addonName,
+        addonPrice,
+      };
+    }
+  );
 }
 
 function buildErrorPage(title: string, message: string): string {
@@ -695,6 +750,70 @@ function buildBookingStatusPage(lead: any, token: string): string {
       display: inline-block;
     }
     .book-again-card .btn:hover { background: #f0f0f0; }
+
+    /* MAI-1147: Post-Booking Upsell styles */
+    .upsell-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 1.5rem 2rem;
+      margin-bottom: 1.5rem;
+    }
+    .upsell-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .upsell-icon { font-size: 2rem; }
+    .upsell-title { font-size: 1.2rem; font-weight: 700; color: #2c3e50; margin: 0 0 0.25rem 0; }
+    .upsell-subtitle { font-size: 0.9rem; color: #666; margin: 0; }
+    .upsell-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .upsell-card-item {
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 1rem;
+      transition: all 0.2s;
+    }
+    .upsell-card-item:hover { border-color: #c9a227; box-shadow: 0 2px 8px rgba(201,162,39,0.15); }
+    .upsell-card-header { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .upsell-card-icon { font-size: 1.5rem; }
+    .upsell-card-info { flex: 1; }
+    .upsell-card-name { font-size: 1rem; font-weight: 600; color: #2c3e50; }
+    .upsell-card-price { font-size: 1rem; font-weight: 700; color: #c9a227; }
+    .upsell-card-desc { font-size: 0.85rem; color: #666; line-height: 1.4; margin-bottom: 0.75rem; }
+    .upsell-add-btn {
+      width: 100%;
+      background: #c9a227;
+      color: white;
+      border: none;
+      padding: 0.625rem 1rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .upsell-add-btn:hover { background: #b8922a; }
+    .upsell-add-btn.requested { background: #22c55e; cursor: default; }
+    .upsell-success-msg {
+      text-align: center;
+      padding: 1rem;
+      background: #dcfce7;
+      border-radius: 8px;
+      color: #15803d;
+      font-weight: 500;
+      margin-top: 1rem;
+    }
+    .upsell-error-msg {
+      text-align: center;
+      padding: 0.75rem;
+      background: #fee2e2;
+      border-radius: 8px;
+      color: #dc2626;
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+    }
   </style>
 </head>
 <body>
@@ -786,6 +905,22 @@ function buildBookingStatusPage(lead: any, token: string): string {
     
     ${referralCtaHtml}
 
+    <!-- MAI-1147: Post-Booking Upsell Section (only for confirmed bookings) -->
+    ${isConverted ? `
+    <div class="upsell-card" id="upsellSection">
+      <div class="upsell-header">
+        <span class="upsell-icon">✨</span>
+        <div>
+          <h3 class="upsell-title">Enhance Your Experience</h3>
+          <p class="upsell-subtitle">Make your event even more special</p>
+        </div>
+      </div>
+      <div class="upsell-cards" id="upsellCards">
+        <!-- Upsell cards rendered by JS -->
+      </div>
+    </div>
+    ` : ''}
+
     ${isConverted ? `
     <div class="book-again-card">
       <h3>Ready for your next event?</h3>
@@ -871,6 +1006,100 @@ function buildBookingStatusPage(lead: any, token: string): string {
         }
       });
     }
+    
+    // MAI-1147: Post-Booking Upsell functionality
+    const upsellAddons = [
+      { id: 'wine-pairing', name: 'Wine Pairing', description: 'Curated wine selection expertly paired with each course by your chef', price: 35, icon: '🍷' },
+      { id: 'extra-courses', name: 'Extra Courses', description: "Two additional chef's specialty courses to elevate your dining experience", price: 45, icon: '🥂' },
+      { id: 'celebration-package', name: 'Celebration Package', description: 'Special decorations, custom dessert with message, and champagne toast', price: 75, icon: '🎉' },
+    ];
+    
+    function renderUpsellCards() {
+      const container = document.getElementById('upsellCards');
+      if (!container) return;
+      
+      container.innerHTML = upsellAddons.map(addon => {
+        return '<div class="upsell-card-item" data-addon-id="' + addon.id + '">' +
+          '<div class="upsell-card-header">' +
+            '<span class="upsell-card-icon">' + addon.icon + '</span>' +
+            '<div class="upsell-card-info">' +
+              '<div class="upsell-card-name">' + addon.name + '</div>' +
+              '<div class="upsell-card-price">+$' + addon.price + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="upsell-card-desc">' + addon.description + '</div>' +
+          '<button class="upsell-add-btn" onclick="requestUpsell(\'' + addon.id + '\', \'' + addon.name + '\', ' + addon.price + ', this)">Add to Booking</button>' +
+        '</div>';
+      }).join('');
+    }
+    
+    function requestUpsell(addonId, addonName, addonPrice, btn) {
+      if (btn.classList.contains('requested')) return;
+      
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      
+      fetch('/api/booking-status/' + token + '/request-addon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addonId, addonName, addonPrice })
+      })
+      .then(function(response) {
+        if (!response.ok) {
+          return response.json().then(function(err) {
+            throw new Error(err.error || 'Failed to request add-on');
+          });
+        }
+        return response.json();
+      })
+      .then(function(data) {
+        btn.classList.add('requested');
+        btn.textContent = '✓ Request Sent';
+        
+        // Track analytics: upsellRequested
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+            event: 'upsell_requested',
+            addon_id: addonId,
+            addon_name: addonName,
+            addon_price: addonPrice,
+            timestamp: new Date().toISOString()
+          }));
+        }
+        
+        // Show success message
+        var card = btn.closest('.upsell-card-item');
+        var successMsg = document.createElement('div');
+        successMsg.className = 'upsell-success-msg';
+        successMsg.textContent = 'Request sent to chef for ' + addonName + '! They will confirm availability.';
+        card.appendChild(successMsg);
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Add to Booking';
+        var card = btn.closest('.upsell-card-item');
+        var existingError = card.querySelector('.upsell-error-msg');
+        if (existingError) existingError.remove();
+        var errorMsg = document.createElement('div');
+        errorMsg.className = 'upsell-error-msg';
+        errorMsg.textContent = err.message || 'Failed to send request. Please try again.';
+        card.appendChild(errorMsg);
+      });
+    }
+    
+    // Initialize upsell cards on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      renderUpsellCards();
+      
+      // Track analytics: upsellPresented
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+          event: 'upsell_presented',
+          booking_id: ${lead?.id || 0},
+          timestamp: new Date().toISOString()
+        }));
+      }
+    });
   </script>
 </body>
 </html>`;

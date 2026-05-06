@@ -95,7 +95,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '  </style>\n';
   html += '</head>\n';
   html += '<body>\n';
-  html += '<nav><a href="/" class="logo">Maison des Chefs</a><div class="nav-links"><a href="/chef/leads">My Leads</a><a href="/chefs">Browse Chefs</a><a href="/auth/login">Sign In</a></div></nav>\n';
+  html += '<nav><a href="/" class="logo">Maison des Chefs</a><div class="nav-links"><a href="/chef/profile">My Profile</a><a href="/chef/leads">My Leads</a><a href="/chef/bookings">My Bookings</a><a href="/chefs">Browse Chefs</a><a href="/auth/login">Sign In</a></div></nav>\n';
   html += '<section class="page-header"><div><h1>Chef Profile</h1><p>Manage your public chef profile</p></div></section>\n';
   html += '<div class="profile-container">\n';
   html += '<div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading profile...</p></div>\n';

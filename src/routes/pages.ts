@@ -3,7 +3,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { services, users, chefProfiles, leads, bookings, reviews, DIETARY_TAGS } from '../db/schema.js';
+import { services, users, chefProfiles, leads, bookings, reviews, dinerPreferences, DIETARY_TAGS } from '../db/schema.js';
 import { eq, gte, lte, sql, and, desc, isNotNull, gte as gteCol } from 'drizzle-orm';
 import { trackServicePageViewEvent } from './analytics.js';
 
@@ -35,6 +35,19 @@ function buildDietaryBadges(dietaryTags: string[], maxDisplay = 3): string {
 }
 
 const CUISINE_TYPES = ['French', 'Italian', 'Japanese', 'Mexican', 'Mediterranean', 'Latin American', 'French Fusion'];
+
+// Mapping from wizard cuisine tags (snake_case) to display cuisines (Title Case)
+const CUISINE_TAG_TO_DISPLAY: Record<string, string> = {
+  'italian': 'Italian',
+  'mexican': 'Mexican',
+  'asian': 'Japanese',
+  'american': 'American',
+  'mediterranean': 'Mediterranean',
+  'indian': 'Indian',
+  'french': 'French',
+  'middle_eastern': 'Middle Eastern',
+  'other': 'Other',
+};
 
 function getChefPhoto(cuisineTypes: string[]): string {
   const cuisinePhotos: Record<string, string> = {
@@ -224,7 +237,47 @@ export default async function pageRoutes(server: FastifyInstance) {
     });
 
     reply.header('Content-Type', 'text/html; charset=utf-8');
-    return buildServicesPage(servicesWithData, query, CUISINE_TYPES);
+    // MAI-1120: Auto-apply diner preferences if logged-in and no prefs explicitly set in URL
+    const cookies = request.cookies as Record<string, string>;
+    const authToken = cookies?.auth_token;
+    const clearPersonalization = query.clear_personalization === '1';
+    let autoAppliedPrefs: { cuisines: string[]; dietaryRestrictions: string[]; defaultPartySize?: number } | null = null;
+    if (authToken && !clearPersonalization) {
+      try {
+        const decoded = server.jwt.verify(authToken) as { userId: number; role: string };
+        if (decoded.role === 'diner') {
+          const prefs = db.select().from(dinerPreferences).where(eq(dinerPreferences.userId, decoded.userId)).get();
+          if (prefs && prefs.wizardCompletionStatus === 'completed') {
+            autoAppliedPrefs = {
+              cuisines: JSON.parse(prefs.cuisines),
+              dietaryRestrictions: JSON.parse(prefs.dietaryRestrictions),
+              defaultPartySize: prefs.defaultPartySize,
+            };
+          }
+        }
+      } catch { /* invalid token - ignore */ }
+    }
+    // Build augmented query with auto-applied preferences
+    const augmentedQuery = { ...query };
+    let isPersonalized = false;
+    if (autoAppliedPrefs && !query.personalized) {
+      // Auto-apply dietary restrictions if not already filtered
+      if (!query.dietary_tags && autoAppliedPrefs.dietaryRestrictions.length > 0) {
+        const filteredDietary = autoAppliedPrefs.dietaryRestrictions.filter(t => t !== 'none');
+        if (filteredDietary.length > 0) {
+          augmentedQuery.dietary_tags = filteredDietary.join(',');
+          isPersonalized = true;
+        }
+      }
+      // Auto-apply first cuisine preference if not already selected
+      if (!query.cuisine && autoAppliedPrefs.cuisines.length > 0) {
+        const firstCuisine = autoAppliedPrefs.cuisines[0];
+        const displayCuisine = CUISINE_TAG_TO_DISPLAY[firstCuisine] || firstCuisine;
+        augmentedQuery.cuisine = displayCuisine;
+        isPersonalized = true;
+      }
+    }
+    return buildServicesPage(servicesWithData, augmentedQuery, CUISINE_TYPES, isPersonalized ? autoAppliedPrefs : null);
   });
 
   // Service detail page
@@ -411,13 +464,21 @@ function build404Page(): string {
 </html>`;
 }
 
-function buildServicesPage(services: any[], filters: Record<string, string>, cuisineOptions: string[]): string {
+function buildServicesPage(services: any[], filters: Record<string, string>, cuisineOptions: string[], autoPrefs: { cuisines: string[]; dietaryRestrictions: string[]; defaultPartySize?: number } | null): string {
   const currentCuisine = filters.cuisine || '';
   const currentMinPrice = filters.minPrice || '';
   const currentMaxPrice = filters.maxPrice || '';
   const currentSort = filters.sort || 'newest';
   const currentDate = filters.date || '';
   const currentDietaryTags = filters.dietary_tags ? filters.dietary_tags.split(',').map((t: string) => t.trim()) : [];
+  const isPersonalized = !!autoPrefs;
+  const personalizationBanner = isPersonalized
+    ? `<div class="personalization-banner">
+        <span class="personalization-icon">✨</span>
+        <span class="personalization-text">Personalized for you based on your <a href="/onboarding">dietary preferences</a></span>
+        <a href="/services?clear_personalization=1" class="clear-personalization">Clear personalization</a>
+      </div>`
+    : '';
   const dietaryFilterHtml = Object.entries(DIETARY_TAG_LABELS).map(([value, info]) => {
     const checked = currentDietaryTags.includes(value) ? 'checked' : '';
     return `<label class="dietary-filter-checkbox"><input type="checkbox" name="dietary_tags" value="${value}" ${checked}> ${info.icon} ${info.label}</label>`;
@@ -511,6 +572,13 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     .page-header h1 { font-size: clamp(2rem, 4vw, 2.8rem); margin-bottom: 0.5rem; }
     .page-header p { font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 0 auto; }
     .filter-section { background: white; padding: 1.5rem 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: sticky; top: 60px; z-index: 50; }
+    .personalization-banner { background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%); border-bottom: 1px solid #ffe082; padding: 0.75rem 2rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+    .personalization-icon { font-size: 1.1rem; }
+    .personalization-text { color: #5d4037; flex: 1; }
+    .personalization-text a { color: #c9a227; font-weight: 600; text-decoration: none; }
+    .personalization-text a:hover { text-decoration: underline; }
+    .clear-personalization { color: #c9a227; font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .clear-personalization:hover { text-decoration: underline; }
     .quick-filters { max-width: 1200px; margin: 0 auto 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     .quick-filter-label { font-size: 0.85rem; color: #888; font-weight: 500; margin-right: 0.5rem; }
     .quick-filter-pill { padding: 0.35rem 0.85rem; background: #f0f0f0; color: #555; border-radius: 20px; font-size: 0.85rem; font-weight: 500; text-decoration: none; transition: all 0.2s; border: 1px solid transparent; }
@@ -646,6 +714,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     <p>From intimate dinners to grand celebrations, find the perfect private chef experience</p>
   </section>
   
+  ${personalizationBanner}
   <section class="filter-section">
     <div class="quick-filters">
       <span class="quick-filter-label">Quick filters:</span>
@@ -778,9 +847,9 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         ).join('');
       }
       if (inquireBtn) {
-        inquireBtn.style.display = selectedChefs.length >= 1 ? 'inline-block' : 'none';
+        inquireBtn.style.display = selectedChefs.length >= 2 ? 'inline-block' : 'none';
       }
-      bar.classList.toggle('visible', selectedChefs.length > 0);
+      bar.classList.toggle('visible', selectedChefs.length >= 2);
     }
     
     function removeChef(chefId) {
@@ -1266,6 +1335,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         // MAI-1074: Also set cookie for SSR to read on subsequent navigations
         try {
           document.cookie = 'cta_variant=' + ctaVariant + '; path=/; max-age=86400; SameSite=Lax';
+          document.cookie = 'ab_variant=' + ctaVariant + '; path=/; max-age=86400; SameSite=Lax';
         } catch (e) {}
       } else {
         // Otherwise try sessionStorage
@@ -1408,7 +1478,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
 </html>`;
 }
 
-export function buildHomePage(stats: { chefCount: number; serviceCount: number; bookingCount: number }, featuredServices: any[]): string {
+export function buildHomePage(stats: { chefCount: number; serviceCount: number; bookingCount: number }, featuredServices: any[], prefs?: { cuisines: string[]; dietaryRestrictions: string[]; defaultPartySize?: number } | null): string {
   const { chefCount, serviceCount, bookingCount } = stats;
   
   const featuredCards = featuredServices.length > 0
@@ -1572,7 +1642,7 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
           </div>
           <div class="search-field">
             <label for="search-guests">Number of guests</label>
-            <input type="number" id="search-guests" name="guests" min="1" max="50" placeholder="Guests" required>
+            <input type="number" id="search-guests" name="guests" min="1" max="50" placeholder="Guests" value="${prefs?.defaultPartySize || ''}" required>
           </div>
           <div class="search-field">
             <label for="search-type">Event type</label>
@@ -1589,13 +1659,13 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
             <label for="search-cuisine">Cuisine preference</label>
             <select id="search-cuisine" name="cuisine">
               <option value="">All Cuisines</option>
-              <option value="French">French</option>
-              <option value="Italian">Italian</option>
-              <option value="Japanese">Japanese</option>
-              <option value="Mexican">Mexican</option>
-              <option value="Mediterranean">Mediterranean</option>
-              <option value="Latin American">Latin American</option>
-              <option value="French Fusion">French Fusion</option>
+              <option value="French" ${prefs?.cuisines[0] === 'french' ? 'selected' : ''}>French</option>
+              <option value="Italian" ${prefs?.cuisines[0] === 'italian' ? 'selected' : ''}>Italian</option>
+              <option value="Japanese" ${prefs?.cuisines[0] === 'asian' ? 'selected' : ''}>Japanese</option>
+              <option value="Mexican" ${prefs?.cuisines[0] === 'mexican' ? 'selected' : ''}>Mexican</option>
+              <option value="Mediterranean" ${prefs?.cuisines[0] === 'mediterranean' ? 'selected' : ''}>Mediterranean</option>
+              <option value="Latin American" ${prefs?.cuisines[0] === 'latin_american' ? 'selected' : ''}>Latin American</option>
+              <option value="French Fusion" ${prefs?.cuisines[0] === 'french_fusion' ? 'selected' : ''}>French Fusion</option>
             </select>
           </div>
           <button type="submit" class="search-submit">Search Chefs</button>

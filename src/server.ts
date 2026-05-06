@@ -32,6 +32,7 @@ import { buildHomePage } from './routes/pages.js';
 import buildBookingPage from './routes/booking-page.js';
 import dinerBookingsPage from './routes/diner-bookings-page.js';
 import buildChefLeadsPage from './routes/chef-leads-page.js';
+import buildChefBookingsPage from './routes/chef-bookings-page.js';
 import buildChefDiscoveryPage from './routes/chef-discovery-page.js';
 import buildChefComparePage from './routes/chef-compare-page.js';
 import bookingStatusPageRoutes from './routes/booking-status-page.js';
@@ -43,6 +44,8 @@ import webhookRoutes from './api/webhooks.js';
 import bookingAddonRoutes from './api/booking-addons.js';
 import reviewRoutes from './api/reviews.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
+import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
+import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -115,6 +118,12 @@ server.get('/chef/leads', async (request, reply) => {
   return buildChefLeadsPage();
 });
 
+// Chef bookings dashboard page (MAI-1159 Task 2)
+server.get('/chef/bookings', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefBookingsPage();
+});
+
 // Chef profile page (MAI-921)
 server.get('/chef/profile', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
@@ -125,6 +134,23 @@ server.get('/chef/profile', async (request, reply) => {
 server.get('/chefs', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
   return buildChefDiscoveryPage();
+});
+
+// Chef public profile page (MAI-1150: Quick Share preview)
+server.get('/chefs/:id', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  const { id } = request.params as { id: string };
+  const chefId = parseInt(id);
+  if (isNaN(chefId)) {
+    return '<html><body><h1>Invalid Chef ID</h1><a href="/chefs">Back to Chefs</a></body></html>';
+  }
+  return buildChefPublicProfilePage(chefId);
+});
+
+// Chef onboarding wizard (MAI-1159)
+server.get('/chef/onboarding', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefOnboardingPage();
 });
 
 // Chef compare page (MAI-903/MAI-1124)

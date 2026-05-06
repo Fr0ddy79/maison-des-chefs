@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { bookings, services, users, chefProfiles } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { bookings, services, users, leads } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
 
 const createBookingSchema = z.object({
@@ -29,6 +29,25 @@ export default async function bookingRoutes(server: FastifyInstance) {
       return reply.status(404).send({ error: 'Service not found' });
     }
     const totalPrice = service.pricePerPerson * body.guestCount;
+
+    // Look up diner info BEFORE creating booking so we can create the lead
+    const diner = db.select().from(users).where(eq(users.id, userId)).get();
+
+    // MAI-1135: Create a corresponding lead record so the chef sees this inquiry in their lead dashboard.
+    // The lead captures the same inquiry data, ensuring 1:1 parity between bookings and leads.
+    // MAI-1144: Set inquiryType to 'direct_booking' so we can distinguish these from inquiry form submissions.
+    db.insert(leads).values({
+      serviceId: body.serviceId,
+      chefId: service.chefId,
+      clientName: diner?.name || null,
+      email: diner?.email || null,
+      eventDate: body.eventDate,
+      guestCount: body.guestCount,
+      message: body.notes || null,
+      status: 'new',
+      inquiryType: 'direct_booking',
+    }).run();
+
     const created = db.insert(bookings).values({
       serviceId: body.serviceId,
       dinerId: userId,
@@ -39,8 +58,19 @@ export default async function bookingRoutes(server: FastifyInstance) {
       notes: body.notes,
     }).returning().all()[0];
 
+    // MAI-1144: Update the lead with bookingId once booking is created
+    db.update(leads)
+      .set({ bookingId: created.id })
+      .where(and(
+        eq(leads.serviceId, body.serviceId),
+        eq(leads.chefId, service.chefId),
+        eq(leads.eventDate, body.eventDate),
+        eq(leads.guestCount, body.guestCount),
+        eq(leads.inquiryType, 'direct_booking')
+      ))
+      .run();
+
     // Send booking confirmation email to diner (fire-and-forget)
-    const diner = db.select().from(users).where(eq(users.id, userId)).get();
     if (diner?.email) {
       sendBookingConfirmationEmail({
         bookingId: created.id,
@@ -72,6 +102,7 @@ export default async function bookingRoutes(server: FastifyInstance) {
         createdAt: bookings.createdAt,
         serviceName: services.name,
         dinerName: users.name,
+        dinerEmail: users.email,
       })
         .from(bookings)
         .innerJoin(services, eq(bookings.serviceId, services.id))
