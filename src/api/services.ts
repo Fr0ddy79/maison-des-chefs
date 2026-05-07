@@ -180,6 +180,26 @@ export default async function serviceRoutes(server: FastifyInstance) {
     return chefServices.map(parseServicePhotos);
   });
 
+  // MAI-1223: Get chef's own services (authenticated chef only)
+  server.get('/chef/:chefId/mine', { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { chefId } = z.object({ chefId: z.string() }).parse(request.params);
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== 'chef' || parseInt(chefId) !== userId) {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+    const chefServices = db.select().from(services).where(eq(services.chefId, userId)).all();
+    return chefServices.map(s => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      pricePerPerson: s.pricePerPerson,
+      minGuests: s.minGuests,
+      maxGuests: s.maxGuests,
+      dietaryTags: JSON.parse(s.dietaryTags || '[]'),
+      isPublished: s.isPublished,
+    }));
+  });
+
   // Get service by id (public)
   server.get('/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string() }).parse(request.params);
