@@ -357,6 +357,30 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-1212: Create notifications table if it doesn't exist
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        read INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created notifications table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS notifications_user_id_idx ON notifications(user_id)`);
+    console.log('Migration: Created notifications_user_id_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

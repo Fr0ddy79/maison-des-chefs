@@ -136,3 +136,13 @@ exports.leads = (0, sqlite_core_1.sqliteTable)('leads', {
     quoteSentAt: (0, sqlite_core_1.integer)('quote_sent_at', { mode: 'timestamp' }), // MAI-766: When quote was sent
     createdAt: (0, sqlite_core_1.integer)('created_at', { mode: 'timestamp' }).notNull().$defaultFn(function () { return new Date(); }),
 });
+// MAI-1212: In-app notifications for diners
+exports.notifications = (0, sqlite_core_1.sqliteTable)('notifications', {
+    id: (0, sqlite_core_1.integer)('id').primaryKey({ autoIncrement: true }),
+    userId: (0, sqlite_core_1.integer)('user_id').notNull().references(function () { return exports.users.id; }),
+    type: (0, sqlite_core_1.text)('type').notNull(), // e.g., 'booking_confirmed', 'booking_declined', 'booking_completed', 'review_request'
+    title: (0, sqlite_core_1.text)('title').notNull(),
+    body: (0, sqlite_core_1.text)('body').notNull(),
+    read: (0, sqlite_core_1.integer)('read', { mode: 'boolean' }).notNull().default(false),
+    createdAt: (0, sqlite_core_1.integer)('created_at', { mode: 'timestamp' }).notNull().$defaultFn(function () { return new Date(); }),
+});

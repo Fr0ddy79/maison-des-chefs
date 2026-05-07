@@ -140,6 +140,17 @@ export const reviews = sqliteTable('reviews', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
+// MAI-1212: In-app notifications for diners
+export const notifications = sqliteTable('notifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  type: text('type').notNull(), // e.g., 'booking_confirmed', 'booking_declined', 'booking_completed', 'review_request'
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
 export const leads = sqliteTable('leads', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   serviceId: integer('service_id').notNull().references(() => services.id),

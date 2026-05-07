@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { bookings, services, users, leads } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
+import { createNotification } from './notifications.js';
 
 const createBookingSchema = z.object({
   serviceId: z.number(),
@@ -13,7 +14,7 @@ const createBookingSchema = z.object({
 });
 
 const updateStatusSchema = z.object({
-  status: z.enum(['confirmed', 'rejected']),
+  status: z.enum(['confirmed', 'rejected', 'declined', 'completed']),
 });
 
 export default async function bookingRoutes(server: FastifyInstance) {
@@ -180,7 +181,45 @@ export default async function bookingRoutes(server: FastifyInstance) {
       return reply.status(404).send({ error: 'Booking not found' });
     }
     const body = updateStatusSchema.parse(request.body);
+    const previousStatus = booking.status;
     db.update(bookings).set({ status: body.status }).where(eq(bookings.id, parseInt(id))).run();
+
+    // MAI-1212: Create notifications on status changes
+    if (booking.dinerId && previousStatus !== body.status) {
+      const service = db.select().from(services).where(eq(services.id, booking.serviceId)).get();
+      const chefName = service ? db.select().from(users).where(eq(users.id, service.chefId)).get()?.name || 'Chef' : 'Chef';
+
+      if (body.status === 'confirmed') {
+        createNotification({
+          userId: booking.dinerId,
+          type: 'booking_confirmed',
+          title: 'Booking Confirmed! 🎉',
+          body: `Your booking with ${chefName} has been confirmed.`,
+        });
+      } else if (body.status === 'declined') {
+        createNotification({
+          userId: booking.dinerId,
+          type: 'booking_declined',
+          title: 'Booking Declined',
+          body: `Your booking with ${chefName} has been declined. Browse other chefs to find the perfect fit.`,
+        });
+      } else if (body.status === 'completed') {
+        createNotification({
+          userId: booking.dinerId,
+          type: 'booking_completed',
+          title: 'Booking Completed ✅',
+          body: `Your experience with ${chefName} is complete. Share your review!`,
+        });
+        // Also trigger review request notification
+        createNotification({
+          userId: booking.dinerId,
+          type: 'review_request',
+          title: 'How was your experience? 🌟',
+          body: `Tell others about your meal with ${chefName}. Your review helps the community!`,
+        });
+      }
+    }
+
     return db.select().from(bookings).where(eq(bookings.id, parseInt(id))).get();
   });
 }

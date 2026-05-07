@@ -43,6 +43,7 @@ import checkoutApiRoutes from './api/checkout.js';
 import webhookRoutes from './api/webhooks.js';
 import bookingAddonRoutes from './api/booking-addons.js';
 import reviewRoutes from './api/reviews.js';
+import notificationRoutes from './api/notifications.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
@@ -112,6 +113,7 @@ server.register(checkoutApiRoutes, { prefix: '/api/checkout' }); // Checkout API
 server.register(webhookRoutes, { prefix: '/api/webhooks' }); // Stripe webhooks
 server.register(bookingAddonRoutes, { prefix: '/api/booking' }); // MAI-875: Booking addons
 server.register(reviewRoutes, { prefix: '/api' });
+server.register(notificationRoutes, { prefix: '/api/notifications' });
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {
