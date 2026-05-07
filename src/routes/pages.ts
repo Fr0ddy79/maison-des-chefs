@@ -676,6 +676,8 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     .inquiry-bar-count { background: #c9a227; color: white; padding: 0.2rem 0.7rem; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
     .inquiry-bar-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
     .inquiry-bar-btn:hover { background: #b8922a; }
+    .compare-bar-compare-btn { background: #27ae60; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-right: 0.5rem; }
+    .compare-bar-compare-btn:hover { background: #219a52; }
     .compare-bar-chef-tag { background: rgba(255,255,255,0.15); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; }
     .remove-tag { cursor: pointer; opacity: 0.8; font-weight: bold; }
     .remove-tag:hover { opacity: 1; }
@@ -858,6 +860,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       if (!bar) return;
       const selectedContainer = document.getElementById('compareBarSelected');
       const inquireBtn = document.getElementById('compareInquireBtn');
+      const compareBtn = document.getElementById('compareBtn');
       const chefCountEl = document.getElementById('selectedChefCount');
       const pluralSEl = document.getElementById('pluralS');
       if (chefCountEl) chefCountEl.textContent = String(selectedChefs.length);
@@ -870,7 +873,16 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       if (inquireBtn) {
         inquireBtn.style.display = selectedChefs.length >= 2 ? 'inline-block' : 'none';
       }
+      if (compareBtn) {
+        compareBtn.style.display = selectedChefs.length >= 2 ? 'inline-block' : 'none';
+      }
       bar.classList.toggle('visible', selectedChefs.length >= 2);
+    }
+    
+    function goToCompare() {
+      if (selectedChefs.length < 2) return;
+      var ids = selectedChefs.map(function(c) { return c.chefId; }).join(',');
+      window.location.href = '/compare?chefs=' + ids;
     }
     
     function removeChef(chefId) {
@@ -1088,6 +1100,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       <div id="compareBarSelected" style="display:inline-flex;gap:0.4rem;margin-left:0.5rem;flex-wrap:wrap;"></div>
     </div>
     <button class="inquiry-bar-btn" id="compareInquireBtn" onclick="openCompareModal()" style="display:none;">Inquire Selected</button>
+    <button class="compare-bar-compare-btn" id="compareBtn" onclick="goToCompare()" style="display:none;">Compare Chefs</button>
   </div>
 
   <div class="modal-overlay" id="compareModal">
