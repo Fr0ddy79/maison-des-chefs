@@ -327,6 +327,36 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-766: Add quote_token and quote_token_hash columns if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN quote_token TEXT`);
+    console.log('Migration: Added quote_token column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN quote_token_hash TEXT`);
+    console.log('Migration: Added quote_token_hash column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
+  // MAI-875: Add selected_addons column for upsell tracking
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN selected_addons TEXT NOT NULL DEFAULT '[]'`);
+    console.log('Migration: Added selected_addons column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
+  // MAI-845: Add stale_lead_reengagement_sent_at for idempotency
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN stale_lead_reengagement_sent_at INTEGER`);
+    console.log('Migration: Added stale_lead_reengagement_sent_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

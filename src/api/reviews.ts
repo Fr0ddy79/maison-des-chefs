@@ -7,7 +7,7 @@ import { eq, and, sql } from 'drizzle-orm';
 const createReviewSchema = z.object({
   bookingId: z.number().int().positive(),
   rating: z.number().int().min(1).max(5),
-  comment: z.string().optional(),
+  comment: z.string().max(1000).optional(),
 });
 
 // GET /api/services/:id/reviews - Fetch reviews for a service
@@ -28,6 +28,11 @@ export default async function reviewRoutes(server: FastifyInstance) {
     }
     if (booking.dinerId !== userId) {
       return reply.status(403).send({ error: 'This booking does not belong to you' });
+    }
+
+    // Check booking status is confirmed/completed (MAI-1214)
+    if (booking.status !== 'confirmed') {
+      return reply.status(403).send({ error: 'Only confirmed bookings can be reviewed' });
     }
 
     // Check if already reviewed (UNIQUE constraint on booking_id)
@@ -179,6 +184,37 @@ export default async function reviewRoutes(server: FastifyInstance) {
       reviews: reviewsWithFirstNames,
       avgRating: stats ? Math.round((stats.avgRating as number) * 10) / 10 : 0,
       reviewCount: stats?.count ?? 0,
+    };
+  });
+
+  // Get aggregate rating for a service (MAI-1214)
+  server.get('/services/:id/rating', async (request, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const serviceId = parseInt(id);
+
+    // Check service exists
+    const service = db.select().from(services).where(eq(services.id, serviceId)).get();
+    if (!service) {
+      return reply.status(404).send({ error: 'Service not found' });
+    }
+
+    // Calculate aggregate stats
+    const stats = db.select({
+      count: sql<number>`count(*)`,
+      avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
+    })
+      .from(reviews)
+      .where(eq(reviews.serviceId, serviceId))
+      .get();
+
+    const aggregateRating = stats && (stats.count ?? 0) > 0
+      ? Math.round((stats.avgRating as number) * 10) / 10
+      : 0;
+    const totalReviews = (stats?.count as number) ?? 0;
+
+    return {
+      aggregate_rating: aggregateRating,
+      total_reviews: totalReviews,
     };
   });
 }

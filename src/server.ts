@@ -46,6 +46,7 @@ import reviewRoutes from './api/reviews.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
+import buildReviewPage from './routes/review-page.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -183,6 +184,17 @@ server.get('/book/:serviceId', async (request, reply) => {
   const guestCount = prefillGuestsParam ? parseInt(prefillGuestsParam, 10) : undefined;
   reply.header('Content-Type', 'text/html; charset=utf-8');
   return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount);
+});
+
+// Review submission page (MAI-1214)
+server.get('/review/:bookingId', async (request, reply) => {
+  const { bookingId } = request.params as { bookingId: string };
+  const bookingIdNum = parseInt(bookingId);
+  if (isNaN(bookingIdNum)) {
+    return '<html><body><h1>Invalid Booking ID</h1><a href="/">Back to Homepage</a></body></html>';
+  }
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildReviewPage(bookingIdNum);
 });
 
 // Homepage route

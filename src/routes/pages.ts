@@ -142,6 +142,9 @@ export default async function pageRoutes(server: FastifyInstance) {
       .leftJoin(chefProfiles, eq(services.chefId, chefProfiles.userId))
       .$dynamic();
 
+    // MAI-1211: Only show published (isPublished !== false) services in public catalog
+    result = result.where(sql `(${services.isPublished} IS NULL OR ${services.isPublished} = 1)`);
+
     // Filter by cuisine type
     if (query.cuisine) {
       result = result.where(sql `${chefProfiles.cuisineTypes} LIKE ${'%' + query.cuisine + '%'}`);
@@ -1349,6 +1352,11 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     .featured-review { background: linear-gradient(135deg, #fefcf5 0%, #f9f3e8 100%); border: 2px solid #c9a227; }
     .featured-label { display: inline-block; background: #c9a227; color: white; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05rem; }
     .no-reviews { text-align: center; padding: 2rem; color: #888; font-style: italic; }
+    .hero-rating-badge { display: flex; align-items: center; justify-content: center; gap: 0.5rem; background: white; padding: 0.75rem 1.5rem; border-radius: 8px; margin-top: -1.5rem; position: relative; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 300px; margin-left: auto; margin-right: auto; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+    .hero-rating-badge:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.15); }
+    .hero-rating-badge .rating-stars { color: #ffc107; font-size: 1.2rem; letter-spacing: 2px; }
+    .hero-rating-badge .rating-text { color: #2c3e50; font-weight: 600; font-size: 1rem; }
+    .hero-rating-badge .rating-count { color: #888; font-weight: 400; font-size: 0.9rem; }
   </style>
 </head>
 <body>
@@ -1371,6 +1379,19 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       <div class="hero-chef">by ${service.chefName} ${verifiedBadge}</div>
     </div>
   </section>
+  
+  ${sp.reviewCount > 0 ? `
+  <div class="hero-rating-badge" onclick="document.getElementById('reviews-section').scrollIntoView({behavior:'smooth'})">
+    <span class="rating-stars">${'★'.repeat(Math.round(sp.avgRating))}${'☆'.repeat(5 - Math.round(sp.avgRating))}</span>
+    <span class="rating-text">${sp.avgRating.toFixed(1)}</span>
+    <span class="rating-count">(${sp.reviewCount} review${sp.reviewCount !== 1 ? 's' : ''})</span>
+  </div>
+  ` : `
+  <div class="hero-rating-badge" style="cursor:default;">
+    <span class="rating-stars">${'★'.repeat(0)}${'☆'.repeat(5)}</span>
+    <span class="rating-text" style="color:#888;">No reviews yet</span>
+  </div>
+  `}
   
   <section class="content">
     <div class="main-info">
@@ -1410,7 +1431,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       <p class="description">${service.chefBio || 'A talented private chef ready to create an unforgettable dining experience for you.'}</p>
       
       ${sp.reviewCount > 0 ? `
-      <div class="reviews-section">
+      <div id="reviews-section" class="reviews-section">
         <div class="reviews-header">
           <h2 class="reviews-title">Reviews</h2>
           <div class="reviews-summary">
@@ -1439,7 +1460,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         `).join('')}
       </div>
       ` : `
-      <div class="reviews-section">
+      <div id="reviews-section" class="reviews-section">
         <h2 class="reviews-title">Reviews</h2>
         <p class="no-reviews">No reviews yet. Be the first to review this service!</p>
       </div>

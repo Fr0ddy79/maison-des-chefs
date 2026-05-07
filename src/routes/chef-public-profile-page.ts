@@ -147,7 +147,7 @@ export function buildChefPublicProfilePage(chefId: number): string {
           <p>📍 ${escapeHtml(chef.location || 'Location not set')}</p>
           ${chef.verified ? '<span class="verified-badge">✓ Verified</span>' : ''}
         </div>
-        <button class="share-btn" onclick="openQrModal()">📤 Share</button>
+        <button class="share-btn" onclick="handleShare()">📤 Share</button>
       </div>
       <div class="preview-cuisine-tags">
         ${cuisineTags.slice(0, 4).map(tag => `<span class="preview-cuisine-tag">${escapeHtml(tag)}</span>`).join('')}
@@ -201,6 +201,25 @@ export function buildChefPublicProfilePage(chefId: number): string {
 
 <script>
 var shareUrl = '${previewShareUrl}';
+function handleShare() {
+  // Check if Web Share API is available (mobile devices)
+  if (navigator.share) {
+    navigator.share({
+      title: document.title,
+      text: 'Check out this chef on Maison des Chefs!',
+      url: shareUrl
+    }).catch(function(err) {
+      // User cancelled or share failed, fall back to QR modal
+      if (err.name !== 'AbortError') {
+        openQrModal();
+      }
+    });
+  } else {
+    // Desktop: show QR modal for sharing
+    openQrModal();
+  }
+}
+
 function openQrModal() {
   document.getElementById('qrModalOverlay').classList.add('visible');
   var container = document.getElementById('qrCodeContainer');

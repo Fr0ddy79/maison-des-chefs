@@ -21,6 +21,7 @@ const updateServiceSchema = z.object({
   maxGuests: z.number().min(1).optional(),
   dietaryTags: z.array(z.enum(DIETARY_TAGS)).optional(),
   photos: z.array(z.string().url()).max(6).optional(),
+  isPublished: z.boolean().optional(), // MAI-1211: visibility toggle
 });
 
 // Validate dietary tags array (returns error if any tag is invalid)

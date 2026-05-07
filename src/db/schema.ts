@@ -42,6 +42,7 @@ export const services = sqliteTable('services', {
   dietaryTags: text('dietary_tags').notNull().default('[]'), // JSON array of dietary tags
   category: text('category'), // e.g., 'Private Dinner', 'Cooking Class', 'Tasting Menu', 'Catering'
   status: text('status', { enum: ['draft', 'published'] }).notNull().default('draft'),
+  isPublished: integer('is_published', { mode: 'boolean' }).notNull().default(true), // MAI-1211: visibility toggle
   blockedDates: text('blocked_dates').notNull().default('[]'), // JSON array of ISO date strings
   isOnboardingService: integer('is_onboarding_service', { mode: 'boolean' }).notNull().default(false),
   photos: text('photos').notNull().default('[]'), // JSON array of photo URLs (max 6)
