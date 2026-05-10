@@ -67,6 +67,32 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     nav .logo { color: white; font-size: 1.5rem; font-weight: bold; text-decoration: none; }
     nav .nav-links { display: flex; gap: 1.5rem; }
     nav .nav-links a { color: white; text-decoration: none; }
+    .auth-panel { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 1.5rem; display: none; }
+    .auth-panel.visible { display: block; }
+    .auth-panel h2 { font-size: 1.2rem; color: #2c3e50; margin-bottom: 0.5rem; }
+    .auth-panel p { color: #666; font-size: 0.9rem; margin-bottom: 1.25rem; }
+    .auth-toggle { display: flex; gap: 0; border-bottom: 2px solid #eee; margin-bottom: 1.25rem; }
+    .auth-toggle button { flex: 1; padding: 0.75rem; background: none; border: none; font-size: 0.95rem; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.2s, border-color 0.2s; }
+    .auth-toggle button.active { color: #c9a227; border-bottom-color: #c9a227; }
+    .auth-form-group { margin-bottom: 1rem; }
+    .auth-form-group label { display: block; font-weight: 500; color: #555; margin-bottom: 0.4rem; font-size: 0.9rem; }
+    .auth-form-group input { width: 100%; padding: 0.7rem 0.9rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; font-family: inherit; transition: border-color 0.2s; }
+    .auth-form-group input:focus { outline: none; border-color: #c9a227; }
+    .auth-form-group input.error { border-color: #e53935; }
+    .auth-error { background: #ffebee; border: 1px solid #ffcdd2; color: #c62828; padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+    .auth-error.visible { display: block; }
+    .magic-link-note { font-size: 0.8rem; color: #888; margin: 0.5rem 0 1rem; text-align: center; }
+    .auth-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 0.8s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .signin-btn { background: #c9a227; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: background 0.2s; }
+    .signin-btn:hover { background: #b8922a; }
+    .signin-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .divider { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; color: #aaa; font-size: 0.85rem; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #eee; }
+    .magic-btn { background: #f5f5f5; color: #333; border: 1px solid #ddd; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 0.95rem; cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: background 0.2s; }
+    .magic-btn:hover { background: #eee; }
+    .magic-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+    .magic-sent { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.9rem; text-align: center; }
     .page-wrapper { max-width: 900px; margin: 0 auto; padding: 7rem 2rem 3rem; }
     .back-link { display: inline-flex; align-items: center; gap: 0.5rem; color: #666; text-decoration: none; margin-bottom: 1.5rem; font-size: 0.95rem; }
     .back-link:hover { color: #c9a227; }
@@ -129,13 +155,46 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
   <div class="page-wrapper">
     <a href="/services/${service.id}" class="back-link">← Back to service details</a>
     <div class="page-header">
-      <h1>Request Booking</h1>
+      <h1>Get a Personalized Quote</h1>
       <p class="chef-info">${service.name} by ${service.chefName} • ${cuisineList}</p>
     </div>
     ${welcomeBackHtml}
+    <div class="auth-panel" id="authPanel">
+      <h2>Sign In to Continue</h2>
+      <p>Create an account or sign in to request this booking.</p>
+      <div class="auth-toggle">
+        <button id="tabSignIn" class="active" onclick="showAuthTab('signin')">Sign In</button>
+        <button id="tabMagic" onclick="showAuthTab('magic')">Magic Link</button>
+      </div>
+      <div id="authError" class="auth-error"></div>
+      <div id="authContent">
+        <div id="signinContent">
+          <div class="auth-form-group">
+            <label for="authEmail">Email</label>
+            <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email">
+          </div>
+          <div class="auth-form-group" id="authPasswordGroup">
+            <label for="authPassword">Password</label>
+            <input type="password" id="authPassword" placeholder="Your password" autocomplete="current-password">
+          </div>
+          <button class="signin-btn" id="signinBtn" onclick="submitAuth()">
+            Sign In &amp; Continue
+          </button>
+        </div>
+        <div id="magicContent" style="display:none;">
+          <div class="auth-form-group">
+            <label for="magicEmail">Email</label>
+            <input type="email" id="magicEmail" placeholder="you@example.com" autocomplete="email">
+          </div>
+          <button class="magic-btn" id="magicBtn" onclick="submitMagicLink()">Send Magic Link</button>
+          <p class="magic-link-note">We'll email you a link to sign in instantly - no password needed.</p>
+          <div id="magicSentMsg" class="magic-sent" style="display:none;">Check your email for the magic link!</div>
+        </div>
+      </div>
+    </div>
     <div class="success-message" id="successMessage">
-      <strong>✓ Your booking request was sent!</strong>
-      <p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours.</p>
+      <strong>✓ Your quote request was sent!</strong>
+      <p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>
       <p style="margin-top: 0.25rem;">Check your email for updates.</p>
       <div id="bookingStatusUrlSection" style="display:none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #a5d6a7;">
         <p style="margin-bottom: 0.5rem;">Track your inquiry status:</p>
@@ -205,8 +264,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             <div class="trust-item"><span class="icon">✓</span><span>Free cancellation</span></div>
             <div class="trust-item"><span class="icon">⭐</span><span>Verified chefs</span></div>
           </div>
-          <button type="submit" class="submit-btn" id="submitBtn">Request Booking</button>
-          <p class="privacy-note">Your information is only used to process this booking request.</p>
+          <button type="submit" class="submit-btn" id="submitBtn">Get Your Quote</button>
+          <p class="privacy-note">Your information is only used to send your quote request to the chef.</p>
         </form>
       </div>
       <div class="booking-card">
@@ -234,7 +293,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     const estimatedTotalEl = document.getElementById('estimatedTotal');
     const estimatedTotalInlineEl = document.getElementById('estimatedTotalInline');
     const guestCountInput = document.getElementById('guestCount');
-    
+
     // MAI-834: Form state preservation through login redirect
     const FORM_STATE_KEY = 'booking_form_state_' + serviceId;
     function saveFormState() {
@@ -272,7 +331,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     restoreFormState();
     // Save form state before page unload (user navigates to login)
     window.addEventListener('beforeunload', saveFormState);
-    
+
     function updateEstimatedTotal() {
       if (pricePerPerson && guestCountInput) {
         const guests = parseInt(guestCountInput.value) || 0;
@@ -283,7 +342,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
     }
     if (guestCountInput) guestCountInput.addEventListener('change', updateEstimatedTotal);
-    
+
     // MAI-834: Track analytics with auth_status dimension
     function trackAnalytics(event, data) {
       const authStatus = '${isReturningDiner ? 'authenticated' : 'guest'}';
@@ -301,15 +360,156 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         // Silently fail - analytics should not break user flow
       }
     }
-    
+
     // MAI-1010: Track booking form view on page load
     trackAnalytics('booking_form_view', { service_id: serviceId });
-    
+
+    // MAI-1366: Inline Auth Panel
+    const isAuthenticated = ${isReturningDiner ? 'true' : 'false'};
+    const authPanel = document.getElementById('authPanel');
+    const authError = document.getElementById('authError');
+    const signinContent = document.getElementById('signinContent');
+    const magicContent = document.getElementById('magicContent');
+    const signinBtn = document.getElementById('signinBtn');
+    const magicBtn = document.getElementById('magicBtn');
+    let pendingFormData = null;
+
+    function showAuthPanel() {
+      if (isAuthenticated) return;
+      if (authPanel) {
+        authPanel.classList.add('visible');
+        authPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        trackAnalytics('booking_form_auth_panel_shown', { service_id: serviceId });
+      }
+    }
+
+    function hideAuthPanel() {
+      if (authPanel) {
+        authPanel.classList.remove('visible');
+        authPanel.style.display = 'none';
+      }
+    }
+
+    function showAuthTab(tab) {
+      document.getElementById('tabSignIn').classList.toggle('active', tab === 'signin');
+      document.getElementById('tabMagic').classList.toggle('active', tab === 'magic');
+      signinContent.style.display = tab === 'signin' ? 'block' : 'none';
+      magicContent.style.display = tab === 'magic' ? 'block' : 'none';
+      authError.classList.remove('visible');
+      authError.textContent = '';
+    }
+
+    function showAuthError(msg) {
+      authError.textContent = msg;
+      authError.classList.add('visible');
+    }
+
+    function setAuthLoading(loading) {
+      if (signinBtn) {
+        signinBtn.disabled = loading;
+        signinBtn.innerHTML = loading
+          ? '<span class="auth-spinner"></span>Signing in...'
+          : 'Sign In & Continue';
+      }
+      if (magicBtn) {
+        magicBtn.disabled = loading;
+        magicBtn.textContent = loading ? 'Sending...' : 'Send Magic Link';
+      }
+    }
+
+    async function submitAuth() {
+      const email = document.getElementById('authEmail')?.value?.trim();
+      const password = document.getElementById('authPassword')?.value;
+      if (!email || !password) { showAuthError('Please enter your email and password.'); return; }
+      setAuthLoading(true);
+      authError.classList.remove('visible');
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAuthError(data.error || 'Sign in failed. Please try again.');
+          setAuthLoading(false);
+          return;
+        }
+        // Store tokens in cookies for server-side session
+        document.cookie = "auth_token=" + data.accessToken + "; path=/; max-age=86400";
+        document.cookie = "refresh_token=" + data.refreshToken + "; path=/; max-age=604800";
+        trackAnalytics('booking_form_auth_panel_completed', { service_id: serviceId, method: 'password' });
+        hideAuthPanel();
+        if (pendingFormData) {
+          submitInquiryWithData(pendingFormData);
+          pendingFormData = null;
+        }
+      } catch {
+        showAuthError('Network error. Please try again.');
+        setAuthLoading(false);
+      }
+    }
+
+    async function submitMagicLink() {
+      const email = document.getElementById('magicEmail')?.value?.trim();
+      if (!email) { showAuthError('Please enter your email address.'); return; }
+      setAuthLoading(true);
+      authError.classList.remove('visible');
+      try {
+        const res = await fetch('/auth/magic-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAuthError(data.error || 'Failed to send magic link.');
+          setAuthLoading(false);
+          return;
+        }
+        document.getElementById('magicSentMsg').style.display = 'block';
+        setAuthLoading(false);
+      } catch {
+        showAuthError('Network error. Please try again.');
+        setAuthLoading(false);
+      }
+    }
+
+    async function submitInquiryWithData(formData) {
+      const submitBtn = document.getElementById('submitBtn');
+      const successMessage = document.getElementById('successMessage');
+      if (!formData.email) { alert('Please enter your email address.'); return; }
+      trackAnalytics('booking_form_submit', { service_id: formData.serviceId });
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Sending...';
+      try {
+        const response = await fetch('/api/inquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+        if (response.ok) {
+          const result = await response.clone().json();
+          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
+          document.getElementById('inquiryForm').style.display = 'none';
+          successMessage.innerHTML = '<strong>✓ Your quote request was sent!</strong><p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p><p style="margin-top: 0.25rem;">Check your email for updates.</p>' + (result.bookingStatusUrl ? '<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #a5d6a7;"><p style="margin-bottom:0.5rem;font-size:0.9rem;">Track your inquiry status:</p><div style="background:#f0f8e8;border:1px solid #a5d6a7;border-radius:6px;padding:0.75rem 1rem;word-break:break-all;"><a href="' + result.bookingStatusUrl + '" style="color:#2e7d32;font-weight:600;text-decoration:none;">' + result.bookingStatusUrl + '</a></div></div>' : '');
+          successMessage.classList.add('show');
+          successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          const error = await response.json();
+          trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: error.error || 'unknown' });
+          alert('Error: ' + (error.error || 'Failed to submit inquiry'));
+        }
+      } catch (err) {
+        trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: 'network_error' });
+        alert('Network error. Please try again.');
+      }
+      finally { submitBtn.disabled = false; submitBtn.textContent = 'Get Your Quote'; }
+    }
+
     document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
-      const submitBtn = document.getElementById('submitBtn');
-      const successMessage = document.getElementById('successMessage');
       const formData = {
         serviceId: parseInt(form.serviceId.value),
         clientName: form.clientName.value || undefined,
@@ -320,19 +520,15 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         message: form.message.value || undefined,
       };
       if (!formData.email) { alert('Please enter your email address.'); return; }
-      
-      // MAI-834: Track inquiry attempt analytics
-      trackAnalytics('booking_form_submit', { service_id: formData.serviceId });
-      
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Sending...';
-      try {
-        const response = await fetch('/api/inquiry', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
-        if (response.ok) {
+
+      if (!isAuthenticated) {
+        // Store form data and show auth panel
+        pendingFormData = formData;
+        showAuthPanel();
+        return;
+      }
+      submitInquiryWithData(formData);
+    });
           const result = await response.clone().json();
           // MAI-834: Track successful inquiry analytics
           trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
@@ -352,11 +548,11 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: error.error || 'unknown' });
           alert('Error: ' + (error.error || 'Failed to submit inquiry'));
         }
-      } catch (err) { 
+      } catch (err) {
         trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: 'network_error' });
-        alert('Network error. Please try again.'); 
+        alert('Network error. Please try again.');
       }
-      finally { submitBtn.disabled = false; submitBtn.textContent = 'Request Booking'; }
+      finally { submitBtn.disabled = false; submitBtn.textContent = 'Get Your Quote'; }
     });
   </script>
 </body>
