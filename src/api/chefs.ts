@@ -8,6 +8,7 @@ const profileSchema = z.object({
   bio: z.string().optional(),
   cuisineTypes: z.array(z.string()).optional(),
   location: z.string().optional(),
+  whatsappNumber: z.string().optional(),
   pricePerPerson: z.number().min(0).optional(),
   available: z.boolean().optional(),
   signatureDishes: z.array(z.object({
@@ -102,6 +103,7 @@ export default async function chefRoutes(server: FastifyInstance) {
       verified: chefProfiles.verified,
       photoUrl: chefProfiles.photoUrl,
       signatureDishes: chefProfiles.signatureDishes,
+      whatsappNumber: chefProfiles.whatsappNumber,
     })
       .from(chefProfiles)
       .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -156,6 +158,7 @@ export default async function chefRoutes(server: FastifyInstance) {
       verified: chefProfiles.verified,
       photoUrl: chefProfiles.photoUrl,
       signatureDishes: chefProfiles.signatureDishes,
+      whatsappNumber: chefProfiles.whatsappNumber,
     })
       .from(chefProfiles)
       .innerJoin(users, eq(chefProfiles.userId, users.id))
@@ -204,6 +207,7 @@ export default async function chefRoutes(server: FastifyInstance) {
         pricePerPerson: body.pricePerPerson ?? existing.pricePerPerson,
         available: body.available ?? existing.available,
         signatureDishes: body.signatureDishes ? JSON.stringify(body.signatureDishes) : existing.signatureDishes,
+        whatsappNumber: body.whatsappNumber ?? existing.whatsappNumber,
       }).where(eq(chefProfiles.userId, userId)).run();
       const updated = db.select().from(chefProfiles).where(eq(chefProfiles.userId, userId)).get();
       // Also fetch the user's name

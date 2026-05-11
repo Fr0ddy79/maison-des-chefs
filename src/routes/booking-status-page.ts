@@ -118,6 +118,7 @@ function getCurrentStage(status: string): number {
 export default async function bookingStatusPageRoutes(server: FastifyInstance) {
   // GET /booking-status - Public booking status page
   // MAI-805: Works with leads (inquiries) to track guest booking status
+  // MAI-1396: Also accessible via /lead/:token for cleaner URLs
   server.get('/booking-status', async (request, reply) => {
     const query = request.query as Record<string, string>;
     const token = query.token;
@@ -172,6 +173,57 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
     }
 
     // Build the booking status page
+    return buildBookingStatusPage(lead, token);
+  });
+
+  // MAI-1396: GET /lead/:token - Cleaner URL alias for booking status
+  server.get<{ Params: { token: string } }>('/lead/:token', async (request, reply) => {
+    const { token } = request.params;
+
+    if (!token || token.length !== 64) {
+      return buildErrorPage('Invalid link', 'This booking status link appears to be invalid. Please use the link from your confirmation email.');
+    }
+
+    // Find lead by access token
+    const lead = db.select({
+      id: leads.id,
+      serviceId: leads.serviceId,
+      eventDate: leads.eventDate,
+      guestCount: leads.guestCount,
+      status: leads.status,
+      message: leads.message,
+      createdAt: leads.createdAt,
+      accessToken: leads.accessToken,
+      accessTokenExpiresAt: leads.accessTokenExpiresAt,
+      email: leads.email,
+      clientName: leads.clientName,
+      quoteAmount: leads.quoteAmount,
+      quoteMessage: leads.quoteMessage,
+      quoteSentAt: leads.quoteSentAt,
+      referralCode: leads.referralCode,
+      referralSource: leads.referralSource,
+      selectedAddons: leads.selectedAddons,
+      serviceName: services.name,
+      serviceDescription: services.description,
+      chefId: leads.chefId,
+      chefName: users.name,
+      chefLocation: chefProfiles.location,
+    })
+      .from(leads)
+      .innerJoin(services, eq(leads.serviceId, services.id))
+      .innerJoin(users, eq(leads.chefId, users.id))
+      .leftJoin(chefProfiles, eq(leads.chefId, chefProfiles.userId))
+      .where(eq(leads.accessToken, token))
+      .get();
+
+    if (!lead) {
+      return buildErrorPage('Booking not found', 'No booking was found with this access token. Please check your email link or contact support.');
+    }
+
+    if (lead.accessTokenExpiresAt && new Date(lead.accessTokenExpiresAt) < new Date()) {
+      return buildExpiredPage(lead);
+    }
+
     return buildBookingStatusPage(lead, token);
   });
 

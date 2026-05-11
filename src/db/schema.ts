@@ -16,14 +16,18 @@ export const chefProfiles = sqliteTable('chef_profiles', {
   bio: text('bio'),
   cuisineTypes: text('cuisine_types').notNull().default(''), // JSON array
   location: text('location').notNull().default(''),
+  whatsappNumber: text('whatsapp_number'), // WhatsApp number for booking notifications
   pricePerPerson: real('price_per_person').notNull().default(0),
   available: integer('available', { mode: 'boolean' }).notNull().default(true),
   verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
+  verificationBadges: text('verification_badges').notNull().default('[]'), // JSON array of badge strings: ['identity', 'experience', 'safety']
   photoUrl: text('photo_url'), // URL/path to chef's profile photo
   signatureDishes: text('signature_dishes').notNull().default('[]'), // JSON array: [{"name":"Dish","description":"..."}]
   profileCompletedAt: integer('profile_completed_at', { mode: 'timestamp' }),
   onboardingStartedAt: integer('onboarding_started_at', { mode: 'timestamp' }),
   onboardingCompletedAt: integer('onboarding_completed_at', { mode: 'timestamp' }),
+  // MAI-1387: Track whether the lead-response tutorial modal has been dismissed
+  leadResponseTutorialDismissed: integer('lead_response_tutorial_dismissed', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -191,5 +195,46 @@ export const leads = sqliteTable('leads', {
   selectedAddons: text('selected_addons').notNull().default('[]'), // JSON array of addon IDs
   // MAI-845: Stale lead re-engagement email sent timestamp (for idempotency)
   staleLeadReengagementSentAt: integer('stale_lead_reengagement_sent_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// Chef availability schedule (MAI-1251)
+export const chefAvailability = sqliteTable('chef_availability', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  dayOfWeek: integer('day_of_week').notNull(), // 0=Sunday, 6=Saturday
+  startTime: text('start_time').notNull(), // HH:MM format
+  endTime: text('end_time').notNull(), // HH:MM format
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// Chef blocked dates (MAI-1251)
+export const chefBlockedDates = sqliteTable('chef_blocked_dates', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  date: text('date').notNull(), // YYYY-MM-DD format
+  reason: text('reason'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// Chef verification submissions (MAI-1326)
+export const chefVerificationSubmissions = sqliteTable('chef_verification_submissions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  identityFullName: text('identity_full_name'),
+  identityPhoneVerified: integer('identity_phone_verified', { mode: 'boolean' }).notNull().default(false),
+  identityGovernmentIdUrl: text('identity_government_id_url'),
+  experienceYears: integer('experience_years'),
+  experiencePastEmployment: text('experience_past_employment').notNull().default('[]'), // JSON array
+  experienceCuisineTraining: text('experience_cuisine_training').notNull().default('[]'), // JSON array
+  safetyFoodSafetyCert: text('safety_food_safety_cert'),
+  safetyCertExpiryDate: text('safety_cert_expiry_date'), // YYYY-MM-DD
+  safetyCertUrl: text('safety_cert_url'),
+  status: text('status', { enum: ['pending', 'approved', 'rejected'] }).notNull().default('pending'),
+  submittedAt: integer('submitted_at', { mode: 'timestamp' }),
+  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  reviewNotes: text('review_notes'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

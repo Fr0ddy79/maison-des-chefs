@@ -185,6 +185,8 @@ export default function buildReviewPage(bookingId: number, token?: string): stri
 var selectedRating = 0;
 var API_BASE = '';
 var bookingId = ${bookingId};
+var serviceId = ${booking?.serviceId ?? 'null'};
+window.autoRedirectTimer = null;
 
 function escapeHtml(text) {
   if (!text) return '';
@@ -300,15 +302,14 @@ async function submitReview(e) {
       return;
     }
     
-    // Success!
-    showSuccess('Thank you! Your review has been submitted successfully.');
+    // Success! Show booking action CTAs (MAI-1342 growth optimization)
+    var serviceLink = '/services/' + (typeof serviceId !== 'undefined' ? serviceId : '');
+    var chefLink = '/chefs';
+    showSuccess('<div style="text-align:center;margin-top:0.5rem;"><p style="font-size:1.1rem;color:#2c3e50;margin-bottom:1.5rem;">Thank you! Your review has been submitted.</p><div style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:0.5rem;"><a href="' + serviceLink + '" class="submit-btn" style="display:block;text-decoration:none;padding:1rem;">Book Again with This Chef →</a><a href="' + chefLink + '" style="display:block;background:#6c757d;color:white;padding:0.75rem;border-radius:6px;font-weight:600;text-decoration:none;text-align:center;">Discover New Chefs</a></div></div>');
     document.getElementById('reviewForm').style.display = 'none';
     btn.textContent = 'Review Submitted';
-    
-    // Redirect to home after 2 seconds
-    setTimeout(function() {
-      window.location.href = '/';
-    }, 2000);
+    // No auto-redirect — let diner act on the CTAs
+    clearTimeout(window.autoRedirectTimer);
     
   } catch (err) {
     console.error('Submit review error:', err);

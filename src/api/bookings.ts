@@ -85,6 +85,26 @@ export default async function bookingRoutes(server: FastifyInstance) {
       }).catch(err => console.error('[BookingConfirmation] Failed to send email:', err));
     }
 
+    // Send new booking notification email to chef (fire-and-forget)
+    // MAI-1359: Chef Instant Notification via Resend — prepared for activation once RESEND_API_KEY is set
+    const chef = db.select().from(users).where(eq(users.id, service.chefId)).get();
+    if (chef?.email) {
+      // Dynamically import to avoid top-level await issues
+      import('../services/chef-new-booking-email.js').then(({ sendChefNewBookingEmail }) => {
+        sendChefNewBookingEmail({
+          chefEmail: chef.email,
+          chefName: chef.name || 'Chef',
+          guestName: diner?.name || 'Guest',
+          eventDate: body.eventDate,
+          serviceName: service.name,
+          guestCount: body.guestCount,
+          totalPrice,
+          bookingId: created.id,
+        }).catch(err => console.warn('[ChefNewBooking] Failed to send email:', err));
+      }).catch(err => console.warn('[ChefNewBooking] Could not load email service:', err));
+    }
+
+
     return reply.status(201).send(created);
   });
 

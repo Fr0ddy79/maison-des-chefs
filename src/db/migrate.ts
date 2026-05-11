@@ -381,6 +381,14 @@ export function migrate() {
     // Index may already exist, which is fine
   }
 
+  // MAI-1328: Add whatsapp_number column for booking notifications
+  try {
+    sqlite.exec(`ALTER TABLE chef_profiles ADD COLUMN whatsapp_number TEXT`);
+    console.log('Migration: Added whatsapp_number column');
+  } catch (err) {
+    // Column may already exist
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

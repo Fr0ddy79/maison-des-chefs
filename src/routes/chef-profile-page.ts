@@ -181,8 +181,10 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '          html += \'<input type="text" id="location" name="location" placeholder="e.g., Montreal, QC" value="\' + escapeHtml(chef.location || \'\') + \'">\';\n';
   html += '        html += \'</div>\';\n';
   html += '        html += \'<div class="form-group">\';\n';
+  html += '          html += \'<label for="whatsappNumber">WhatsApp Number <span class="section-hint">(for booking notifications)</span></label>\';\n';
+  html += '          html += \'<input type="tel" id="whatsappNumber" name="whatsappNumber" placeholder="+1 234 567 8900" value="\' + escapeHtml(chef.whatsappNumber || \'\') + \'">\';\n';
+  html += '        html += \'</div>\';\n';
   html += '          html += \'<label>Signature Dishes <span class="section-hint">(up to 3)</span></label>\';\n';
-  html += '          html += \'<div id="signatureDishesContainer">\';\n';
   // @ts-ignore
   var dishes = (currentChef || {}).signatureDishes || [];
   for (var d = 0; d < 3; d++) {
@@ -304,7 +306,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '      \n';
   html += '      var bio = document.getElementById(\'bio\').value;\n';
   html += '      var location = document.getElementById(\'location\').value;\n';
-  html += '      var signatureDishes = collectSignatureDishes();\n';
+  html += '      var whatsappNumber = document.getElementById(\'whatsappNumber\').value;\n';
   html += '      \n';
   html += '      try {\n';
   html += '        var token = localStorage.getItem(\'token\');\n';
@@ -314,7 +316,7 @@ export default function buildChefProfilePage(chefId?: number): string {
   html += '            \'Authorization\': \'Bearer \' + token,\n';
   html += '            \'Content-Type\': \'application/json\'\n';
   html += '          },\n';
-  html += '          body: JSON.stringify({ bio: bio, location: location, signatureDishes: signatureDishes })\n';
+  html += '          body: JSON.stringify({ bio: bio, location: location, whatsappNumber: whatsappNumber, signatureDishes: signatureDishes })\n';
   html += '        });\n';
   html += '        \n';
   html += '        if (response.status === 401) {\n';

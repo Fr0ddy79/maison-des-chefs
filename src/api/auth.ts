@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { config } from '../config/index.js';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -15,6 +16,10 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
+});
+
+const magicLinkSchema = z.object({
+  email: z.string().email(),
 });
 
 function createTokens(server: FastifyInstance, userId: number, email: string, role: string) {
@@ -82,6 +87,45 @@ export default async function authRoutes(server: FastifyInstance) {
       return { accessToken, refreshToken };
     } catch {
       return reply.status(401).send({ error: 'Invalid refresh token' });
+    }
+  });
+
+  // Magic link (MAI-1366)
+  server.post('/magic-link', async (request, reply) => {
+    const { email } = magicLinkSchema.parse(request.body);
+    const user = db.select().from(users).where(eq(users.email, email)).get();
+    if (!user) {
+      // Don't reveal whether email exists — still return success
+      return { sent: true, message: 'Magic link sent if account exists' };
+    }
+    // Generate a short-lived magic token
+    const magicToken = server.jwt.sign(
+      { userId: user.id, email: user.email, role: user.role, type: 'magic' },
+      { expiresIn: '15m' }
+    );
+    const magicUrl = `${config.app.url}/auth/magic-callback?token=${magicToken}`;
+    // TODO: Send email via configured email provider
+    console.log(`[Magic Link] URL for ${email}: ${magicUrl}`);
+    return { sent: true, message: 'Magic link sent if account exists' };
+  });
+
+  // Magic callback — exchange token for session (MAI-1366)
+  server.get('/magic-callback', async (request, reply) => {
+    const { token } = request.query as { token?: string };
+    if (!token) {
+      return reply.redirect('/auth/login?error=missing_token');
+    }
+    try {
+      const decoded = server.jwt.verify(token) as { userId: number; email: string; role: string; type: string };
+      if (decoded.type !== 'magic') {
+        throw new Error('Not a magic token');
+      }
+      const { accessToken, refreshToken } = createTokens(server, decoded.userId, decoded.email, decoded.role);
+      reply.setCookie('auth_token', accessToken, { path: '/', maxAge: 86400 });
+      reply.setCookie('refresh_token', refreshToken, { path: '/', maxAge: 604800 });
+      return reply.redirect('/');
+    } catch {
+      return reply.redirect('/auth/login?error=invalid_token');
     }
   });
 }

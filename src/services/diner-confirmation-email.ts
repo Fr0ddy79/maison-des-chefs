@@ -48,6 +48,18 @@ interface QuoteEmailParams {
   bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry
 }
 
+interface DeclinedEmailParams {
+  leadId: number;
+  dinerName: string;
+  dinerEmail: string;
+  chefName: string;
+  serviceName: string;
+  eventDate: string | null;
+  guestCount: number;
+  reason?: string;
+  bookingStatusUrl?: string;
+}
+
 /**
  * Format a date string for display in emails.
  */
@@ -486,6 +498,131 @@ export async function sendQuoteEmail(params: QuoteEmailParams): Promise<boolean>
     return true;
   } catch (error) {
     console.error('[QuoteEmail] Error sending quote email:', error);
+    return false;
+  }
+}
+/**
+ * Build the declined email content sent when a chef declines a lead.
+ */
+function buildDeclinedEmail(params: DeclinedEmailParams): { subject: string; html: string; text: string } {
+  const bookingLink = params.bookingStatusUrl || `${DASHBOARD_URL}/booking-status`;
+  const servicesLink = SERVICES_URL;
+  const dinerFirstName = params.dinerName?.split(' ')[0] || 'there';
+
+  return {
+    subject: `Chef ${params.chefName} is not available for your request`,
+    html: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chef not available</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="text-align: center; padding: 20px 0; border-bottom: 2px solid #c9a227;">
+    <h1 style="color: #2c3e50; margin: 0;">🍽️ Maison des Chefs</h1>
+  </div>
+  
+  <div style="padding: 30px 0;">
+    <h2 style="color: #2c3e50;">Hi ${dinerFirstName},</h2>
+    
+    <p style="font-size: 16px; color: #555;">Unfortunately, Chef ${params.chefName} has indicated they are not available for your request on ${formatDate(params.eventDate)}.</p>
+    
+    ${params.reason && params.reason !== 'none' ? `
+    <div style="background: #fee2e2; border-left: 4px solid #dc2626; border-radius: 4px; padding: 16px 20px; margin: 20px 0;">
+      <p style="margin: 0; color: #991b1b; font-size: 15px;"><strong>Note from Chef:</strong> ${params.reason}</p>
+    </div>
+    ` : ''}
+    
+    <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <h3 style="margin: 0 0 15px; color: #2c3e50;">Your Request</h3>
+      <p style="margin: 5px 0; color: #555;"><strong>Service:</strong> ${params.serviceName}</p>
+      <p style="margin: 5px 0; color: #555;"><strong>Chef:</strong> ${params.chefName}</p>
+      <p style="margin: 5px 0; color: #555;"><strong>Event:</strong> ${formatDate(params.eventDate)}</p>
+      <p style="margin: 5px 0; color: #555;"><strong>Guests:</strong> ${params.guestCount}</p>
+    </div>
+    
+    <p style="font-size: 16px; color: #555;">
+      Don't worry — there are many other amazing chefs on Maison des Chefs who would love to host your event!
+    </p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${servicesLink}" style="display: inline-block; background: #c9a227; color: white; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 16px;">Browse Other Chefs</a>
+    </div>
+    
+    <p style="font-size: 14px; color: #888; text-align: center;">Questions? We're here to help at support@maisondeschefs.com</p>
+  </div>
+  
+  <div style="background: #2c3e50; color: white; padding: 20px; border-radius: 8px; text-align: center;">
+    <p style="margin: 0; font-size: 14px;">— The Maison des Chefs Team</p>
+    <p style="margin: 10px 0 0; font-size: 12px; opacity: 0.8;">© 2024 Maison des Chefs. Montreal's premier private chef marketplace.</p>
+  </div>
+</body>
+</html>`,
+    text: `Hi ${dinerFirstName},
+
+Unfortunately, Chef ${params.chefName} has indicated they are not available for your request on ${formatDate(params.eventDate)}.
+
+Your Request:
+Service: ${params.serviceName}
+Chef: ${params.chefName}
+Event: ${formatDate(params.eventDate)}
+Guests: ${params.guestCount}
+
+${params.reason && params.reason !== 'none' ? `Note from Chef: ${params.reason}
+
+` : ''}Don't worry — there are many other amazing chefs on Maison des Chefs who would love to host your event!
+
+Browse other chefs → ${servicesLink}
+
+— The Maison des Chefs Team
+
+© 2024 Maison des Chefs`,
+  };
+}
+
+/**
+ * Send declined email when a chef declines a lead.
+ * Returns true on success, false on error.
+ */
+export async function sendDeclinedEmail(params: DeclinedEmailParams): Promise<boolean> {
+  const { dinerEmail } = params;
+
+  if (!dinerEmail) {
+    console.warn('[DeclinedEmail] No diner email provided');
+    return false;
+  }
+
+  if (!resend) {
+    console.log('[DeclinedEmail] Resend not configured, skipping email');
+    return true;
+  }
+
+  if (RESEND_API_KEY === 're_placeholder') {
+    console.log('[DeclinedEmail] RESEND_API_KEY is placeholder, stubbing email send');
+    return true;
+  }
+
+  try {
+    const email = buildDeclinedEmail(params);
+
+    const result = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: dinerEmail,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    });
+
+    if (result.error) {
+      console.error('[DeclinedEmail] Failed to send declined email:', result.error);
+      return false;
+    }
+
+    console.log(`[DeclinedEmail] Declined email sent for lead ${params.leadId}`);
+    return true;
+  } catch (error) {
+    console.error('[DeclinedEmail] Error sending declined email:', error);
     return false;
   }
 }

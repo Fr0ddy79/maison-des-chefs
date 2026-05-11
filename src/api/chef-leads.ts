@@ -1,9 +1,9 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { leads, services, users, bookings } from "../db/schema.js";
+import { leads, services, users, bookings, chefProfiles } from "../db/schema.js";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
-import { sendQuoteEmail } from "../services/diner-confirmation-email.js";
+import { sendQuoteEmail, sendDeclinedEmail } from "../services/diner-confirmation-email.js";
 import crypto from "crypto";
 
 /**
@@ -360,5 +360,150 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .all()[0];
 
     return { success: true, lead: updatedLead };
+  });
+
+  // POST /api/chef/leads/:leadId/accept — One-click accept (MAI-1387)
+  server.post("/:leadId/accept", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can accept leads" });
+    }
+
+    const { leadId } = z.object({ leadId: z.string() }).parse(request.params);
+
+    const lead = db.select().from(leads).where(eq(leads.id, parseInt(leadId))).get();
+    if (!lead) {
+      return reply.status(404).send({ error: "Lead not found" });
+    }
+
+    if (lead.chefId !== userId) {
+      return reply.status(403).send({ error: "Not authorized to accept this lead" });
+    }
+
+
+    if (lead.status !== "new") {
+      return reply.status(409).send({ error: "Lead has already been responded to" });
+    }
+
+
+    const now = new Date();
+    // Pre-composed accept message
+    const preComposedMessage = `Hi ${lead.clientName || 'there'}, I'd love to cook for you! I'll send a quote within 24 hours.`;
+
+    const updatedLead = db
+      .update(leads)
+      .set({
+        status: "responded",
+        quoteMessage: preComposedMessage,
+        quoteSentAt: now,
+        firstChefActionAt: lead.firstChefActionAt ?? now,
+        firstResponseAt: lead.firstResponseAt ?? now,
+      } as Record<string, unknown>)
+      .where(eq(leads.id, parseInt(leadId)))
+      .returning()
+      .all()[0];
+
+    // Send pre-composed accept notification email to diner
+    if (lead.email) {
+      const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
+      const chef = db.select().from(users).where(eq(users.id, userId)).get();
+      if (service && chef) {
+        await sendQuoteEmail({
+          leadId: lead.id,
+          dinerName: lead.clientName || "there",
+          dinerEmail: lead.email,
+          chefName: chef.name,
+          serviceName: service.name,
+          eventDate: lead.eventDate,
+          guestCount: lead.guestCount,
+          quoteAmount: 0,
+          quoteMessage: preComposedMessage,
+        });
+      }
+    }
+
+    return { success: true, lead: updatedLead };
+  });
+
+  // POST /api/chef/leads/:leadId/decline — One-click decline (MAI-1387)
+  server.post("/:leadId/decline", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can decline leads" });
+    }
+
+    const { leadId } = z.object({ leadId: z.string() }).parse(request.params);
+    const body = z.object({
+      reason: z.enum(["none", "not_available", "too_busy", "not_a_fit"]).optional().default("none"),
+    }).parse(request.body);
+
+    const lead = db.select().from(leads).where(eq(leads.id, parseInt(leadId))).get();
+    if (!lead) {
+      return reply.status(404).send({ error: "Lead not found" });
+    }
+
+
+    if (lead.chefId !== userId) {
+      return reply.status(403).send({ error: "Not authorized to decline this lead" });
+    }
+
+    const now = new Date();
+    const reasonLabels: Record<string, string> = {
+      none: "Declined",
+      not_available: "Not available",
+      too_busy: "Too busy",
+      not_a_fit: "Not a fit",
+    };
+
+
+    const updatedLead = db
+      .update(leads)
+      .set({
+        status: "lost",
+        chefNote: `[Declined: ${reasonLabels[body.reason] || "Declined"}]` + (lead.chefNote ? " " + lead.chefNote : ""),
+        firstChefActionAt: lead.firstChefActionAt ?? now,
+      } as Record<string, unknown>)
+      .where(eq(leads.id, parseInt(leadId)))
+      .returning()
+      .all()[0];
+
+    // Send declined email to diner (MAI-1396)
+    if (lead.email) {
+      const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
+      const chef = db.select().from(users).where(eq(users.id, userId)).get();
+      if (service && chef) {
+        const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
+        const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
+        await sendDeclinedEmail({
+          leadId: lead.id,
+          dinerName: lead.clientName || 'there',
+          dinerEmail: lead.email,
+          chefName: chef.name,
+          serviceName: service.name,
+          eventDate: lead.eventDate,
+          guestCount: lead.guestCount,
+          reason: reasonLabels[body.reason] || 'Declined',
+          bookingStatusUrl: fullBookingStatusUrl,
+        });
+      }
+    }
+
+    return { success: true, lead: updatedLead };
+  });
+
+  // POST /api/chef/leads/tutorial/dismiss — Dismiss the first-lead tutorial modal (MAI-1387)
+  server.post("/tutorial/dismiss", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can dismiss the tutorial" });
+    }
+
+    db.update(chefProfiles)
+      .set({ leadResponseTutorialDismissed: true } as Record<string, unknown>)
+      .where(eq(chefProfiles.userId, userId))
+      .run();
+
+
+    return { success: true };
   });
 }
