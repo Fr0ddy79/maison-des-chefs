@@ -389,6 +389,14 @@ export function migrate() {
     // Column may already exist
   }
 
+  // MAI-1396: Add lead_expired_sent_at for idempotency tracking of expired lead emails
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN lead_expired_sent_at INTEGER`);
+    console.log('Migration: Added lead_expired_sent_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

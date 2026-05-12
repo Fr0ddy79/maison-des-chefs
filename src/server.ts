@@ -10,6 +10,7 @@ import { migrate } from './db/migrate.js';
 import { UserPayload } from './types.js';
 import { startQuoteReminderScheduler } from './services/quote-reminder.js';
 import { startStaleLeadReEngagementScheduler } from './services/diner-stale-lead-email.js';
+import { startLeadExpirationScheduler } from './services/lead-expiration.js';
 import { db } from './db/index.js';
 import { users, chefProfiles, services, bookings, leads, dinerPreferences } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
@@ -293,6 +294,7 @@ const start = async () => {
   await migrate();
   startQuoteReminderScheduler();
   startStaleLeadReEngagementScheduler();
+  startLeadExpirationScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });
 };
 

@@ -37,6 +37,7 @@ function getStatusDisplay(status: string): { label: string; color: string; bgCol
     'quoted': { label: 'Quote Received!', color: '#1d4ed8', bgColor: '#dbeafe', icon: '💰', description: 'Chef has sent you a quote - review and complete payment' },
     'accepted': { label: 'Request Accepted', color: '#15803d', bgColor: '#dcfce7', icon: '👍', description: 'Chef has accepted your request' },
     'declined': { label: 'Not Available', color: '#dc2626', bgColor: '#fee2e2', icon: '👎', description: 'Chef is not available for this date' },
+    'expired': { label: 'Inquiry Expired', color: '#6b7280', bgColor: '#f3f4f6', icon: '⏰', description: 'Chef did not respond within 72 hours' },
     'converted': { label: 'Booking Confirmed! 🎉', color: '#15803d', bgColor: '#dcfce7', icon: '✅', description: 'Your booking is confirmed' },
     'cancelled': { label: 'Cancelled', color: '#6b7280', bgColor: '#f3f4f6', icon: '🚫', description: 'This inquiry has been cancelled' },
   };
@@ -87,6 +88,12 @@ function getNextSteps(status: string, checkoutUrl: string | null): string[] {
         'Browse other chefs who may be available',
         'Try a different date or location',
       ];
+    case 'expired':
+      return [
+        'Your inquiry has expired — chef did not respond within 72 hours',
+        'Browse other chefs who may be available',
+        'Try a different date or location',
+      ];
     case 'cancelled':
       return [
         'This inquiry has been cancelled',
@@ -111,7 +118,7 @@ function getCurrentStage(status: string): number {
   if (status === 'quoted') return 2;
   if (status === 'accepted') return 3;
   if (status === 'converted') return 4;
-  if (status === 'declined' || status === 'cancelled') return -1; // Terminal
+  if (status === 'declined' || status === 'cancelled' || status === 'expired') return -1; // Terminal
   return 0;
 }
 

@@ -195,6 +195,8 @@ export const leads = sqliteTable('leads', {
   selectedAddons: text('selected_addons').notNull().default('[]'), // JSON array of addon IDs
   // MAI-845: Stale lead re-engagement email sent timestamp (for idempotency)
   staleLeadReengagementSentAt: integer('stale_lead_reengagement_sent_at', { mode: 'timestamp' }),
+  // MAI-1396: Lead expiration email sent timestamp (for idempotency)
+  leadExpiredSentAt: integer('lead_expired_sent_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 

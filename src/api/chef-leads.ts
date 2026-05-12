@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { leads, services, users, bookings, chefProfiles } from "../db/schema.js";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
-import { sendQuoteEmail, sendDeclinedEmail } from "../services/diner-confirmation-email.js";
+import { sendQuoteEmail, sendDeclinedEmail, sendAcceptedEmail } from "../services/diner-confirmation-email.js";
 import crypto from "crypto";
 
 /**
@@ -269,6 +269,29 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       createdAt: now,
     }).run();
 
+    // MAI-1396: Send accepted/confirmed email to diner
+    if (lead.email) {
+      const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
+      const chef = db.select().from(users).where(eq(users.id, userId)).get();
+      if (service && chef) {
+        const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
+        const DINER_BOOKINGS_URL = process.env.DINER_BOOKINGS_URL || 'https://maisondeschefs.com/diner/bookings';
+        const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
+        await sendAcceptedEmail({
+          leadId: lead.id,
+          dinerName: lead.clientName || "there",
+          dinerEmail: lead.email,
+          chefName: chef.name,
+          serviceName: service.name,
+          eventDate: lead.eventDate,
+          guestCount: lead.guestCount,
+          quoteAmount: lead.quoteAmount || undefined,
+          bookingStatusUrl: fullBookingStatusUrl,
+          dinerBookingsUrl: DINER_BOOKINGS_URL,
+        });
+      }
+    }
+
     return { success: true, lead_status: "converted", converted_at: updatedLead.createdAt };
   });
 
@@ -403,12 +426,14 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .returning()
       .all()[0];
 
-    // Send pre-composed accept notification email to diner
+    // MAI-1396: Send accepted email to diner (distinct from quote email)
     if (lead.email) {
       const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
       const chef = db.select().from(users).where(eq(users.id, userId)).get();
       if (service && chef) {
-        await sendQuoteEmail({
+        const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
+        const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
+        await sendAcceptedEmail({
           leadId: lead.id,
           dinerName: lead.clientName || "there",
           dinerEmail: lead.email,
@@ -416,8 +441,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
           serviceName: service.name,
           eventDate: lead.eventDate,
           guestCount: lead.guestCount,
-          quoteAmount: 0,
-          quoteMessage: preComposedMessage,
+          bookingStatusUrl: fullBookingStatusUrl,
         });
       }
     }
