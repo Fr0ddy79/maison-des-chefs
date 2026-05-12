@@ -328,6 +328,18 @@ export default async function pageRoutes(server: FastifyInstance) {
       .where(eq(services.id, parseInt(id)))
       .get();
 
+    // Trust Bar A/B Test: determine variant (priority: URL param > cookie > random 50/50)
+    const trustBarParam = url.searchParams.get('trust_bar');
+    const trustBarCookie = cookies?.trust_bar_variant;
+    let trustBarVariant: string;
+    if (trustBarParam === 'A' || trustBarParam === 'B') {
+      trustBarVariant = trustBarParam;
+    } else if (trustBarCookie === 'A' || trustBarCookie === 'B') {
+      trustBarVariant = trustBarCookie;
+    } else {
+      trustBarVariant = Math.random() < 0.5 ? 'A' : 'B';
+    }
+
     if (!service) {
       reply.header('Content-Type', 'text/html; charset=utf-8');
       return build404Page();
@@ -433,6 +445,18 @@ export default async function pageRoutes(server: FastifyInstance) {
       recentReviews,
     };
 
+    // Trust Bar A/B Test: count confirmed bookings for this chef this month
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const bookingsThisMonthResult = db.select({ count: sql`count(*)` })
+      .from(bookings)
+      .where(and(
+        eq(bookings.chefId, service.chefId),
+        gte(bookings.eventDate, currentMonth + '-01'),
+        sql`${bookings.status} IN ('completed', 'confirmed')`
+      ))
+      .get();
+    const bookingsThisMonth = (bookingsThisMonthResult?.count as number | null) ?? 0;
+
     const avgResponseMs = getChefAvgResponseTime(service.chefId);
     const responseTimeBadge = buildResponseTimeBadge(avgResponseMs);
 
@@ -443,7 +467,9 @@ export default async function pageRoutes(server: FastifyInstance) {
     const leadCount = (leadCountResult?.count as number | null) ?? 0;
 
     reply.header('Content-Type', 'text/html; charset=utf-8');
-    return buildServiceDetailPage(serviceWithPhotos, cuisineTypes, photo, verifiedBadge, blockedDates, useSimplifiedLeadForm, useNewSidebarCta, socialProof, ctaVariant, responseTimeBadge, leadCount);
+    // Trust Bar A/B: set cookie for SSR on subsequent requests
+    reply.header('Set-Cookie', `trust_bar_variant=${trustBarVariant}; Path=/; Max-Age=86400; SameSite=Lax`);
+    return buildServiceDetailPage(serviceWithPhotos, cuisineTypes, photo, verifiedBadge, blockedDates, useSimplifiedLeadForm, useNewSidebarCta, socialProof, ctaVariant, responseTimeBadge, leadCount, trustBarVariant, service.chefVerified ?? false, bookingsThisMonth);
   });
 }
 
@@ -717,6 +743,12 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     .modal-success .status-url a { color: #2e7d32; font-weight: 600; text-decoration: none; }
     .modal-success .status-url a:hover { text-decoration: underline; }
     .modal-success .trust-note { font-size: 0.85rem; color: #888; margin-top: 0.5rem; }
+    .modal-success .success-timeline { background: #f8f9fa; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; text-align: left; }
+    .modal-success .timeline-step { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.5rem 0; font-size: 0.9rem; color: #555; border-left: 2px solid #e0e0e0; margin-left: 0.5rem; padding-left: 1rem; }
+    .modal-success .timeline-step.done { color: #2e7d32; border-left-color: #81c784; }
+    .modal-success .timeline-step .step-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .modal-success .timeline-step .step-time { display: block; font-size: 0.8rem; color: #888; margin-top: 0.15rem; }
+    .modal-success .timeline-step.done .step-time { color: #81c784; }
     @media (max-width: 768px) {
       .inquiry-floating-bar { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
       .inquiry-bar-info { font-size: 0.9rem; }
@@ -991,7 +1023,12 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         modalBody.innerHTML = '<div class="modal-success">' +
           '<div class="success-icon">&#x2705;</div>' +
           '<h3>Inquiry Sent!</h3>' +
-          '<p>Your inquiry has been sent to ' + result.leadIds.length + ' chef' + (result.leadIds.length > 1 ? 's' : '') + '.</p>' +
+          '<div class="success-timeline">' +
+            '<div class="timeline-step done"><span class="step-icon">✅</span><span class="step-text">Your inquiry was sent to ' + result.leadIds.length + ' chef' + (result.leadIds.length > 1 ? 's' : '') + '</span></div>' +
+            '<div class="timeline-step"><span class="step-icon">👨‍🍳</span><span class="step-text">Each chef reviews your request <em class="step-time">within 24 hours</em></span></div>' +
+            '<div class="timeline-step"><span class="step-icon">📩</span><span class="step-text">Chefs send you personalized quotes <em class="step-time">within 24-48 hours</em></span></div>' +
+            '<div class="timeline-step"><span class="step-icon">💳</span><span class="step-text">You confirm & pay to lock in your date</span></div>' +
+          '</div>' +
           '<div class="chef-list-summary">' + chefsSummaryHtml + '</div>' +
           '<p style="font-size:0.9rem;color:#666">Each chef will respond within 24 hours.</p>' +
           '<button class="modal-submit-btn" onclick="closeCompareModal(); location.reload();" style="margin-top:1rem;">Back to Services</button>' +
@@ -1083,9 +1120,14 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         modalBody.innerHTML = '<div class="modal-success">' +
           '<div class="success-icon">&#x2705;</div>' +
           '<h3>Inquiry Sent!</h3>' +
-          '<p>We\'ve received your inquiry and the chef will respond within 24-48 hours.</p>' +
+          '<div class="success-timeline">' +
+            '<div class="timeline-step done"><span class="step-icon">✅</span><span class="step-text">Your inquiry was sent</span></div>' +
+            '<div class="timeline-step"><span class="step-icon">👨‍🍳</span><span class="step-text">Chef reviews your request <em class="step-time">within 24 hours</em></span></div>' +
+            '<div class="timeline-step"><span class="step-icon">📩</span><span class="step-text">Chef sends you a personalized quote <em class="step-time">within 24-48 hours</em></span></div>' +
+            '<div class="timeline-step"><span class="step-icon">💳</span><span class="step-text">You confirm & pay to lock in your date</span></div>' +
+          '</div>' +
           '<div class="status-url">Track your inquiry: <a href="' + statusUrl + '" target="_blank">' + statusUrl + '</a></div>' +
-          '<p class="trust-note">No payment is required today. This is just an inquiry — the chef will confirm availability and pricing.</p>' +
+          '<p class="trust-note">No payment required today &bull; Chef will email you directly &bull; Response within 24-48 hours</p>' +
           '<button class="modal-submit-btn" onclick="closeServiceInquiryModal();" style="margin-top:1rem;">Back to Services</button>' +
         '</div>';
       } catch (err) {
@@ -1197,7 +1239,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
 </html>`;
 }
 
-function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: string, verifiedBadge: string, blockedDates: { date: string }[], useSimplifiedLeadForm: boolean, useNewSidebarCta: boolean, socialProof: any, ctaVariant: string, responseTimeBadge: string, leadCount: number): string {
+function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: string, verifiedBadge: string, blockedDates: { date: string }[], useSimplifiedLeadForm: boolean, useNewSidebarCta: boolean, socialProof: any, ctaVariant: string, responseTimeBadge: string, leadCount: number, trustBarVariant: string, chefVerified: boolean, bookingsThisMonth: number): string {
   const cuisineList = cuisineTypes.join(', ');
   const sp = socialProof ?? { reviewCount: 0, avgRating: 0, featuredReview: null, recentReviews: [] };
   const hasEnoughReviews = sp.reviewCount >= 3;
@@ -1493,6 +1535,12 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       ${urgencyLine}
       ${demandBadge}
       <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;" onclick="trackCTAClick(this)" data-variant="${ctaVariant}" data-service-id="${service.id}" data-chef-id="${service.chefId}" data-cta-text="${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}">${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
+      ${trustBarVariant === 'B' ? `
+      <div class="trust-bar" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee;">
+        ${chefVerified ? '<div class="trust-bar-item" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;"><span style="color: #27ae60;">✓</span> Verified Chef</div>' : ''}
+        ${bookingsThisMonth > 3 ? '<div class="trust-bar-item" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;"><span>📅</span> ' + bookingsThisMonth + ' bookings this month</div>' : ''}
+        <div class="trust-bar-item" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555;"><span>⏱</span> Typically responds within 24 hours</div>
+      </div>` : ''}
     </div>
   </section>
   
@@ -1603,6 +1651,38 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         console.log('[Analytics] CTA click:', data);
       }
 
+      // Trust Bar A/B Test: persist variant in localStorage, handle URL param override
+      var trustBarVariant = '${trustBarVariant}';
+      (function() {
+        try {
+          var urlParams = new URLSearchParams(window.location.search);
+          var urlTrustBar = urlParams.get('trust_bar');
+          if (urlTrustBar === 'A' || urlTrustBar === 'B') {
+            trustBarVariant = urlTrustBar;
+            localStorage.setItem('trust_bar_variant', trustBarVariant);
+          } else {
+            var stored = localStorage.getItem('trust_bar_variant');
+            if (stored === 'A' || stored === 'B') {
+              trustBarVariant = stored;
+            }
+          }
+        } catch (e) {}
+        // Fire trust_bar_viewed event for variant
+        if (trustBarVariant === 'B') {
+          var eventData = {
+            event: 'trust_bar_viewed',
+            variant: trustBarVariant,
+            service_id: ${service.id},
+            chef_id: ${service.chefId},
+            timestamp: new Date().toISOString()
+          };
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+          }
+          console.log('[EVENT] trust_bar_viewed', eventData);
+        }
+      })();
+
       window.addEventListener('DOMContentLoaded', function() {
         document.getElementById('btn-decrease').addEventListener('click', decreaseGuests);
         document.getElementById('btn-increase').addEventListener('click', increaseGuests);
@@ -1669,7 +1749,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
 </html>`;
 }
 
-export function buildHomePage(stats: { chefCount: number; serviceCount: number; bookingCount: number }, featuredServices: any[], prefs?: { cuisines: string[]; dietaryRestrictions: string[]; defaultPartySize?: number } | null): string {
+export function buildHomePage(stats: { chefCount: number; serviceCount: number; bookingCount: number; reviewCount: number; avgRating: number }, featuredServices: any[], prefs?: { cuisines: string[]; dietaryRestrictions: string[]; defaultPartySize?: number } | null): string {
   const { chefCount, serviceCount, bookingCount } = stats;
   
   const featuredCards = featuredServices.length > 0
@@ -1735,6 +1815,11 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .hero-cta-secondary:hover { background: rgba(255,255,255,0.2); }
     .hero-trust { margin-top: 2rem; color: rgba(255,255,255,0.6); font-size: 0.9rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
     .hero-trust span { display: flex; align-items: center; gap: 0.4rem; }
+    .hero-social-proof { margin-top: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; color: rgba(255,255,255,0.75); font-size: 0.95rem; flex-wrap: wrap; }
+    .hero-social-proof .proof-stars { color: #f5c518; letter-spacing: -1px; }
+    .hero-social-proof .proof-rating { font-weight: 700; color: white; }
+    .hero-social-proof .proof-count { font-weight: 600; }
+    .hero-social-proof .proof-divider { color: rgba(255,255,255,0.4); }
 
     .hero-search { margin-top: 2.5rem; position: sticky; top: 70px; z-index: 50; }
     .hero-search-form { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; max-width: 700px; margin: 0 auto; background: rgba(26, 26, 46, 0.95); padding: 1rem; border-radius: 12px; backdrop-filter: blur(10px); }
@@ -1825,6 +1910,12 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
         <a href="/services" class="hero-cta-primary">Browse Chefs & Services</a>
         <a href="/services?sort=popular" class="hero-cta-secondary">🔥 See Most Popular</a>
       </div>
+      ${stats.reviewCount > 0 || stats.bookingCount > 0 ? `
+      <div class="hero-social-proof">
+        ${stats.reviewCount > 0 ? `<span class="proof-item"><span class="proof-stars">★ ★ ★ ★ ★</span> <span class="proof-rating">${stats.avgRating.toFixed(1)}</span> (<span class="proof-count">${stats.reviewCount}</span> review${stats.reviewCount !== 1 ? 's' : ''})</span>` : ''}
+        ${stats.bookingCount > 0 ? `<span class="proof-divider">·</span><span class="proof-item">${stats.bookingCount} dinner${stats.bookingCount !== 1 ? 's' : ''} booked &amp; loved</span>` : ''}
+      </div>
+      ` : ''}
       <div class="hero-search">
         <form class="hero-search-form" action="/services" method="get">
           <div class="search-field">
