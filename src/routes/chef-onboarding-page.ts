@@ -102,10 +102,15 @@ export default function buildChefOnboardingPage(): string {
   html += '    .btn-sm { padding: 0.5rem 1rem; font-size: 0.88rem; }\n';
   html += '    .step-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; gap: 1rem; flex-wrap: wrap; }\n';
   html += '    .step-actions .left { display: flex; gap: 0.75rem; }\n';
+  html += '    .step-actions .right { margin-left: auto; }\n';
   html += '    /* Messages */\n';
+  html += '    .autosave-indicator { font-size: 0.8rem; color: #888; opacity: 0; transition: opacity 0.3s; display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.75rem; border-radius: 4px; }\n';
   html += '    .error-msg { background: #f8d7da; color: #721c24; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; display: none; }\n';
+  html += '    .autosave-indicator.visible { opacity: 1; }\n';
   html += '    .success-msg { background: #d4edda; color: #155724; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; display: none; }\n';
+  html += '    .autosave-indicator.saving { color: #c9a227; }\n';
   html += '    .info-msg { background: #e3f2fd; color: #1565c0; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; display: none; }\n';
+  html += '    .autosave-indicator.saved { color: #2e7d32; }\n';
   html += '    /* Loading */\n';
   html += '    .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.9); z-index: 300; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }\n';
   html += '    .loading-overlay.active { display: flex; }\n';
@@ -153,6 +158,7 @@ export default function buildChefOnboardingPage(): string {
   html += '<div id="stepActions" class="step-actions">\n';
   html += '<div class="left"><button class="btn btn-secondary btn-sm" id="saveProgressBtn" onclick="saveProgress()" style="display:none">Save & Exit</button></div>\n';
   html += '<div id="navBtns"></div>\n';
+  html += '    <div id="autosaveIndicator" class="autosave-indicator"><span id="autosaveIcon"></span><span id="autosaveText"></span></div>\n';
   html += '</div>\n';
   html += '</div>\n';
 
@@ -174,35 +180,65 @@ export default function buildChefOnboardingPage(): string {
   html += '    var calendarYear = new Date().getFullYear();\n';
   html += '    var serviceId = null;\n';
   html += '    var authToken = localStorage.getItem(\'token\') || null;\n';
+  html += '    var autoSaveTimer = null;\n';
   html += '\n';
+  html += '    var lastSavedAt = null;\n';
 
+  html += '    var isAutoSaving = false;\n';
   // Step 1: Profile Setup
+  html += '    function showAutosaveState(state) {\n';
   html += '    function renderStep1(data) {\n';
+  html += '      var indicator = document.getElementById(\'autosaveIndicator\');\n';
   html += '      document.getElementById(\'step1Content\').style.display = \'block\';\n';
+  html += '      var icon = document.getElementById(\'autosaveIcon\');\n';
   html += '      document.getElementById(\'step2Content\').style.display = \'none\';\n';
+  html += '      var text = document.getElementById(\'autosaveText\');\n';
   html += '      document.getElementById(\'step3Content\').style.display = \'none\';\n';
+  html += '      if (!indicator || !icon || !text) return;\n';
   html += '      document.getElementById(\'step4Content\').style.display = \'none\';\n';
+  html += '      indicator.classList.remove(\'saving\', \'saved\');\n';
   html += '      document.getElementById(\'saveProgressBtn\').style.display = \'inline-block\';\n';
+  html += '      indicator.classList.add(\'visible\');\n';
   html += '      var d = data || savedState;\n';
+  html += '      if (state === \'saving\') { icon.textContent = \'\\u21BB\'; text.textContent = \'Saving...\'; indicator.classList.add(\'saving\'); }\n';
   html += '      if (d && d.step1Data) {\n';
+  html += '      else if (state === \'saved\') { icon.textContent = \'\\u2713\'; text.textContent = \'Saved\'; indicator.classList.add(\'saved\'); setTimeout(function() { indicator.classList.remove(\'visible\'); }, 2000); }\n';
   html += '        document.getElementById(\'displayName\').value = d.step1Data.displayName || \'\';\n';
-  html += '        document.getElementById(\'bio\').value = d.step1Data.bio || \'\';\n';
-  html += '        document.getElementById(\'location\').value = d.step1Data.location || \'\';\n';
-  html += '        if (d.step1Data.cuisineTags) {\n';
-  html += '          d.step1Data.cuisineTags.forEach(function(tag) {\n';
-  html += '            var el = document.querySelector(\'[data-cuisine="\' + tag + \'"]\');\n';
-  html += '            if (el) el.classList.add(\'selected\');\n';
-  html += '          });\n';
-  html += '        }\n';
-  html += '      }\n';
-  html += '      updateNavButtons(1);\n';
-  html += '      updateProgressBar(1);\n';
-  html += '      updateCharCount(\'bio\', 300);\n';
   html += '    }\n';
+  html += '        document.getElementById(\'bio\').value = d.step1Data.bio || \'\';\n';
+  html += '    function triggerAutosave() { clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(function() { autoSaveStep(); }, 2000); }\n';
+  html += '        document.getElementById(\'location\').value = d.step1Data.location || \'\';\n';
+  html += '    async function autoSaveStep() {\n';
+  html += '        if (d.step1Data.cuisineTags) {\n';
+  html += '      if (!authToken || currentStep < 1) return;\n';
+  html += '          d.step1Data.cuisineTags.forEach(function(tag) {\n';
+  html += '      var step1Data = currentStep >= 1 ? collectStep1Data() : null;\n';
+  html += '            var el = document.querySelector(\'[data-cuisine="\' + tag + \'"]\');\n';
+  html += '      var step2Data = currentStep >= 2 ? collectStep2Data() : null;\n';
+  html += '            if (el) el.classList.add(\'selected\');\n';
+  html += '      var step3Data = currentStep >= 3 ? { blockedDates: blockedDates } : null;\n';
+  html += '          });\n';
+  html += '      try { isAutoSaving = true; showAutosaveState(\'saving\');\n';
+  html += '        }\n';
+  html += '        var res = await fetch(API_BASE + \'/api/onboarding/state\', { method: \'POST\', headers: { \'Authorization\': \'Bearer \' + authToken, \'Content-Type\': \'application/json\' }, body: JSON.stringify({ currentStep: currentStep, step1Data: step1Data, step2Data: step2Data, step3Data: step3Data }) });\n';
+  html += '      }\n';
+  html += '        if (!res.ok) throw new Error(\'Save failed\'); lastSavedAt = new Date(); showAutosaveState(\'saved\');\n';
+  html += '      updateNavButtons(1);\n';
+  html += '      } catch(e) { /* silent */ } finally { isAutoSaving = false; }\n';
+  html += '      updateProgressBar(1);\n';
+  html += '    }\n';
+  html += '      updateCharCount(\'bio\', 300);\n';
+  html += '    function setupAutosave() {\n';
+  html += '    }\n';
+  html += '      var fields = document.querySelectorAll(\'#step1Content input, #step1Content textarea, #step2Content input, #step2Content textarea\');\n';
 
+  html += '      fields.forEach(function(field) { field.addEventListener(\'input\', function() { triggerAutosave(); }); });\n';
   // Step 2: Service Setup
+  html += '      document.querySelectorAll(\'.cuisine-tag\').forEach(function(tag) { tag.addEventListener(\'click\', function() { triggerAutosave(); }); });\n';
   html += '    function renderStep2(data) {\n';
+  html += '      document.querySelectorAll(\'.category-option\').forEach(function(opt) { opt.addEventListener(\'click\', function() { triggerAutosave(); }); });\n';
   html += '      document.getElementById(\'step1Content\').style.display = \'none\';\n';
+  html += '    }\n';
   html += '      document.getElementById(\'step2Content\').style.display = \'block\';\n';
   html += '      document.getElementById(\'step3Content\').style.display = \'none\';\n';
   html += '      document.getElementById(\'step4Content\').style.display = \'none\';\n';
@@ -367,6 +403,10 @@ export default function buildChefOnboardingPage(): string {
 
   // Step 1 validation & collection
   html += '    function validateStep1() {\n';
+  html += '    setupAutosave();\n';
+  html += '    setupAutosave();\n';
+  html += '    setupAutosave();\n';
+  html += '    setupAutosave();\n';
   html += '      var displayName = document.getElementById(\'displayName\').value.trim();\n';
   html += '      var location = document.getElementById(\'location\').value.trim();\n';
   html += '      var bio = document.getElementById(\'bio\').value;\n';
@@ -606,6 +646,10 @@ export default function buildChefOnboardingPage(): string {
   html += '      else if (currentStep === 2) renderStep2();\n';
   html += '      else if (currentStep === 3) renderStep3();\n';
   html += '      else if (currentStep === 4) renderStep4();\n';
+  html += '    setupAutosave();\n';
+  html += '    setupAutosave();\n';
+  html += '    setupAutosave();\n';
+  html += '    setupAutosave();\n';
   html += '    }\n';
 
   html += '  </script>\n';
