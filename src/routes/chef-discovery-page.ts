@@ -54,6 +54,19 @@ export default function buildChefDiscoveryPage(): string {
     avgResponseTimes[chef.id] = (result?.avgMs as number | null) ?? null;
   }
 
+  // MAI-1490: Compute lead count per chef (last 7 days) for trust signal badge
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoTs = Math.floor(sevenDaysAgo.getTime() / 1000);
+  const leadCounts: Record<number, number> = {};
+  for (const chef of chefs) {
+    const result = db.select({ count: sql `count(*)` })
+      .from(leads)
+      .where(and(eq(leads.chefId, chef.id), sql `${leads.createdAt} > ${sevenDaysAgoTs}`))
+      .get();
+    leadCounts[chef.id] = (result?.count as number) ?? 0;
+  }
+
   const chefsJson = JSON.stringify(chefs.map(c => ({
     ...c,
     cuisineTypes: JSON.parse(c.cuisineTypes as string || '[]'),
@@ -63,6 +76,7 @@ export default function buildChefDiscoveryPage(): string {
       cuisines: [],
     })) ?? [],
     avgResponseMs: avgResponseTimes[c.id],
+    leadCount: leadCounts[c.id] ?? 0,
   })));
 
   const html = `<!DOCTYPE html>
@@ -124,6 +138,7 @@ export default function buildChefDiscoveryPage(): string {
   .chef-price span { font-size: 0.85rem; font-weight: 400; color: #888; }
   .chef-stats { display: flex; gap: 1rem; padding-top: 0.75rem; border-top: 1px solid #f0f0f0; }
   .chef-stat { font-size: 0.82rem; color: #666; display: flex; align-items: center; gap: 0.25rem; }
+  .lead-badge { background: #e8f5e9; color: #2e7d32; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 
   .loading-state, .error-state, .empty-state { text-align: center; padding: 4rem 2rem; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .loading-state .spinner { width: 48px; height: 48px; border: 4px solid #f3f3f3; border-top: 4px solid #c9a227; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
@@ -180,6 +195,12 @@ export default function buildChefDiscoveryPage(): string {
   .modal-success h3 { color: #2e7d32; margin-bottom: 0.5rem; font-size: 1.3rem; }
   .modal-success p { color: #666; margin-bottom: 1.5rem; }
   .modal-success .chef-list-summary { text-align: left; background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0; font-size: 0.95rem; color: #555; }
+  .modal-success .success-timeline { background: #f8f9fa; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; text-align: left; }
+  .modal-success .timeline-step { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.5rem 0; font-size: 0.9rem; color: #555; border-left: 2px solid #e0e0e0; margin-left: 0.5rem; padding-left: 1rem; }
+  .modal-success .timeline-step.done { color: #2e7d32; border-left-color: #81c784; }
+  .modal-success .timeline-step .step-icon { font-size: 1.2rem; flex-shrink: 0; }
+  .modal-success .timeline-step .step-time { display: block; font-size: 0.8rem; color: #888; margin-top: 0.15rem; }
+  .modal-success .timeline-step.done .step-time { color: #81c784; }
 
   @media (max-width: 1100px) { .chef-grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 768px) {
@@ -411,6 +432,13 @@ function renderChefCard(chef) {
   }).join('');
   var verifiedHtml = chef.verified ? '<span class="verified-badge">✓ Verified</span>' : '';
   var responseBadgeHtml = responseBadge;
+  // MAI-1490: Lead count trust badge
+  var leadCount = chef.leadCount || 0;
+  var leadBadgeHtml = '';
+  if (leadCount > 0) {
+    var label = leadCount >= 5 ? '🔥 Popular' : leadCount + ' lead' + (leadCount !== 1 ? 's' : '');
+    leadBadgeHtml = '<span class="lead-badge" style="margin-left:0.5rem;">' + label + '</span>';
+  }
   var selectedClass = selectedChefIds.has(chef.id) ? ' selected' : '';
   var firstService = chef.services && chef.services.length > 0 ? chef.services[0] : null;
   var serviceId = firstService ? firstService.id : '';
@@ -764,7 +792,12 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
       '<h3>Inquiry Sent!</h3>' +
       '<p>Your inquiry has been sent to ' + result.leadIds.length + ' chef' + (result.leadIds.length > 1 ? 's' : '') + '.</p>' +
       '<div class="chef-list-summary">' + chefsSummaryHtml + '</div>' +
-      '<p style="font-size:0.9rem;color:#666">Each chef will respond within 24 hours.</p>' +
+      '<div class="success-timeline">' +
+        '<div class="timeline-step done"><span class="step-icon">✅</span><span class="step-text">Your inquiry was sent to ' + result.leadIds.length + ' chef' + (result.leadIds.length > 1 ? 's' : '') + '</span></div>' +
+        '<div class="timeline-step"><span class="step-icon">👨🍳</span><span class="step-text">Each chef reviews your request <em class="step-time">within 24 hours</em></span></div>' +
+        '<div class="timeline-step"><span class="step-icon">📩</span><span class="step-text">Chefs send you personalized quotes <em class="step-time">within 24-48 hours</em></span></div>' +
+        '<div class="timeline-step"><span class="step-icon">💳</span><span class="step-text">You confirm & pay to lock in your date</span></div>' +
+      '</div>' +
       '<button class="modal-submit-btn" onclick="closeInquiryModal(); location.reload();" style="margin-top:1rem;">Back to Chefs<\/button>' +
     '<\/div>';
   } catch (err) {
