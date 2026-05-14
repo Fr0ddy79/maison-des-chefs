@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { leads, services, users, chefProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { sendStaleLeadReEngagementEmail } from '../services/diner-stale-lead-email.js';
+import { sendChefStaleLeadEmail } from '../services/chef-stale-lead-email.js';
 
 /**
  * Format a date string for display.
@@ -162,8 +162,8 @@ export default async function bookingStatusRoutes(server: FastifyInstance) {
       return { success: true, message: 'Re-engagement email already sent', alreadySent: true };
     }
 
-    // Send the re-engagement email
-    const success = await sendStaleLeadReEngagementEmail(lead);
+    // Send the re-engagement email to the CHEF (MAI-1535: was emailing diner, which is wrong direction)
+    const success = await sendChefStaleLeadEmail(lead);
 
     if (!success) {
       return reply.status(500).send({ error: 'Failed to send re-engagement email' });
