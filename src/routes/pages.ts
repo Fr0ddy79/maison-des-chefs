@@ -2196,12 +2196,16 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
   <script>
     document.querySelector('.hero-search-form').addEventListener('submit', function(e) {
       const formData = new FormData(this);
-      console.log('[EVENT] homepage_search_submitted', {
-        cuisine: formData.get('cuisine'),
-        guests: formData.get('guests'),
-        date: formData.get('date'),
-        eventType: formData.get('type')
-      });
+      const payload = {
+        event: 'homepage_search_submitted',
+        cuisine_type: formData.get('cuisine') || null,
+        guestCount: parseInt(formData.get('guests')) || null,
+        date: formData.get('date') || null,
+        eventType: formData.get('type') || null,
+        timestamp: new Date().toISOString(),
+        auth_status: 'anonymous'
+      };
+      navigator.sendBeacon('/api/analytics/event', JSON.stringify(payload));
     });
   </script>
 </body>
