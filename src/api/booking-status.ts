@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { leads, services, users, chefProfiles } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { sendChefStaleLeadEmail } from '../services/chef-stale-lead-email.js';
+import { markStagnationAlertSent } from '../services/diner-stagnation-alert.js';
 
 /**
  * Format a date string for display.
@@ -174,6 +175,11 @@ export default async function bookingStatusRoutes(server: FastifyInstance) {
       .update(leads)
       .set({ staleLeadReengagementSentAt: new Date() })
       .where(eq(leads.id, lead.id));
+
+    // MAI-1607: Prevent duplicate diner emails — mark stagnation alert as sent for this booking
+    if (lead.bookingId) {
+      await markStagnationAlertSent(lead.bookingId);
+    }
 
     return { success: true, message: 'Re-engagement email sent' };
   });

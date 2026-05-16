@@ -3,8 +3,8 @@
 
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { leads, services, users, chefProfiles } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { leads, services, users, chefProfiles, reviews, bookings } from '../db/schema.js';
+import { eq, sql } from 'drizzle-orm';
 
 const BOOKING_STATUS_TOKEN_EXPIRY_DAYS = 30;
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
@@ -120,6 +120,35 @@ function getCurrentStage(status: string): number {
   if (status === 'converted') return 4;
   if (status === 'declined' || status === 'cancelled' || status === 'expired') return -1; // Terminal
   return 0;
+}
+
+/**
+ * MAI-1443: Get chef trust signals — review count, avg rating, and completed booking count.
+ * Used on the booking status page when status === 'quoted' to provide social proof.
+ */
+function getChefTrustSignals(chefId: number): { chefAvgRating: number; chefReviewCount: number; chefBookingCount: number } {
+  // Get review stats for this chef (aggregated across all their services)
+  const ratingResult = db.select({
+    avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
+    reviewCount: sql<number>`count(*)`,
+  })
+    .from(reviews)
+    .where(eq(reviews.chefId, chefId))
+    .get();
+
+  // Get completed booking count for this chef
+  const bookingCountResult = db.select({
+    bookingCount: sql<number>`count(*)`,
+  })
+    .from(bookings)
+    .where(eq(bookings.chefId, chefId))
+    .get();
+
+  return {
+    chefAvgRating: ratingResult ? Number(ratingResult.avgRating) : 0,
+    chefReviewCount: ratingResult ? Number(ratingResult.reviewCount) : 0,
+    chefBookingCount: bookingCountResult ? Number(bookingCountResult.bookingCount) : 0,
+  };
 }
 
 export default async function bookingStatusPageRoutes(server: FastifyInstance) {
@@ -387,6 +416,9 @@ function buildBookingStatusPage(lead: any, token: string): string {
   const tokenExpiryDate = lead.accessTokenExpiresAt ? formatDate(lead.accessTokenExpiresAt.toString()) : null;
   const isConverted = lead.status === 'converted';
 
+  // MAI-1443: Get chef trust signals for quoted status
+  const trustSignals = getChefTrustSignals(lead.chefId);
+
   // MAI-1014: Timeline stage calculation
   const currentStage = getCurrentStage(lead.status);
   const isStale = (lead.status === 'new' || lead.status === 'pending') && (Date.now() - new Date(lead.createdAt).getTime()) > 12 * 60 * 60 * 1000;
@@ -437,7 +469,10 @@ function buildBookingStatusPage(lead: any, token: string): string {
     </div>
   `;
 
-  // MAI-1014: Stale lead follow-up section
+  // MAI-1614: Check if pending booking context card should show (pending < 24h old)
+  const isPendingContextEligible = lead.status === 'pending' && (Date.now() - new Date(lead.createdAt).getTime()) < 24 * 60 * 60 * 1000;
+
+  // MAI-1014: Stale lead follow-up section (new/pending > 12h old)
   const staleFollowupHtml = isStale ? `
     <div class="stale-followup-card">
       <div class="stale-followup-header">
@@ -451,6 +486,25 @@ function buildBookingStatusPage(lead: any, token: string): string {
       </button>
       <p id="reengageSuccess" class="reengage-success" style="display:none;">✓ Reminder sent! The chef should be in touch soon.</p>
       <p id="reengageError" class="reengage-error" style="display:none;"></p>
+    </div>
+  ` : '';
+
+  // MAI-1614: Pending booking context card for pending < 24h old
+  const pendingContextCardHtml = isPendingContextEligible ? `
+    <div class="pending-context-card">
+      <div class="pending-context-icon">👨‍🍳</div>
+      <div class="pending-context-content">
+        <h3 class="pending-context-title">Chef ${lead.chefName} has received your request</h3>
+        <p class="pending-context-message">They are reviewing your inquiry for <strong>${formatDate(lead.eventDate)}</strong> and will respond within 24-48 hours.</p>
+        <div class="pending-context-next">
+          <span class="pending-context-next-label">What happens next:</span>
+          <ul class="pending-context-steps">
+            <li>Chef ${lead.chefName} will review your request and any questions they may have</li>
+            <li>You'll receive an email notification when they respond</li>
+            <li>Feel free to browse other services while you wait</li>
+          </ul>
+        </div>
+      </div>
     </div>
   ` : '';
 
@@ -525,6 +579,18 @@ function buildBookingStatusPage(lead: any, token: string): string {
     .notes-section { padding: 1.5rem 2rem; border-top: 1px solid #eee; }
     .notes-label { font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
     .notes-text { color: #555; font-size: 0.95rem; font-style: italic; }
+    
+    /* MAI-1443: Trust section for quoted status */
+    .trust-section { padding: 1.25rem 2rem; border-top: 1px solid #eee; background: #fafafa; display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; }
+    .trust-item { display: flex; align-items: center; gap: 0.4rem; }
+    .trust-stars { color: #c9a227; font-size: 1rem; }
+    .trust-rating { font-weight: 600; color: #2c3e50; font-size: 0.95rem; }
+    .trust-count { color: #666; font-size: 0.85rem; }
+    .trust-icon { font-size: 1rem; }
+    .trust-text { color: #666; font-size: 0.85rem; }
+    .stripe-badge { margin-left: auto; }
+    .stripe-badge .trust-icon { color: #635bff; }
+    .stripe-badge .trust-text { color: #888; }
     
     .next-steps-card { background: white; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 1.5rem 2rem; margin-bottom: 1.5rem; }
     .next-steps-title { font-size: 1.1rem; font-weight: 600; color: #2c3e50; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
@@ -788,6 +854,61 @@ function buildBookingStatusPage(lead: any, token: string): string {
     .share-btn.whatsapp-btn:hover { background: #16a34a; }
     .share-icon { font-size: 1.1rem; }
 
+    /* MAI-1614: Pending booking context card styles */
+    .pending-context-card {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 1px solid #22c55e;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .pending-context-icon {
+      font-size: 2.5rem;
+      flex-shrink: 0;
+    }
+    .pending-context-content {
+      flex: 1;
+    }
+    .pending-context-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #15803d;
+      margin: 0 0 0.5rem 0;
+    }
+    .pending-context-message {
+      color: #555;
+      font-size: 0.95rem;
+      margin: 0 0 1rem 0;
+      line-height: 1.5;
+    }
+    .pending-context-next {
+      background: rgba(255,255,255,0.7);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+    }
+    .pending-context-next-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #166534;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    .pending-context-steps {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+    .pending-context-steps li {
+      font-size: 0.85rem;
+      color: #166534;
+      margin-bottom: 0.25rem;
+    }
+    .pending-context-steps li:last-child {
+      margin-bottom: 0;
+    }
+
     /* MAI-881: Book Again CTA styles */
     .book-again-card {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -935,6 +1056,28 @@ function buildBookingStatusPage(lead: any, token: string): string {
       </div>
       ` : ''}
       
+      ${lead.status === 'quoted' ? `
+      <div class="trust-section">
+        ${trustSignals.chefReviewCount > 0 ? `
+        <div class="trust-item">
+          <span class="trust-stars">${'★'.repeat(Math.round(trustSignals.chefAvgRating))}${'☆'.repeat(5 - Math.round(trustSignals.chefAvgRating))}</span>
+          <span class="trust-rating">${trustSignals.chefAvgRating > 0 ? trustSignals.chefAvgRating.toFixed(1) : '0.0'}</span>
+          <span class="trust-count">(${trustSignals.chefReviewCount} review${trustSignals.chefReviewCount !== 1 ? 's' : ''})</span>
+        </div>
+        ` : ''}
+        ${trustSignals.chefBookingCount > 0 ? `
+        <div class="trust-item">
+          <span class="trust-icon">✓</span>
+          <span class="trust-count">${trustSignals.chefBookingCount} booking${trustSignals.chefBookingCount !== 1 ? 's' : ''} completed</span>
+        </div>
+        ` : ''}
+        <div class="trust-item stripe-badge">
+          <span class="trust-icon">🔒</span>
+          <span class="trust-text">Secure checkout • Powered by Stripe</span>
+        </div>
+      </div>
+      ` : ''}
+      
       ${lead.message ? `
       <div class="notes-section">
         <div class="notes-label">Your Message</div>
@@ -946,6 +1089,8 @@ function buildBookingStatusPage(lead: any, token: string): string {
         <p>This link expires on ${tokenExpiryDate || '30 days after booking'}</p>
       </div>
     </div>
+    
+    ${pendingContextCardHtml}
     
     ${staleFollowupHtml}
     

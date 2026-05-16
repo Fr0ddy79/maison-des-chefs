@@ -7,6 +7,7 @@ export const users = sqliteTable('users', {
   name: text('name').notNull(),
   role: text('role', { enum: ['chef', 'diner', 'admin'] }).notNull().default('diner'),
   hasCompletedOnboarding: integer('has_completed_onboarding', { mode: 'boolean' }).notNull().default(false),
+  phone: text('phone'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -28,6 +29,8 @@ export const chefProfiles = sqliteTable('chef_profiles', {
   onboardingCompletedAt: integer('onboarding_completed_at', { mode: 'timestamp' }),
   // MAI-1387: Track whether the lead-response tutorial modal has been dismissed
   leadResponseTutorialDismissed: integer('lead_response_tutorial_dismissed', { mode: 'boolean' }).notNull().default(false),
+  // MAI-1586: Chef's quick-reply response templates (JSON, per-chef editable)
+  responseTemplates: text('response_templates').notNull().default('[]'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -70,7 +73,10 @@ export const bookings = sqliteTable('bookings', {
   // Guest booking recovery token (MAI-805)
   accessToken: text('access_token'), // 64-char hex token for public booking status access
   accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }), // token expiration (30 days from creation)
+  // MAI-1548: Stagnation alert tracking (idempotency for diner-facing proactive alert)
+  stagnationAlertSentAt: integer('stagnation_alert_sent_at', { mode: 'timestamp' }), // when stagnation alert was sent, NULL if not sent yet
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 export const refreshTokens = sqliteTable('refresh_tokens', {

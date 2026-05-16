@@ -413,12 +413,16 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
     // Pre-composed accept message
     const preComposedMessage = `Hi ${lead.clientName || 'there'}, I'd love to cook for you! I'll send a quote within 24 hours.`;
 
+    // MAI-823: Generate referral code on first conversion
+    const referralCode = generateReferralCode();
+
     const updatedLead = db
       .update(leads)
       .set({
-        status: "responded",
+        status: "converted",
         quoteMessage: preComposedMessage,
         quoteSentAt: now,
+        referralCode,
         firstChefActionAt: lead.firstChefActionAt ?? now,
         firstResponseAt: lead.firstResponseAt ?? now,
       } as Record<string, unknown>)
@@ -426,12 +430,28 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .returning()
       .all()[0];
 
-    // MAI-1396: Send accepted email to diner (distinct from quote email)
+    // Create booking record so diner can see it in "My Bookings"
+    const totalPrice = lead.quoteAmount || 0;
+    db.insert(bookings).values({
+      serviceId: lead.serviceId,
+      chefId: lead.chefId,
+      dinerId: null,
+      guestEmail: lead.email || null,
+      eventDate: lead.eventDate || '',
+      guestCount: lead.guestCount || 0,
+      totalPrice,
+      status: 'confirmed',
+      notes: `One-click accept from lead ${lead.id}`,
+      createdAt: now,
+    }).run();
+
+    // MAI-1396: Send accepted/confirmed email to diner
     if (lead.email) {
       const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
       const chef = db.select().from(users).where(eq(users.id, userId)).get();
       if (service && chef) {
         const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
+        const DINER_BOOKINGS_URL = process.env.DINER_BOOKINGS_URL || 'https://maisondeschefs.com/diner/bookings';
         const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
         await sendAcceptedEmail({
           leadId: lead.id,
@@ -441,7 +461,9 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
           serviceName: service.name,
           eventDate: lead.eventDate,
           guestCount: lead.guestCount,
+          quoteAmount: lead.quoteAmount || undefined,
           bookingStatusUrl: fullBookingStatusUrl,
+          dinerBookingsUrl: DINER_BOOKINGS_URL,
         });
       }
     }
@@ -529,5 +551,56 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
 
 
     return { success: true };
+  });
+
+  // GET /api/chef/profile/templates — Get chef's response templates (MAI-1586)
+  server.get("/profile/templates", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can access templates" });
+    }
+
+    const profile = db.select({ responseTemplates: chefProfiles.responseTemplates })
+      .from(chefProfiles)
+      .where(eq(chefProfiles.userId, userId))
+      .get();
+
+    const templates = profile?.responseTemplates
+      ? JSON.parse(profile.responseTemplates)
+      : [];
+
+    return { templates };
+  });
+
+  // PUT /api/chef/profile/templates — Save chef's response templates (MAI-1586)
+  server.put("/profile/templates", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can save templates" });
+    }
+
+    const body = z.object({
+      templates: z.array(z.object({
+        id: z.string(),
+        label: z.string(),
+        text: z.string(),
+      })),
+    }).parse(request.body);
+
+    const existing = db.select({ userId: chefProfiles.userId })
+      .from(chefProfiles)
+      .where(eq(chefProfiles.userId, userId))
+      .get();
+
+    if (!existing) {
+      return reply.status(404).send({ error: "Chef profile not found" });
+    }
+
+    db.update(chefProfiles)
+      .set({ responseTemplates: JSON.stringify(body.templates) } as Record<string, unknown>)
+      .where(eq(chefProfiles.userId, userId))
+      .run();
+
+    return { success: true, templates: body.templates };
   });
 }

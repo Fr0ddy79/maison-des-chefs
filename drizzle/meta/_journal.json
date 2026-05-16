@@ -36,6 +36,13 @@
       "when": 1778030286629,
       "tag": "0004_high_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1778760405566,
+      "tag": "0005_add_stagnation_alert_field",
+      "breakpoints": true
     }
   ]
 }

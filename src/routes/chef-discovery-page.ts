@@ -2,7 +2,7 @@
 // MAI-1079: Added chef discovery analytics tracking
 
 import { db } from '../db/index.js';
-import { users, chefProfiles, services, leads } from '../db/schema.js';
+import { users, chefProfiles, services, leads, reviews } from '../db/schema.js';
 import { eq, sql, isNotNull, and, desc } from 'drizzle-orm';
 import { trackChefDiscoveryEvent } from './analytics.js';
 
@@ -67,6 +67,23 @@ export default function buildChefDiscoveryPage(): string {
     leadCounts[chef.id] = (result?.count as number) ?? 0;
   }
 
+  // MAI-1578: Compute review stats per chef for discovery cards
+  const reviewStats: Record<number, { avgRating: number | null; reviewCount: number }> = {};
+  for (const chef of chefs) {
+    const result = db.select({
+      count: sql<number>`count(*)`,
+      avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
+    })
+      .from(reviews)
+      .where(eq(reviews.chefId, chef.id))
+      .get();
+    const count = (result?.count as number) ?? 0;
+    reviewStats[chef.id] = {
+      avgRating: count > 0 ? Math.round((result?.avgRating as number || 0) * 10) / 10 : null,
+      reviewCount: count,
+    };
+  }
+
   const chefsJson = JSON.stringify(chefs.map(c => ({
     ...c,
     cuisineTypes: JSON.parse(c.cuisineTypes as string || '[]'),
@@ -77,6 +94,8 @@ export default function buildChefDiscoveryPage(): string {
     })) ?? [],
     avgResponseMs: avgResponseTimes[c.id],
     leadCount: leadCounts[c.id] ?? 0,
+    avgRating: reviewStats[c.id]?.avgRating ?? null,
+    reviewCount: reviewStats[c.id]?.reviewCount ?? 0,
   })));
 
   const html = `<!DOCTYPE html>
@@ -139,6 +158,7 @@ export default function buildChefDiscoveryPage(): string {
   .chef-stats { display: flex; gap: 1rem; padding-top: 0.75rem; border-top: 1px solid #f0f0f0; }
   .chef-stat { font-size: 0.82rem; color: #666; display: flex; align-items: center; gap: 0.25rem; }
   .lead-badge { background: #e8f5e9; color: #2e7d32; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+  .chef-rating { color: #f57c00; font-size: 0.85rem; margin-bottom: 0.25rem; }
 
   .loading-state, .error-state, .empty-state { text-align: center; padding: 4rem 2rem; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .loading-state .spinner { width: 48px; height: 48px; border: 4px solid #f3f3f3; border-top: 4px solid #c9a227; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
@@ -276,6 +296,7 @@ export default function buildChefDiscoveryPage(): string {
         <option value="response_time">Quickest Response</option>
         <option value="newest">Recently Added</option>
         <option value="best_value">Best Value</option>
+        <option value="top_rated">★★★★★ Top Rated</option>
       </select>
     </div>
 
@@ -320,34 +341,47 @@ export default function buildChefDiscoveryPage(): string {
       <div class="modal-chefs-list" id="modalChefsList"></div>
       <form id="multiInquiryForm">
         <input type="hidden" id="selectedServiceIds" name="serviceIds" value="[]">
-        <div class="modal-form-row">
-          <div class="modal-form-group">
-            <label for="modalClientName">Your Name <span class="required">*</span></label>
-            <input type="text" id="modalClientName" name="clientName" required placeholder="Full name">
-          </div>
-          <div class="modal-form-group">
-            <label for="modalEmail">Email <span class="required">*</span></label>
-            <input type="email" id="modalEmail" name="email" required placeholder="you@example.com">
-          </div>
+        <div class="inquiry-header-section" id="inquiryHeaderSection" style="display:none; margin-bottom:1.5rem;">
+        <div style="background:#f8f9fa;border-radius:8px;padding:1rem 1.25rem;margin-bottom:1rem;">
+          <p style="font-size:0.9rem;color:#666;margin:0 0 0.25rem;">Inquiry for:</p>
+          <div id="inquiryChefName" style="font-weight:700;font-size:1.1rem;color:#2c3e50;"></div>
         </div>
-        <div class="modal-form-row">
-          <div class="modal-form-group">
-            <label for="modalPhone">Phone</label>
-            <input type="tel" id="modalPhone" name="phone" placeholder="(555) 123-4567">
-          </div>
-          <div class="modal-form-group">
-            <label for="modalGuestCount">Guests <span class="required">*</span></label>
-            <input type="number" id="modalGuestCount" name="guestCount" required min="1" value="2">
-          </div>
+      </div>
+      <div class="trust-signal" style="background:#e8f5e9;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:0.5rem;">
+        <span style="font-size:1.2rem;">⏱️</span>
+        <span style="font-size:0.9rem;color:#2e7d32;"><strong>Typically responds within 24 hours</strong></span>
+      </div>
+      <div class="modal-form-row">
+        <div class="modal-form-group">
+          <label for="modalClientName">Your Name <span class="required">*</span></label>
+          <input type="text" id="modalClientName" name="clientName" required placeholder="Full name">
+          <span class="field-error" id="modalClientNameError" style="color:#e53935;font-size:0.8rem;display:none;"></span>
         </div>
         <div class="modal-form-group">
-          <label for="modalEventDate">Preferred Date</label>
+          <label for="modalEmail">Email <span class="required">*</span></label>
+          <input type="email" id="modalEmail" name="email" required placeholder="you@example.com">
+          <span class="field-error" id="modalEmailError" style="color:#e53935;font-size:0.8rem;display:none;"></span>
+        </div>
+      </div>
+      <div class="modal-form-row">
+        <div class="modal-form-group">
+          <label for="modalGuestCount">Guests <span class="required">*</span></label>
+          <input type="number" id="modalGuestCount" name="guestCount" required min="1" value="2">
+          <span class="field-error" id="modalGuestCountError" style="color:#e53935;font-size:0.8rem;display:none;"></span>
+        </div>
+        <div class="modal-form-group">
+          <label for="modalEventDate">Preferred Date <span style="color:#888;font-weight:400;">(optional)</span></label>
           <input type="date" id="modalEventDate" name="eventDate">
         </div>
-        <div class="modal-form-group">
-          <label for="modalMessage">Message to Chefs</label>
-          <textarea id="modalMessage" name="message" placeholder="Tell the chefs about your event, dietary requirements, or any special requests..."></textarea>
-        </div>
+      </div>
+      <div class="modal-form-group">
+        <label for="modalMessage">Message <span style="color:#888;font-weight:400;">(optional)</span></label>
+        <textarea id="modalMessage" name="message" placeholder="Tell the chef about your event, dietary needs, or any special requests..." maxlength="500"></textarea>
+        <span style="font-size:0.8rem;color:#888;">
+          <span id="messageCharCount">0</span>/500
+        </span>
+        <span class="field-error" id="modalMessageError" style="color:#e53935;font-size:0.8rem;display:none;"></span>
+      </div>
         <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Send Inquiry to <span id="modalChefCount">0</span> Chef<span id="modalPluralS">s</span></button>
       </form>
     </div>
@@ -439,6 +473,14 @@ function renderChefCard(chef) {
     var label = leadCount >= 5 ? '🔥 Popular' : leadCount + ' lead' + (leadCount !== 1 ? 's' : '');
     leadBadgeHtml = '<span class="lead-badge" style="margin-left:0.5rem;">' + label + '</span>';
   }
+  // MAI-1578: Rating display
+  var ratingHtml = '';
+  if (chef.avgRating && chef.avgRating > 0) {
+    var stars = '';
+    for (var i = 1; i <= 5; i++) stars += i <= Math.round(chef.avgRating) ? '★' : '☆';
+    var reviewLabel = (chef.reviewCount || 0) === 1 ? 'review' : 'reviews';
+    ratingHtml = '<div class="chef-rating" style="color:#f57c00;font-size:0.85rem;margin-bottom:0.25rem;">' + stars + ' ' + chef.avgRating + ' (' + (chef.reviewCount || 0) + ' ' + reviewLabel + ')</div>';
+  }
   var selectedClass = selectedChefIds.has(chef.id) ? ' selected' : '';
   var firstService = chef.services && chef.services.length > 0 ? chef.services[0] : null;
   var serviceId = firstService ? firstService.id : '';
@@ -447,8 +489,9 @@ function renderChefCard(chef) {
     '<img class="chef-card-img" src="' + photo + '" alt="' + escapeHtml(chef.name) + '">' +
     '<div class="chef-card-body">' +
       '<div class="chef-card-header">' +
-        '<span class="chef-name">' + escapeHtml(chef.name) + '</span>' + verifiedHtml +
+        '<span class="chef-name">' + escapeHtml(chef.name) + '</span>' + verifiedHtml + leadBadgeHtml +
       '</div>' +
+      ratingHtml +
       '<div class="chef-location">📍 ' + escapeHtml(chef.location || 'Location not set') + '</div>' +
       '<div class="cuisine-badges">' + badges + '</div>' +
       '<div class="chef-price">' + priceHtml + '</div>' +
@@ -541,6 +584,14 @@ function renderChefs() {
     filtered.sort(function(a, b) { return ((b.createdAt ? new Date(b.createdAt).getTime() : 0) || 9999999999999999) - ((a.createdAt ? new Date(a.createdAt).getTime() : 0) || 9999999999999999); });
   } else if (currentFilters.sort === 'best_value') {
     filtered.sort(function(a, b) { return (getMinPrice(a) || 999999) - (getMinPrice(b) || 999999); });
+  } else if (currentFilters.sort === 'top_rated') {
+    // Chefs with ratings first (highest first), then by review count (more = more reliable), unrated last
+    filtered.sort(function(a, b) {
+      var aRating = a.avgRating || 0;
+      var bRating = b.avgRating || 0;
+      if (bRating !== aRating) return bRating - aRating;
+      return (b.reviewCount || 0) - (a.reviewCount || 0);
+    });
   }
 
   document.getElementById('countDisplay').textContent = filtered.length;
@@ -718,13 +769,10 @@ function openInquiryModal() {
   // Pre-fill from cookies
   var cookieEmail = getCookie('diner_email');
   var cookieName = getCookie('diner_name');
-  var cookiePhone = getCookie('diner_phone');
   var emailEl = document.getElementById('modalEmail');
   var nameEl = document.getElementById('modalClientName');
-  var phoneEl = document.getElementById('modalPhone');
   if (emailEl && cookieEmail) emailEl.value = cookieEmail;
   if (nameEl && cookieName) nameEl.value = cookieName;
-  if (phoneEl && cookiePhone) phoneEl.value = cookiePhone;
 
   document.getElementById('inquiryModal').classList.add('visible');
 }
@@ -738,10 +786,34 @@ document.getElementById('inquiryModal').addEventListener('click', function(e) {
   if (e.target === this) closeInquiryModal();
 });
 
+// Character count for message textarea
+document.getElementById('modalMessage').addEventListener('input', function(e) {
+  var charCountEl = document.getElementById('messageCharCount');
+  if (charCountEl) charCountEl.textContent = e.target.value.length;
+});
+
+// Clear inline errors on input
+['modalClientName', 'modalEmail', 'modalGuestCount', 'modalMessage'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) {
+    el.addEventListener('input', function() {
+      var errorEl = document.getElementById(id + 'Error');
+      if (errorEl) errorEl.style.display = 'none';
+    });
+  }
+});
+
 // Form submission
 document.getElementById('multiInquiryForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   var form = e.target;
+  // Character count for message
+  var messageEl = document.getElementById('modalMessage');
+  var charCountEl = document.getElementById('messageCharCount');
+  if (messageEl && charCountEl) {
+    charCountEl.textContent = messageEl.value.length;
+  }
+
   var submitBtn = document.getElementById('modalSubmitBtn');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Sending...';
@@ -767,9 +839,13 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
     var result = await response.json();
 
     if (!response.ok) {
-      alert('Error: ' + (result.error || 'Failed to submit inquiry'));
+      var errorEl = document.getElementById('modalEmailError');
+      if (errorEl) {
+        errorEl.textContent = result.error || 'Failed to submit inquiry. Please try again.';
+        errorEl.style.display = 'block';
+      }
       submitBtn.disabled = false;
-      submitBtn.textText = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
+      submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
       return;
     }
 
@@ -801,7 +877,11 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
       '<button class="modal-submit-btn" onclick="closeInquiryModal(); location.reload();" style="margin-top:1rem;">Back to Chefs<\/button>' +
     '<\/div>';
   } catch (err) {
-    alert('Network error. Please try again.');
+    var errorEl = document.getElementById('modalEmailError');
+    if (errorEl) {
+      errorEl.textContent = 'Network error. Please check your connection and try again.';
+      errorEl.style.display = 'block';
+    }
     submitBtn.disabled = false;
     submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
   }

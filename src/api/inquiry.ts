@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { leads, services, users } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { sendDinerConfirmationEmail } from "../services/diner-confirmation-email.js";
+import { sendChefNewBookingEmail } from "../services/chef-new-booking-email.js";
 import crypto from "crypto";
 
 const createInquirySchema = z.object({
@@ -79,6 +80,19 @@ export default async function inquiryRoutes(server: FastifyInstance) {
       eventDate: body.eventDate || null,
       guestCount: body.guestCount,
       bookingStatusUrl: fullBookingStatusUrl,
+    });
+
+    // MAI-1514: Notify chef of new lead
+    const totalPrice = (service.pricePerPerson || 0) * (body.guestCount || 1);
+    await sendChefNewBookingEmail({
+      chefEmail: chef.email,
+      chefName: chef.name,
+      guestName: body.clientName || "New Guest",
+      eventDate: body.eventDate || "TBD",
+      serviceName: service.name,
+      guestCount: body.guestCount || 1,
+      totalPrice,
+      bookingId: createdLead.id,
     });
 
     // Set diner recognition cookies (30 day expiry)

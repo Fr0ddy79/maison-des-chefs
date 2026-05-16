@@ -11,8 +11,9 @@ import { UserPayload } from './types.js';
 import { startQuoteReminderScheduler } from './services/quote-reminder.js';
 import { startStaleLeadReEngagementScheduler } from './services/diner-stale-lead-email.js';
 import { startLeadExpirationScheduler } from './services/lead-expiration.js';
+import { startDinerStagnationAlertScheduler } from './services/diner-stagnation-alert.js';
 import { db } from './db/index.js';
-import { users, chefProfiles, services, bookings, leads, dinerPreferences } from './db/schema.js';
+import { users, chefProfiles, services, bookings, leads, dinerPreferences, reviews } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
 
 import authRoutes from './api/auth.js';
@@ -220,6 +221,15 @@ server.get('/', async (request, reply) => {
     .get();
   const bookingCount = bookingCountResult?.count ?? 0;
 
+  const reviewAggregates = db.select({
+    reviewCount: sql<number>`count(*)`,
+    avgRating: sql<number>`coalesce(avg(${reviews.rating}), 0)`,
+  })
+    .from(reviews)
+    .get();
+  const reviewCount = (reviewAggregates?.reviewCount as number | null) ?? 0;
+  const avgRating = (reviewAggregates?.avgRating as number | null) ?? 0;
+
   // Fetch featured services (top 3 by lead count)
   const leadCounts = db.select({ serviceId: leads.serviceId, count: sql `count(${leads.id})` })
     .from(leads)
@@ -283,7 +293,13 @@ server.get('/', async (request, reply) => {
   }
 
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildHomePage({ chefCount: chefCount as number, serviceCount: serviceCount as number, bookingCount: bookingCount as number }, featuredServices, homePrefs);
+  return buildHomePage({
+    chefCount: chefCount as number,
+    serviceCount: serviceCount as number,
+    bookingCount: bookingCount as number,
+    reviewCount,
+    avgRating,
+  }, featuredServices, homePrefs);
 });
 
 // Health check
@@ -295,6 +311,7 @@ const start = async () => {
   startQuoteReminderScheduler();
   startStaleLeadReEngagementScheduler();
   startLeadExpirationScheduler();
+  startDinerStagnationAlertScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });
 };
 

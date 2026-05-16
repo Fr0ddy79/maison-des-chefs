@@ -3,7 +3,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { services, users, chefProfiles, leads, bookings, reviews, dinerPreferences, DIETARY_TAGS } from '../db/schema.js';
+import { services, users, chefProfiles, leads, bookings, reviews, dinerPreferences, DIETARY_TAGS, chefAvailability, chefBlockedDates } from '../db/schema.js';
 import { eq, gte, lte, sql, and, desc, isNotNull, gte as gteCol } from 'drizzle-orm';
 import { trackServicePageViewEvent } from './analytics.js';
 
@@ -190,8 +190,70 @@ export default async function pageRoutes(server: FastifyInstance) {
     const selectedDate = query.date;
     let blockedDatesMap = new Map();
     if (selectedDate) {
-      // chefBlockedDates table not available - blocked dates map stays empty
-      // This feature gracefully degrades if table doesn't exist
+      // MAI-1495: Fetch chef blocked dates from chefBlockedDates table for availability urgency
+      try {
+        const chefBlockedDatesResult = db.select({ chefId: chefBlockedDates.chefId, date: chefBlockedDates.date })
+          .from(chefBlockedDates)
+          .all();
+        chefBlockedDatesResult.forEach(b => {
+          const existing = blockedDatesMap.get(b.chefId) || [];
+          existing.push(b.date);
+          blockedDatesMap.set(b.chefId, existing);
+        });
+      } catch (e) {
+        // chefBlockedDates table may not exist - gracefully degrade
+        console.log('chefBlockedDates table not available:', e);
+      }
+    }
+
+    // MAI-1495: Fetch chef availability windows for urgency badge
+    // Each chef can set weekly availability windows. If no windows are set, availability is "open"
+    const chefAvailabilityMap = new Map<number, { haswindows: boolean; dayCount: number }>();
+    try {
+      const availabilityResult = db.select({ chefId: chefAvailability.chefId, dayOfWeek: chefAvailability.dayOfWeek, isActive: chefAvailability.isActive })
+        .from(chefAvailability)
+        .all();
+      // Count active windows per chef
+      const windowCounts = new Map<number, number>();
+      availabilityResult.forEach(a => {
+        if (a.isActive) {
+          const count = windowCounts.get(a.chefId) || 0;
+          windowCounts.set(a.chefId, count + 1);
+        }
+      });
+      windowCounts.forEach((dayCount, chefId) => {
+        chefAvailabilityMap.set(chefId, { haswindows: true, dayCount });
+      });
+    } catch (e) {
+      // chefAvailability table may not exist - gracefully degrade
+      console.log('chefAvailability table not available:', e);
+    }
+
+    // MAI-1495: Calculate availability spots based on bookings per guest capacity
+    // For services with high booking density relative to capacity, show urgency
+    const bookingDensityMap = new Map<number, number>();
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 30);
+      const futureDateStr = futureDate.toISOString().split('T')[0];
+      const densityResult = db.select({
+        chefId: bookings.chefId,
+        count: sql`count(*)`,
+      })
+        .from(bookings)
+        .where(and(
+          gte(bookings.eventDate, today),
+          lte(bookings.eventDate, futureDateStr),
+          sql `${bookings.status} IN ('pending', 'confirmed', 'accepted')`
+        ))
+        .groupBy(bookings.chefId)
+        .all();
+      densityResult.forEach(d => {
+        bookingDensityMap.set(d.chefId as number, d.count as number);
+      });
+    } catch (e) {
+      console.log('Booking density calculation not available:', e);
     }
 
     // Fetch lead counts
@@ -232,6 +294,17 @@ export default async function pageRoutes(server: FastifyInstance) {
 
     const servicesWithData = filteredServices.map(s => {
       const avgResponseMs = getChefAvgResponseTime(s.chefId);
+      // MAI-1495: Calculate availability urgency
+      const chefAvail = chefAvailabilityMap.get(s.chefId);
+      const density = bookingDensityMap.get(s.chefId) || 0;
+      const hasAvailabilityWindows = chefAvail?.haswindows ?? false;
+      // spotsAvailable: if chef has windows and bookings, calculate remaining slots
+      // maxGuests as proxy for "capacity per window", but don't go below 0
+      let availabilitySpots: number | null = null;
+      if (hasAvailabilityWindows && density > 0) {
+        const remaining = Math.max(0, (s.maxGuests || 10) - density);
+        availabilitySpots = Math.min(remaining, 5); // cap display at 5, show "Only X spots" pattern
+      }
       return {
         ...s,
         chefCuisineTypes: JSON.parse(s.chefCuisineTypes || '[]'),
@@ -241,6 +314,9 @@ export default async function pageRoutes(server: FastifyInstance) {
         isTopService: s.id === topServiceId && maxLeadCount > 0,
         isUnavailableOnDate: (selectedDate && blockedDatesMap.get(s.chefId)?.includes(selectedDate)) || false,
         avgResponseMs,
+        // MAI-1495: availabilityUrgency signals
+        availabilitySpots,
+        hasAvailabilityWindows,
       };
     });
 
@@ -302,6 +378,11 @@ export default async function pageRoutes(server: FastifyInstance) {
     const validVariants = ['control', 'testA', 'testB', 'testC', 'testD'];
     // Priority: URL param > cookie > control
     const ctaVariant = validVariants.includes(ctaParam || '') ? ctaParam : (validVariants.includes(cookieVariant || '') ? cookieVariant : 'control');
+    // Card A/B Test: detect variant from URL param, cookie, or default to control (MAI-1457)
+    const cardParam = url.searchParams.get('card');
+    const cookieCardVariant = cookies?.card_variant;
+    const validCardVariants = ['control', 'simplified'];
+    const cardVariant = validCardVariants.includes(cardParam || '') ? cardParam : (validCardVariants.includes(cookieCardVariant || '') ? cookieCardVariant : 'control');
 
     const service = db.select({
       id: services.id,
@@ -469,7 +550,8 @@ export default async function pageRoutes(server: FastifyInstance) {
     reply.header('Content-Type', 'text/html; charset=utf-8');
     // Trust Bar A/B: set cookie for SSR on subsequent requests
     reply.header('Set-Cookie', `trust_bar_variant=${trustBarVariant}; Path=/; Max-Age=86400; SameSite=Lax`);
-    return buildServiceDetailPage(serviceWithPhotos, cuisineTypes, photo, verifiedBadge, blockedDates, useSimplifiedLeadForm, useNewSidebarCta, socialProof, ctaVariant, responseTimeBadge, leadCount, trustBarVariant, service.chefVerified ?? false, bookingsThisMonth);
+    reply.header('Set-Cookie', `card_variant=${cardVariant}; Path=/; Max-Age=86400; SameSite=Lax`);
+    return buildServiceDetailPage(serviceWithPhotos, cuisineTypes, photo, verifiedBadge, blockedDates, useSimplifiedLeadForm, useNewSidebarCta, socialProof, ctaVariant, responseTimeBadge, leadCount, trustBarVariant, service.chefVerified ?? false, bookingsThisMonth, cardVariant);
   });
 }
 
@@ -541,6 +623,10 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         ? '<span class="not-available-badge">Not available</span>'
         : '';
       const dietaryBadgesHtml = buildDietaryBadges(service.dietaryTags);
+      // MAI-1495: Availability urgency badge - only show when chef has availability windows and limited spots
+      const availabilityUrgency = (service.availabilitySpots !== null && service.availabilitySpots !== undefined && service.hasAvailabilityWindows)
+        ? `<span class="availability-urgency-badge" title="This chef has limited availability in the next 30 days">${service.availabilitySpots} spot${service.availabilitySpots !== 1 ? 's' : ''} left</span>`
+        : '';
       return `
         <div class="service-card-wrapper" data-service-id="${service.id}" data-chef-id="${service.chefId}">
         <a href="/services/${service.id}" class="service-card" style="position:relative;">
@@ -553,6 +639,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
             <p class="service-location">📍 ${service.chefLocation}</p>
             <p class="service-description">${service.description}</p>
             ${dietaryBadgesHtml}
+            ${availabilityUrgency}
             <div class="service-meta">
               ${service.pricePerPerson && service.pricePerPerson > 0
                 ? `<span class="service-price">$${service.pricePerPerson}/person</span>`
@@ -659,10 +746,11 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     .service-info h3 { font-size: 1.2rem; color: #2c3e50; margin-bottom: 0.25rem; }
     .service-chef { color: #666; font-size: 0.9rem; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.4rem; }
     .verified-badge { font-size: 0.7rem; background: #27ae60; color: white; padding: 0.1rem 0.4rem; border-radius: 10px; font-weight: 600; }
-    .inquiry-badge, .booking-badge, .not-available-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 12px; font-weight: 600; margin-left: 0.4rem; }
+    .inquiry-badge, .booking-badge, .not-available-badge, .availability-urgency-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 12px; font-weight: 600; margin-left: 0.4rem; }
     .inquiry-badge { background: #e8f5e9; color: #2e7d32; }
     .booking-badge { background: #e3f2fd; color: #1565c0; }
     .not-available-badge { background: #ffebee; color: #c62828; }
+    .availability-urgency-badge { background: #fff3e0; color: #e65100; }
     .service-cuisine { color: #c9a227; font-weight: 500; font-size: 0.9rem; margin-bottom: 0.3rem; }
     .service-location { color: #888; font-size: 0.85rem; margin-bottom: 0.75rem; }
     .service-description { color: #555; font-size: 0.9rem; margin-bottom: 0.5rem; flex: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1030,6 +1118,10 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
             '<div class="timeline-step"><span class="step-icon">💳</span><span class="step-text">You confirm & pay to lock in your date</span></div>' +
           '</div>' +
           '<div class="chef-list-summary">' + chefsSummaryHtml + '</div>' +
+          '<div class="inquiry-status-section" style="background:#f0f4ff;border:1px solid #c5d5ff;border-radius:6px;padding:0.75rem 1rem;margin:1rem 0;">' +
+            '<p style="font-size:0.85rem;color:#555;margin-bottom:0.4rem;">Track your inquiry:</p>' +
+            '<a href="' + (result.bookingStatusUrl || ('/booking-status?token=' + (result.accessToken || modalBody.dataset.accessToken || ''))) + '" target="_blank" style="font-size:0.9rem;color:#c9a227;word-break:break-all;text-decoration:none;font-weight:500;">View your booking status →</a>' +
+          '</div>' +
           '<p style="font-size:0.9rem;color:#666">Each chef will respond within 24 hours.</p>' +
           '<button class="modal-submit-btn" onclick="closeCompareModal(); location.reload();" style="margin-top:1rem;">Back to Services</button>' +
         '</div>';
@@ -1239,7 +1331,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
 </html>`;
 }
 
-function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: string, verifiedBadge: string, blockedDates: { date: string }[], useSimplifiedLeadForm: boolean, useNewSidebarCta: boolean, socialProof: any, ctaVariant: string, responseTimeBadge: string, leadCount: number, trustBarVariant: string, chefVerified: boolean, bookingsThisMonth: number): string {
+function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: string, verifiedBadge: string, blockedDates: { date: string }[], useSimplifiedLeadForm: boolean, useNewSidebarCta: boolean, socialProof: any, ctaVariant: string, responseTimeBadge: string, leadCount: number, trustBarVariant: string, chefVerified: boolean, bookingsThisMonth: number, cardVariant: string = 'control'): string {
   const cuisineList = cuisineTypes.join(', ');
   const sp = socialProof ?? { reviewCount: 0, avgRating: 0, featuredReview: null, recentReviews: [] };
   const hasEnoughReviews = sp.reviewCount >= 3;
@@ -1299,10 +1391,10 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     ? `<h2>Dish Photos</h2><div class="photo-gallery">${photoGridHtml}</div>`
     : `<h2>Dish Photos</h2><p class="no-photos">Dish photos coming soon</p>`;
   const lightboxHtml = hasPhotos
-    ? `<div id="lightbox" class="lightbox" style="display:none;">
+    ? `<div id="lightbox" class="lightbox" style="display:none;"
+        ontouchstart="handleTouchStart(event)" ontouchmove="handleTouchMove(event)" ontouchend="handleTouchEnd(event)">
         <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
-        <button class="lightbox-prev" onclick="prevPhoto(event)">&#10094;</button>
-        <button class="lightbox-next" onclick="nextPhoto(event)">&#10095;</button>
+        ${photos.length > 1 ? `<button class="lightbox-prev" onclick="prevPhoto(event)">&#10094;</button><button class="lightbox-next" onclick="nextPhoto(event)">&#10095;</button>` : ''}
         <img id="lightbox-img" src="" alt="Dish photo" />
         <div class="lightbox-counter"><span id="lightbox-counter">1 / ${photos.length}</span></div>
       </div>`
@@ -1360,6 +1452,14 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
     .booking-card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); height: fit-content; position: sticky; top: 80px; }
     .booking-card .price { font-size: 2rem; font-weight: 700; color: #2c3e50; margin-bottom: 0.5rem; }
     .booking-card .per-person { color: #888; font-size: 0.95rem; margin-bottom: 1.5rem; }
+    /* MAI-1457: Simplified booking card variant */
+    .booking-card-simplified { text-align: center; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); height: fit-content; position: sticky; top: 80px; }
+    .booking-card-simplified .simplified-price { margin-bottom: 1.25rem; }
+    .booking-card-simplified .price { font-size: 2.5rem; font-weight: 700; color: #2c3e50; display: block; }
+    .booking-card-simplified .per-person { color: #888; font-size: 0.95rem; }
+    .booking-card-simplified .book-btn-large { padding: 1.25rem 2rem; font-size: 1.15rem; background: #c9a227; color: white; border-radius: 8px; text-decoration: none; display: block; font-weight: 700; text-align: center; transition: background 0.2s, transform 0.1s; margin-bottom: 0; }
+    .booking-card-simplified .book-btn-large:hover { background: #b8922a; transform: translateY(-1px); }
+    .booking-card-simplified .simplified-trust { margin-top: 1rem; font-size: 0.85rem; color: #888; }
     .guest-selector { margin-bottom: 1rem; }
     .guest-selector-label { font-size: 0.9rem; color: #555; margin-bottom: 0.5rem; font-weight: 500; }
     .guest-selector-controls { display: flex; align-items: center; gap: 0.75rem; }
@@ -1509,6 +1609,16 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       `}
     </div>
     
+    ${cardVariant === 'simplified' ? `
+    <div class="booking-card booking-card-simplified">
+      <div class="simplified-price">
+        <span class="price">${service.pricePerPerson && service.pricePerPerson > 0 ? '$' + service.pricePerPerson : 'Price'}</span>
+        <span class="per-person">${service.pricePerPerson && service.pricePerPerson > 0 ? '/person · ' + service.minGuests + '-' + service.maxGuests + ' guests' : 'upon request'}</span>
+      </div>
+      <a href="/book/${service.id}" id="book-btn" class="book-btn book-btn-large" onclick="trackCTAClick(this)" data-variant="${ctaVariant}" data-service-id="${service.id}" data-chef-id="${service.chefId}" data-cta-text="Request Your Date" data-card-variant="simplified">Request Your Date</a>
+      <p class="simplified-trust">No payment today · Chef confirms availability</p>
+    </div>
+    ` : `
     <div class="booking-card">
       <div class="price">${service.pricePerPerson && service.pricePerPerson > 0 ? '$' + service.pricePerPerson : 'Price'}</div>
       <div class="per-person">${service.pricePerPerson && service.pricePerPerson > 0 ? 'per person' : 'upon request'}</div>
@@ -1534,7 +1644,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       : ''}
       ${urgencyLine}
       ${demandBadge}
-      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;" onclick="trackCTAClick(this)" data-variant="${ctaVariant}" data-service-id="${service.id}" data-chef-id="${service.chefId}" data-cta-text="${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}">${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
+      <a href="/book/${service.id}" id="book-btn" class="book-btn" style="display: block; background: #c9a227; color: white; text-align: center; padding: 1rem; border-radius: 4px; text-decoration: none; font-weight: 600;" onclick="trackCTAClick(this)" data-variant="${ctaVariant}" data-service-id="${service.id}" data-chef-id="${service.chefId}" data-cta-text="${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}" data-card-variant="control">${(ctaVariant === 'testA' || ctaVariant === 'testD') ? 'Request Your Date' : ctaVariant === 'testB' ? 'Request Booking' : ctaVariant === 'testC' ? 'Check Availability' : 'Book This Service'}</a>
       ${trustBarVariant === 'B' ? `
       <div class="trust-bar" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee;">
         ${chefVerified ? '<div class="trust-bar-item" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;"><span style="color: #27ae60;">✓</span> Verified Chef</div>' : ''}
@@ -1542,6 +1652,7 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         <div class="trust-bar-item" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555;"><span>⏱</span> Typically responds within 24 hours</div>
       </div>` : ''}
     </div>
+    `}
   </section>
   
   ${lightboxHtml}
@@ -1559,6 +1670,20 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
       const defaultGuests = Math.min(Math.max(minGuests, 4), maxGuests);
       let currentGuests = defaultGuests;
 
+      // Card A/B Test: check URL param and cookie (MAI-1457)
+      var cardVariant = '${cardVariant || "control"}';
+      var urlCardParams = new URLSearchParams(window.location.search);
+      var urlCard = urlCardParams.get('card');
+      var validCardVariants = ['control', 'simplified'];
+      if (urlCard && validCardVariants.indexOf(urlCard) !== -1) {
+        cardVariant = urlCard;
+        try { sessionStorage.setItem('card_variant', cardVariant); } catch (e) {}
+        try { document.cookie = 'card_variant=' + cardVariant + '; path=/; max-age=86400; SameSite=Lax'; } catch (e) {}
+      } else {
+        try { var storedCard = sessionStorage.getItem('card_variant'); if (storedCard && validCardVariants.indexOf(storedCard) !== -1) cardVariant = storedCard; } catch (e) {}
+      }
+      var isSimplifiedCard = cardVariant === 'simplified';
+      
       // CTA A/B Test: persist variant in sessionStorage
       var ctaVariant = '${ctaVariant}';
       var urlParams = new URLSearchParams(window.location.search);
@@ -1743,6 +1868,27 @@ function buildServiceDetailPage(service: any, cuisineTypes: string[], photo: str
         const lightbox = document.getElementById('lightbox');
         if (e.target === lightbox) closeLightbox();
       });
+      
+      // Mobile swipe navigation
+      let touchStartX = 0;
+      let touchEndX = 0;
+      function handleTouchStart(e) {
+        touchStartX = e.touches[0].clientX;
+      }
+      function handleTouchMove(e) {
+        touchEndX = e.touches[0].clientX;
+      }
+      function handleTouchEnd(e) {
+        if (!photos || photos.length <= 1) return;
+        const diff = touchStartX - touchEndX;
+        if (Math.abs(diff) > 50) {
+          if (diff > 0) {
+            nextPhoto();
+          } else {
+            prevPhoto();
+          }
+        }
+      }
     })();
   </script>
 </body>

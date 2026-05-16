@@ -39,9 +39,13 @@ export default function buildDinerBookingsPage(): string {
     .booking-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
     .booking-main { flex: 1; }
     .booking-service { font-size: 1.25rem; font-weight: 600; color: #2c3e50; margin-bottom: 0.5rem; }
-    .booking-chef { color: #666; margin-bottom: 0.75rem; font-size: 0.95rem; }
+    .booking-chef { color: #666; margin-bottom: 0.75rem; font-size: 0.95rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (min-width: 641px) { .booking-chef { max-width: none; } }
     .booking-details { display: flex; flex-wrap: wrap; gap: 1rem; color: #555; font-size: 0.9rem; }
     .booking-detail { display: flex; align-items: center; gap: 0.3rem; }
+    .booking-updated { color: #888; font-size: 0.8rem; margin-top: 0.25rem; }
+    .still-waiting { display: inline-flex; align-items: center; gap: 0.3rem; background: #fff3cd; color: #856404; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin-top: 0.5rem; }
+    .chef-note { background: #f8f8f8; border-left: 3px solid #c9a227; padding: 0.75rem 1rem; margin-top: 0.75rem; font-size: 0.9rem; color: #555; font-style: italic; }
     .booking-meta { text-align: right; }
     .booking-price { font-size: 1.5rem; font-weight: 700; color: #2c3e50; }
     .booking-price-label { font-size: 0.8rem; color: #888; font-weight: normal; }
@@ -194,7 +198,40 @@ export default function buildDinerBookingsPage(): string {
       var bookAgainBtn = isBookAgainEligible
         ? '<a href="/book/' + booking.serviceId + '?guests=' + booking.guestCount + '" class="book-again-btn">Book Again</a>'
         : '';
-      return '\n        <div class="booking-card">\n          <div class="booking-main">\n            <div class="booking-service">' + escapeHtml(booking.serviceName) + '</div>\n            <div class="booking-chef">with ' + escapeHtml(booking.chefName) + '</div>\n            <div class="booking-details">\n              <span class="booking-detail">📅 ' + formattedDate + '</span>\n              <span class="booking-detail">👥 ' + booking.guestCount + ' guest' + (booking.guestCount !== 1 ? 's' : '') + '</span>\n            </div>\n            <span class="status-badge ' + statusClass + '">' + statusLabel + '</span>\n          </div>\n          <div class="booking-meta">\n            <div class="booking-price">' + formattedPrice + '</div>\n            <div class="booking-price-label">total</div>\n          </div>\n          <div class="booking-actions">\n            ' + bookAgainBtn + '\n            <a href="/services/' + booking.serviceId + '" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">View Service</a>\n          </div>\n        </div>\n      ';
+
+      // MAI-1519: Updated timestamp
+      var updatedAgo = '';
+      if (booking.updatedAt) {
+        var updatedDate = new Date(booking.updatedAt);
+        var diffMs = now - updatedDate;
+        var diffMins = Math.floor(diffMs / 60000);
+        var diffHours = Math.floor(diffMins / 60);
+        var diffDays = Math.floor(diffHours / 24);
+        if (diffMins < 1) updatedAgo = 'Updated just now';
+        else if (diffMins < 60) updatedAgo = 'Updated ' + diffMins + ' min ago';
+        else if (diffHours < 24) updatedAgo = 'Updated ' + diffHours + ' hr ago';
+        else if (diffDays === 1) updatedAgo = 'Updated yesterday';
+        else if (diffDays < 7) updatedAgo = 'Updated ' + diffDays + ' days ago';
+        else updatedAgo = 'Updated ' + Math.floor(diffDays / 7) + ' weeks ago';
+      }
+
+      // MAI-1519: Still-waiting indicator for pending > 7 days
+      var stillWaiting = '';
+      if (booking.status === 'pending' && booking.createdAt) {
+        var createdDate = new Date(booking.createdAt);
+        var ageDays = Math.floor((now - createdDate) / 86400000);
+        if (ageDays > 7) {
+          stillWaiting = '<div class="still-waiting">⏳ Still waiting — your inquiry is active</div>';
+        }
+      }
+
+      // MAI-1519: Chef note on declined bookings
+      var chefNoteHtml = '';
+      if ((booking.status === 'declined' || booking.status === 'rejected') && booking.chefNote) {
+        chefNoteHtml = '<div class="chef-note">"' + escapeHtml(booking.chefNote) + '"</div>';
+      }
+
+      return '\n        <div class="booking-card">\n          <div class="booking-main">\n            <div class="booking-service">' + escapeHtml(booking.serviceName) + '</div>\n            <div class="booking-chef" title="' + escapeHtml(booking.chefName) + '">with ' + escapeHtml(booking.chefName) + '</div>\n            <div class="booking-details">\n              <span class="booking-detail">📅 ' + formattedDate + '</span>\n              <span class="booking-detail">👥 ' + booking.guestCount + ' guest' + (booking.guestCount !== 1 ? 's' : '') + '</span>\n            </div>\n            ' + stillWaiting + '\n            ' + chefNoteHtml + '\n            <span class="status-badge ' + statusClass + '">' + statusLabel + '</span>\n            ' + (updatedAgo ? '<div class="booking-updated">' + updatedAgo + '</div>' : '') + '\n          </div>\n          <div class="booking-meta">\n            <div class="booking-price">' + formattedPrice + '</div>\n            <div class="booking-price-label">total</div>\n          </div>\n          <div class="booking-actions">\n            ' + bookAgainBtn + '\n            <a href="/services/' + booking.serviceId + '" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">View Service</a>\n          </div>\n        </div>\n      ';
     }
     function escapeHtml(text) {
       var div = document.createElement('div');

@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { leads, services, users, chefProfiles } from "../db/schema.js";
 import { eq, inArray } from "drizzle-orm";
 import { sendMultiChefConfirmationEmail } from "../services/diner-confirmation-email.js";
+import { sendChefNewBookingEmail } from "../services/chef-new-booking-email.js";
 import crypto from "crypto";
 
 const MAX_CHEFS_PER_INQUIRY = 10;
@@ -108,11 +109,12 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
     // Fetch chef names for all unique chefIds
     const uniqueChefIds = [...new Set(serviceRows.map((s) => s.chefId))];
     const chefRows = db
-      .select({ id: users.id, name: users.name })
+      .select({ id: users.id, name: users.name, email: users.email })
       .from(users)
       .where(inArray(users.id, uniqueChefIds))
       .all();
     const chefMap = new Map(chefRows.map((c) => [c.id, c.name]));
+    const chefEmailMap = new Map(chefRows.map((c) => [c.id, c.email]));
 
     // Generate shared multi-inquiry ID and access token
     const multiInquiryId = generateMultiInquiryId();
@@ -173,6 +175,22 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
       })),
       bookingStatusUrl: fullBookingStatusUrl,
     });
+
+    // MAI-1514: Notify each chef of their new lead
+    for (const l of createdLeads) {
+      const serviceInfo = serviceRows.find((s) => s.id === l.serviceId);
+      const totalPrice = (serviceInfo?.pricePerPerson || 0) * (body.guestCount || 1);
+      await sendChefNewBookingEmail({
+        chefEmail: chefEmailMap.get(l.chefId) || "",
+        chefName: l.chefName,
+        guestName: body.clientName || "New Guest",
+        eventDate: body.eventDate || "TBD",
+        serviceName: l.serviceName,
+        guestCount: body.guestCount || 1,
+        totalPrice,
+        bookingId: l.id,
+      });
+    }
 
     // Set diner recognition cookies (30 day expiry)
     const cookieMaxAge = 30 * 24 * 60 * 60;

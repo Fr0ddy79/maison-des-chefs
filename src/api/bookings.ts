@@ -4,6 +4,8 @@ import { db } from '../db/index.js';
 import { bookings, services, users, leads } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
+import { sendBookingAcceptedEmail } from '../services/diner-booking-accepted-email.js';
+import { sendBookingDeclinedEmail } from '../services/diner-booking-declined-email.js';
 import { createNotification } from './notifications.js';
 
 const createBookingSchema = z.object({
@@ -14,7 +16,8 @@ const createBookingSchema = z.object({
 });
 
 const updateStatusSchema = z.object({
-  status: z.enum(['confirmed', 'rejected', 'declined', 'completed']),
+  status: z.enum(['accepted', 'rejected', 'declined', 'confirmed', 'completed']),
+  declineReason: z.string().optional(),
 });
 
 export default async function bookingRoutes(server: FastifyInstance) {
@@ -37,6 +40,7 @@ export default async function bookingRoutes(server: FastifyInstance) {
     // MAI-1135: Create a corresponding lead record so the chef sees this inquiry in their lead dashboard.
     // The lead captures the same inquiry data, ensuring 1:1 parity between bookings and leads.
     // MAI-1144: Set inquiryType to 'direct_booking' so we can distinguish these from inquiry form submissions.
+    // MAI-1559: Store diner phone in lead so chef can WhatsApp from the leads page
     db.insert(leads).values({
       serviceId: body.serviceId,
       chefId: service.chefId,
@@ -124,6 +128,7 @@ export default async function bookingRoutes(server: FastifyInstance) {
         serviceName: services.name,
         dinerName: users.name,
         dinerEmail: users.email,
+        dinerPhone: users.phone,
       })
         .from(bookings)
         .innerJoin(services, eq(bookings.serviceId, services.id))
@@ -131,6 +136,7 @@ export default async function bookingRoutes(server: FastifyInstance) {
         .where(eq(bookings.chefId, userId))
         .all();
     } else {
+      // MAI-1519: Include updatedAt and chefNote (via lead) for diner booking cards
       return db.select({
         id: bookings.id,
         serviceId: bookings.serviceId,
@@ -140,12 +146,15 @@ export default async function bookingRoutes(server: FastifyInstance) {
         status: bookings.status,
         notes: bookings.notes,
         createdAt: bookings.createdAt,
+        updatedAt: bookings.updatedAt,
         serviceName: services.name,
         chefName: users.name,
+        chefNote: leads.chefNote,
       })
         .from(bookings)
         .innerJoin(services, eq(bookings.serviceId, services.id))
         .innerJoin(users, eq(bookings.chefId, users.id))
+        .leftJoin(leads, eq(bookings.id, leads.bookingId))
         .where(eq(bookings.dinerId, userId))
         .all();
     }
@@ -202,6 +211,47 @@ export default async function bookingRoutes(server: FastifyInstance) {
     }
     const body = updateStatusSchema.parse(request.body);
     const previousStatus = booking.status;
+
+    // Idempotency: no-op if already in the target status
+    if (previousStatus === body.status) {
+      return reply.status(200).send({
+        success: true,
+        already: true,
+        status: previousStatus,
+        message: `Booking is already '${body.status}'.`,
+        bookingId: booking.id,
+      });
+    }
+
+    // MAI-1499 fix: Accept now means confirmed (pending -> confirmed)
+    if (body.status === 'confirmed' && (previousStatus === 'confirmed')) {
+      return reply.status(200).send({
+        success: true,
+        already: true,
+        status: previousStatus,
+        message: 'Booking is already confirmed.',
+        bookingId: booking.id,
+      });
+    }
+
+    // Allow re-activating a declined/rejected booking
+    // MAI-1499 fix: Allow pending -> confirmed directly (chef Accept = Confirm)
+    const allowedTransitions: Record<string, string[]> = {
+      pending: ['confirmed', 'declined'],
+      confirmed: ['completed'],
+      declined: ['confirmed'],
+      rejected: ['confirmed'],
+    };
+    const allowed = allowedTransitions[previousStatus] || [];
+    if (!allowed.includes(body.status)) {
+      return reply.status(400).send({
+        error: 'Invalid status transition',
+        message: `Cannot transition from '${previousStatus}' to '${body.status}'.`,
+        currentStatus: previousStatus,
+        bookingId: booking.id,
+      });
+    }
+
     db.update(bookings).set({ status: body.status }).where(eq(bookings.id, parseInt(id))).run();
 
     // MAI-1212: Create notifications on status changes
@@ -209,19 +259,22 @@ export default async function bookingRoutes(server: FastifyInstance) {
       const service = db.select().from(services).where(eq(services.id, booking.serviceId)).get();
       const chefName = service ? db.select().from(users).where(eq(users.id, service.chefId)).get()?.name || 'Chef' : 'Chef';
 
-      if (body.status === 'confirmed') {
+      const declineNote = body.declineReason ? ` Reason: ${body.declineReason}` : '';
+
+
+      if (body.status === 'accepted' || body.status === 'confirmed') {
         createNotification({
           userId: booking.dinerId,
           type: 'booking_confirmed',
           title: 'Booking Confirmed! 🎉',
-          body: `Your booking with ${chefName} has been confirmed.`,
+          body: `Great news! ${chefName} has accepted your booking.${declineNote}`,
         });
-      } else if (body.status === 'declined') {
+      } else if (body.status === 'declined' || body.status === 'rejected') {
         createNotification({
           userId: booking.dinerId,
           type: 'booking_declined',
           title: 'Booking Declined',
-          body: `Your booking with ${chefName} has been declined. Browse other chefs to find the perfect fit.`,
+          body: `Unfortunately, ${chefName} cannot host your booking.${declineNote}`,
         });
       } else if (body.status === 'completed') {
         createNotification({
@@ -230,7 +283,6 @@ export default async function bookingRoutes(server: FastifyInstance) {
           title: 'Booking Completed ✅',
           body: `Your experience with ${chefName} is complete. Share your review!`,
         });
-        // Also trigger review request notification
         createNotification({
           userId: booking.dinerId,
           type: 'review_request',
@@ -240,6 +292,50 @@ export default async function bookingRoutes(server: FastifyInstance) {
       }
     }
 
-    return db.select().from(bookings).where(eq(bookings.id, parseInt(id))).get();
+    const updated = db.select().from(bookings).where(eq(bookings.id, parseInt(id))).get();
+
+    // Send email to diner on status changes (fire-and-forget)
+    if (updated && previousStatus !== body.status) {
+      const service = db.select().from(services).where(eq(services.id, booking.serviceId)).get();
+      const chef = db.select().from(users).where(eq(users.id, booking.chefId)).get();
+      const diner = db.select().from(users).where(eq(users.id, booking.dinerId)).get();
+
+      const emailParams = {
+        bookingId: updated.id,
+        chefName: chef?.name || 'Chef',
+        serviceName: service?.name || 'your chef',
+        eventDate: updated.eventDate,
+        guestCount: updated.guestCount,
+        totalPrice: updated.totalPrice,
+      };
+
+      if (body.status === 'accepted' || body.status === 'confirmed') {
+        // Send booking accepted email to diner
+        if (diner?.email) {
+          sendBookingAcceptedEmail({
+            ...emailParams,
+            dinerEmail: diner.email,
+            dinerName: diner.name || 'Guest',
+          }).catch(err => console.warn('[BookingAccepted] Failed to send email:', err));
+        }
+      } else if (body.status === 'declined' || body.status === 'rejected') {
+        // Send booking declined email to diner
+        if (diner?.email) {
+          sendBookingDeclinedEmail({
+            ...emailParams,
+            dinerEmail: diner.email,
+            dinerName: diner.name || 'Guest',
+            declineReason: body.declineReason,
+          }).catch(err => console.warn('[BookingDeclined] Failed to send email:', err));
+        }
+      }
+    }
+
+    return reply.send({
+      success: true,
+      booking: updated,
+      previousStatus,
+      currentStatus: body.status,
+    });
   });
 }
