@@ -201,3 +201,103 @@ export function trackBookingCreatedEvent(data: {
     console.log('[Analytics] Booking created:', eventData);
   }
 }
+
+// MAI-1670: Track quote_sent event when chef sends a price quote to a diner
+interface QuoteSentEventData {
+  leadId: number;
+  chefId: number;
+  serviceId: number;
+  quoteAmount: number;
+  guestCount: number;
+  variant?: string;
+}
+
+export function trackQuoteSentEvent(data: QuoteSentEventData): void {
+  const eventData = {
+    event: 'quote_sent',
+    lead_id: data.leadId,
+    chef_id: data.chefId,
+    service_id: data.serviceId,
+    quote_amount: data.quoteAmount,
+    guestCount: data.guestCount,
+    variant: data.variant || 'unknown',
+    auth_status: 'chef',
+    timestamp: new Date().toISOString()
+  };
+
+  // Send to analytics API (fire-and-forget)
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  // Log for debugging
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Quote sent:', eventData);
+  }
+}
+
+// MAI-1670: Track quote_converted event when a quoted lead is converted to a booking
+interface QuoteConvertedEventData {
+  leadId: number;
+  chefId: number;
+  serviceId: number;
+  quoteAmount: number;
+  guestCount: number;
+  referralCode?: string;
+  variant?: string;
+}
+
+export function trackQuoteConvertedEvent(data: QuoteConvertedEventData): void {
+  const eventData = {
+    event: 'quote_converted',
+    lead_id: data.leadId,
+    chef_id: data.chefId,
+    service_id: data.serviceId,
+    quote_amount: data.quoteAmount,
+    guestCount: data.guestCount,
+    referral_code: data.referralCode || null,
+    variant: data.variant || 'unknown',
+    auth_status: 'chef',
+    timestamp: new Date().toISOString()
+  };
+
+  // Send to analytics API (fire-and-forget)
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  // Log for debugging
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Quote converted:', eventData);
+  }
+}
+
+// MAI-1684: Hero search analytics — instrument hero search form on homepage
+interface HeroSearchEventData {
+  cuisine: string | null;
+  location: string | null;
+  date: string | null;
+  guests: number | null;
+}
+
+export function trackHeroSearchEvent(data: HeroSearchEventData): void {
+  const eventData = {
+    event: 'hero_search_submitted',
+    cuisine_type: data.cuisine,
+    location: data.location,
+    date: data.date,
+    guestCount: data.guests,
+    auth_status: 'anonymous',
+    timestamp: new Date().toISOString()
+  };
+
+  // Send to analytics API (fire-and-forget)
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  // Log for debugging
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Hero search submitted:', eventData);
+  }
+}

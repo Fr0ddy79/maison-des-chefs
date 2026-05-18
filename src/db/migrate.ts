@@ -357,6 +357,14 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-1700: Add metadata column to notifications table
+  try {
+    sqlite.exec(`ALTER TABLE notifications ADD COLUMN metadata TEXT`);
+    console.log('Migration: Added metadata column to notifications');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   // MAI-1212: Create notifications table if it doesn't exist
   try {
     sqlite.exec(`

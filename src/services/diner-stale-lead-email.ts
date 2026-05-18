@@ -216,7 +216,7 @@ export function startStaleLeadReEngagementScheduler(): void {
     return;
   }
 
-  const task = cron.schedule('0 9 * * *', async () => {
+  const task = cron.schedule('0 */6 * * *', async () => {
     console.log('[StaleLeadReEngagement] Running stale lead re-engagement check...');
     try {
       await processStaleLeadReEngagement();

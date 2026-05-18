@@ -1,10 +1,32 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { leads, services, users, bookings, chefProfiles } from "../db/schema.js";
+import { leads, services, users, bookings, chefProfiles, notifications } from "../db/schema.js";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
 import { sendQuoteEmail, sendDeclinedEmail, sendAcceptedEmail } from "../services/diner-confirmation-email.js";
 import crypto from "crypto";
+
+/**
+ * MAI-1670: Fire-and-forget analytics event tracker for server-side use.
+ */
+async function trackAnalyticsEvent(data: Record<string, unknown>): Promise<void> {
+  try {
+    const body = JSON.stringify(data);
+    // Use internal fetch to hit the analytics endpoint
+    // In production this forwards to a real analytics service
+    const response = await fetch('http://localhost:3000/api/analytics/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!response.ok) {
+      console.error('[Analytics] Failed to track event:', response.status);
+    }
+  } catch (err) {
+    // Silently fail - analytics should not break business logic
+    console.error('[Analytics] Error tracking event:', err);
+  }
+}
 
 /**
  * Generate a secure quote token (32+ chars, URL-safe hex).
@@ -200,6 +222,22 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .returning()
       .all()[0];
 
+    // MAI-1670: Fire-and-forget analytics event for quote_sent
+    // MAI-1677: Add timeToRespondMs and leadAgeHours for response time analysis
+    const leadAgeMs = now.getTime() - new Date(lead.createdAt).getTime();
+    trackAnalyticsEvent({
+      event: 'quote_sent',
+      lead_id: lead.id,
+      chef_id: userId,
+      service_id: lead.serviceId,
+      quote_amount: body.amount,
+      guestCount: lead.guestCount,
+      auth_status: 'chef',
+      timestamp: now.toISOString(),
+      timeToRespondMs: leadAgeMs,
+      leadAgeHours: leadAgeMs / (1000 * 60 * 60),
+    });
+
     // Send quote email to diner
     if (service && chef) {
       await sendQuoteEmail({
@@ -268,6 +306,19 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       notes: `Converted from lead ${lead.id}`,
       createdAt: now,
     }).run();
+
+    // MAI-1670: Fire-and-forget analytics event for quote_converted
+    trackAnalyticsEvent({
+      event: 'quote_converted',
+      lead_id: lead.id,
+      chef_id: userId,
+      service_id: lead.serviceId,
+      quote_amount: lead.quoteAmount,
+      guestCount: lead.guestCount,
+      referral_code: referralCode,
+      auth_status: 'chef',
+      timestamp: now.toISOString(),
+    });
 
     // MAI-1396: Send accepted/confirmed email to diner
     if (lead.email) {
@@ -602,5 +653,98 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .run();
 
     return { success: true, templates: body.templates };
+  });
+
+  // GET /api/chef/notifications — list notifications for chef (MAI-1700)
+  server.get("/notifications", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can access notifications" });
+    }
+
+    const queryParams = request.query as { limit?: string; unreadOnly?: string };
+    const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : 10;
+    const unreadOnly = queryParams.unreadOnly === "true";
+
+    const conditions = [eq(notifications.userId, userId)];
+    if (unreadOnly) {
+      conditions.push(eq(notifications.read, false));
+    }
+
+    const userNotifications = db.select()
+      .from(notifications)
+      .where(and(...conditions))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit)
+      .all();
+
+    const unreadCountResult = db.select({ count: sql`count(*)` })
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.read, false)
+      ))
+      .get();
+    const unreadCount = (unreadCountResult?.count as number | null) ?? 0;
+
+    return {
+      notifications: userNotifications.map(n => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        body: n.body,
+        read: n.read,
+        createdAt: n.createdAt,
+        metadata: n.metadata ? JSON.parse(n.metadata) : null,
+      })),
+      unread_count: unreadCount,
+    };
+  });
+
+  // PATCH /api/chef/notifications/:id/read — mark notification as read (MAI-1700)
+  server.patch("/notifications/:id/read", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can update notifications" });
+    }
+
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+
+    const notification = db.select()
+      .from(notifications)
+      .where(and(
+        eq(notifications.id, parseInt(id)),
+        eq(notifications.userId, userId)
+      ))
+      .get();
+
+    if (!notification) {
+      return reply.status(404).send({ error: "Notification not found" });
+    }
+
+    db.update(notifications)
+      .set({ read: true })
+      .where(eq(notifications.id, parseInt(id)))
+      .run();
+
+    return { success: true };
+  });
+
+  // POST /api/chef/notifications/mark-all-read — mark all notifications as read (MAI-1700)
+  server.post("/notifications/mark-all-read", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can update notifications" });
+    }
+
+    db.update(notifications)
+      .set({ read: true })
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.read, false)
+      ))
+      .run();
+
+    return { success: true };
   });
 }

@@ -2053,8 +2053,8 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
       <h1>Your Private Chef,<br><span>For Every Occasion</span></h1>
       <p class="hero-sub">From intimate dinner parties to corporate events — discover and book verified private chefs in Montreal in minutes.</p>
       <div class="hero-ctas">
-        <a href="/services" class="hero-cta-primary">Browse Chefs & Services</a>
-        <a href="/services?sort=popular" class="hero-cta-secondary">🔥 See Most Popular</a>
+        <a href="/services" class="hero-cta-primary" onclick="trackHeroCtaClick('primary', 'Browse Chefs & Services')">Browse Chefs & Services</a>
+        <a href="/services?sort=popular" class="hero-cta-secondary" onclick="trackHeroCtaClick('secondary', 'See Most Popular')">🔥 See Most Popular</a>
       </div>
       ${stats.reviewCount > 0 || stats.bookingCount > 0 ? `
       <div class="hero-social-proof">
@@ -2082,6 +2082,10 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
               <option value="corporate_event">Corporate Event</option>
               <option value="other">Other</option>
             </select>
+          </div>
+          <div class="search-field">
+            <label for="search-location">Location</label>
+            <input type="text" id="search-location" name="location" placeholder="City or area">
           </div>
           <div class="search-field">
             <label for="search-cuisine">Cuisine preference</label>
@@ -2194,14 +2198,28 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     <p style="margin-top:1.5rem;">&copy; 2024 Maison des Chefs. All rights reserved.</p>
   </footer>
   <script>
+    function trackHeroCtaClick(position, ctaText) {
+      const eventData = {
+        event: 'hero_cta_click',
+        cta_position: position,
+        cta_text: ctaText,
+        auth_status: 'anonymous',
+        timestamp: new Date().toISOString()
+      };
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+      }
+      console.log('[Analytics] Hero CTA click:', eventData);
+    }
+
     document.querySelector('.hero-search-form').addEventListener('submit', function(e) {
       const formData = new FormData(this);
       const payload = {
-        event: 'homepage_search_submitted',
+        event: 'hero_search_submitted',
         cuisine_type: formData.get('cuisine') || null,
-        guestCount: parseInt(formData.get('guests')) || null,
+        location: formData.get('location') || null,
         date: formData.get('date') || null,
-        eventType: formData.get('type') || null,
+        guestCount: parseInt(formData.get('guests')) || null,
         timestamp: new Date().toISOString(),
         auth_status: 'anonymous'
       };

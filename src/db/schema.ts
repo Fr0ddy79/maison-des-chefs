@@ -158,6 +158,7 @@ export const notifications = sqliteTable('notifications', {
   title: text('title').notNull(),
   body: text('body').notNull(),
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  metadata: text('metadata'), // JSON string with extra fields (leadId, etc.)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -244,5 +245,27 @@ export const chefVerificationSubmissions = sqliteTable('chef_verification_submis
   reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
   reviewedBy: integer('reviewed_by').references(() => users.id),
   reviewNotes: text('review_notes'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// Outreach campaigns (MAI-1681): groups outreach touches into campaigns
+export const outreachCampaigns = sqliteTable('outreach_campaigns', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  status: text('status', { enum: ['active', 'paused', 'completed'] }).notNull().default('active'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// Outreach touches (MAI-1681): tracks each individual outreach attempt
+export const outreachTouches = sqliteTable('outreach_touches', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  campaignId: integer('campaign_id').notNull().references(() => outreachCampaigns.id),
+  channel: text('channel', { enum: ['email', 'instagram', 'phone', 'sms'] }).notNull(),
+  touchNumber: integer('touch_number').notNull(),
+  sentAt: integer('sent_at', { mode: 'timestamp' }).notNull(),
+  status: text('status', { enum: ['pending', 'sent', 'opened', 'replied', 'bounced'] }).notNull().default('pending'),
+  responseAt: integer('response_at', { mode: 'timestamp' }),
+  notes: text('notes'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

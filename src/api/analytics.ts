@@ -27,6 +27,19 @@ const analyticsEventSchema = z.object({
   filter_value: z.string().optional(),
   selected_count: z.number().optional(),
   cuisine_types: z.array(z.string()).optional(),
+  // MAI-1670: Quote→Convert analytics
+  quote_amount: z.number().optional(),
+  lead_status: z.string().optional(),
+  referral_code: z.string().optional(),
+  // MAI-1677: Response time analytics
+  timeToRespondMs: z.number().optional(),
+  leadAgeHours: z.number().optional(),
+  // MAI-1684: Hero search analytics
+  location: z.string().optional(),
+  // MAI-1702: Hero CTA analytics
+  cta_position: z.string().optional(),
+  // MAI-1702: Hero search schema alignment (date and guestCount from hero search form)
+  date: z.string().optional(),
 });
 
 function ensureDataDir() {
