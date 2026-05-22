@@ -5,6 +5,7 @@ import { leads, services, users, chefProfiles } from "../db/schema.js";
 import { eq, inArray } from "drizzle-orm";
 import { sendMultiChefConfirmationEmail } from "../services/diner-confirmation-email.js";
 import { sendChefNewBookingEmail } from "../services/chef-new-booking-email.js";
+import { createNotification } from "./notifications.js";
 import crypto from "crypto";
 
 const MAX_CHEFS_PER_INQUIRY = 10;
@@ -132,6 +133,9 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
       serviceName: string;
     }> = [];
 
+    const now = new Date();
+    const slaDeadline = new Date(now.getTime() + 48 * 60 * 60 * 1000); // +48 hours
+
     for (const service of serviceRows) {
       const createdLead = db
         .insert(leads)
@@ -149,6 +153,8 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
           multiInquiryId,
           accessToken, // shared token across all leads in this multi-inquiry
           accessTokenExpiresAt,
+          inquiryReceivedAt: now, // MAI-1745: SLA start
+          slaDeadlineAt: slaDeadline, // MAI-1745: SLA deadline (+48h)
         })
         .returning()
         .all()[0];
@@ -189,6 +195,21 @@ export default async function multiInquiryRoutes(server: FastifyInstance) {
         guestCount: body.guestCount || 1,
         totalPrice,
         bookingId: l.id,
+      });
+
+      // MAI-1809: Create in-app notification for each chef
+      createNotification({
+        userId: l.chefId,
+        type: 'lead_received',
+        title: 'New Booking Request',
+        body: `You have a new booking request from ${body.clientName || 'a diner'} for ${l.serviceName}`,
+        metadata: {
+          leadId: l.id,
+          dinerEmail: body.email,
+          serviceName: l.serviceName,
+          guestCount: body.guestCount,
+          eventDate: body.eventDate,
+        },
       });
     }
 

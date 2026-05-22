@@ -2,8 +2,8 @@ import { FastifyInstance } from 'fastify';
 import Stripe from 'stripe';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { leads, services, users, chefProfiles } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { leads, services, users, chefProfiles, dinerCredits } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 import { getAddonsByIds } from '../data/addons.js';
 
 const CHECKOUT_URL = process.env.CHECKOUT_URL || 'https://maisondeschefs.com';
@@ -118,6 +118,24 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     const selectedAddons = getAddonsByIds(selectedAddonIds);
     const addonsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
 
+    // MAI-1879: Get diner credit balance for this lead's email
+    let creditInfo: { available: boolean; amount: number; display: string } = { available: false, amount: 0, display: '$0.00' };
+    if (lead.email) {
+      const diner = db.select({ id: users.id }).from(users).where(eq(users.email, lead.email)).get();
+      if (diner) {
+        const now = new Date();
+        const credits = db.select({ amount: dinerCredits.amount, expiresAt: dinerCredits.expiresAt })
+          .from(dinerCredits)
+          .where(and(eq(dinerCredits.dinerId, diner.id), eq(dinerCredits.used, false)))
+          .all();
+        const unspent = credits.filter(c => c.expiresAt >= now);
+        const totalCents = unspent.reduce((sum, c) => sum + c.amount, 0);
+        if (totalCents > 0) {
+          creditInfo = { available: true, amount: totalCents, display: `-$${(totalCents / 100).toFixed(2)}` };
+        }
+      }
+    }
+
     return {
       booking: {
         id: lead.id,
@@ -135,8 +153,58 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         selectedAddons: selectedAddons.map(a => ({ id: a.id, name: a.name, price: a.price })),
         addonsTotal,
       },
+      credit: creditInfo,
       canPay,
       paymentDue: canPay,
+    };
+  });
+
+  // GET /api/checkout/:leadId/credits - Get diner credit balance for lead's email
+  server.get('/:leadId/credits', async (request, reply) => {
+    const { leadId } = request.params as { leadId: string };
+    const query = request.query as { token?: string };
+
+    // Validate token
+    if (!query.token) {
+      return reply.status(400).send({ error: 'Access token required' });
+    }
+
+    const verified = verifyLeadAccess(parseInt(leadId), query.token);
+    if (!verified) {
+      return reply.status(403).send({ error: 'Invalid or expired access token' });
+    }
+
+    // Get lead email
+    const lead = db.select({ email: leads.email }).from(leads).where(eq(leads.id, parseInt(leadId))).get();
+    if (!lead) {
+      return reply.status(404).send({ error: 'Lead not found' });
+    }
+
+    if (!lead.email) {
+      return { available: false, amount: 0, display: '$0.00' };
+    }
+
+    // Look up diner by email
+    const diner = db.select({ id: users.id }).from(users).where(eq(users.email, lead.email)).get();
+    if (!diner) {
+      return { available: false, amount: 0, display: '$0.00' };
+    }
+
+    // Get unspent, non-expired credits
+    const now = new Date();
+    const credits = db.select({ id: dinerCredits.id, amount: dinerCredits.amount, expiresAt: dinerCredits.expiresAt })
+      .from(dinerCredits)
+      .where(and(eq(dinerCredits.dinerId, diner.id), eq(dinerCredits.used, false)))
+      .all();
+
+    const unspent = credits.filter(c => c.expiresAt >= now);
+    const totalCents = unspent.reduce((sum, c) => sum + c.amount, 0);
+
+    return {
+      available: totalCents > 0,
+      amount: totalCents,
+      display: totalCents > 0 ? `-$${(totalCents / 100).toFixed(2)}` : '$0.00',
+      creditIds: unspent.map(c => c.id), // IDs to mark as used after payment
     };
   });
 
@@ -144,6 +212,8 @@ export default async function checkoutRoutes(server: FastifyInstance) {
   server.post('/:leadId/create-session', async (request, reply) => {
     const { leadId } = request.params as { leadId: string };
     const query = request.query as { token?: string };
+    const body = request.body as { applyCredit?: boolean } | undefined;
+    const applyCredit = body?.applyCredit === true;
 
     // Validate token
     if (!query.token) {
@@ -198,7 +268,24 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       });
     }
 
-    // MAI-875: Build line items including addons
+    // MAI-1879: Apply credit if applyCredit=true
+    let creditAmountCents = 0;
+    let creditIdsToMark: number[] = [];
+    if (applyCredit && lead.email) {
+      const diner = db.select({ id: users.id }).from(users).where(eq(users.email, lead.email)).get();
+      if (diner) {
+        const now = new Date();
+        const credits = db.select({ id: dinerCredits.id, amount: dinerCredits.amount, expiresAt: dinerCredits.expiresAt })
+          .from(dinerCredits)
+          .where(and(eq(dinerCredits.dinerId, diner.id), eq(dinerCredits.used, false)))
+          .all();
+        const unspent = credits.filter(c => c.expiresAt >= now);
+        creditAmountCents = unspent.reduce((sum, c) => sum + c.amount, 0);
+        creditIdsToMark = unspent.map(c => c.id);
+      }
+    }
+
+    // MAI-1879: Build line items including addons (and credit if applying)
     const lineItems: any[] = [
       {
         price_data: {
@@ -235,13 +322,28 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       });
     }
 
+    // MAI-1879: Add credit as a line item (negative amount) if applyCredit=true and credit is available
+    if (creditAmountCents > 0) {
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'Referral Credit',
+            description: 'Credit applied from referral program',
+          },
+          unit_amount: -creditAmountCents, // negative to subtract
+        },
+        quantity: 1,
+      });
+    }
+
     // Create Stripe Checkout Session
     try {
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items: lineItems,
         mode: 'payment',
-        success_url: `${CHECKOUT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&lead=${lead.id}&token=${query.token}`,
+        success_url: `${CHECKOUT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&lead=${lead.id}&token=${query.token}${applyCredit ? '&applyCredit=true' : ''}`,
         cancel_url: `${CHECKOUT_URL}/checkout/cancel?lead=${lead.id}&token=${query.token}`,
         customer_email: lead.email,
         metadata: {
@@ -250,6 +352,9 @@ export default async function checkoutRoutes(server: FastifyInstance) {
           serviceId: lead.serviceId.toString(),
           // MAI-875: Store selected addon IDs for success page
           selectedAddonIds: JSON.stringify(selectedAddonIds),
+          // MAI-1879: Store credit IDs to mark as used after payment
+          applyCredit: applyCredit ? 'true' : 'false',
+          creditIds: JSON.stringify(creditIdsToMark),
         },
         payment_intent_data: {
           metadata: {
@@ -257,6 +362,9 @@ export default async function checkoutRoutes(server: FastifyInstance) {
             chefId: lead.chefId.toString(),
             serviceId: lead.serviceId.toString(),
             selectedAddonIds: JSON.stringify(selectedAddonIds),
+            // MAI-1879
+            applyCredit: applyCredit ? 'true' : 'false',
+            creditIds: JSON.stringify(creditIdsToMark),
           },
         },
       });
@@ -264,6 +372,8 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       return {
         sessionId: session.id,
         url: session.url,
+        creditApplied: creditAmountCents > 0,
+        creditAmount: creditAmountCents,
       };
     } catch (error: any) {
       console.error('Stripe error:', error);

@@ -5,20 +5,30 @@ import { notifications } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 
 // MAI-1212: Notification types
-export type NotificationType = 'booking_confirmed' | 'booking_declined' | 'booking_completed' | 'review_request';
+// MAI-1809: Added lead_received for chef in-app notifications on lead creation
+export type NotificationType = 'booking_confirmed' | 'booking_declined' | 'booking_completed' | 'review_request' | 'lead_expired' | 'lead_received' | 'lead_stagnant' | 'lead_stagnant_escalated';
 
 // MAI-1212: Create a notification for a user
+// MAI-1809: Added metadata support for lead details (leadId, dinerEmail, serviceName, guestCount, eventDate)
 export function createNotification(params: {
   userId: number;
   type: NotificationType;
   title: string;
   body: string;
+  metadata?: {
+    leadId?: number;
+    dinerEmail?: string;
+    serviceName?: string;
+    guestCount?: number;
+    eventDate?: string | null;
+  };
 }) {
   db.insert(notifications).values({
     userId: params.userId,
     type: params.type,
     title: params.title,
     body: params.body,
+    metadata: params.metadata ? JSON.stringify(params.metadata) : null,
   }).run();
 }
 

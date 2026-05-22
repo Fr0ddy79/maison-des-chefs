@@ -1,10 +1,12 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { leads, services, users } from "../db/schema.js";
+import { leads, services, users, referralCodes } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { sendDinerConfirmationEmail } from "../services/diner-confirmation-email.js";
+import { sendDinerRequestReceivedEmail } from "../services/diner-request-received-email.js";
 import { sendChefNewBookingEmail } from "../services/chef-new-booking-email.js";
+import { createNotification } from "./notifications.js";
 import crypto from "crypto";
 
 const createInquirySchema = z.object({
@@ -15,6 +17,7 @@ const createInquirySchema = z.object({
   eventDate: z.string().optional(),
   guestCount: z.number().int().min(1).optional().default(1),
   message: z.string().optional(),
+  referralCode: z.string().optional(), // MAI-1778: referral code from referral link
 });
 
 const BOOKING_STATUS_TOKEN_EXPIRY_DAYS = 30;
@@ -24,6 +27,16 @@ const BOOKING_STATUS_TOKEN_EXPIRY_DAYS = 30;
  */
 function generateAccessToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+// MAI-1778: 8-char alphanumeric referral code (unambiguous chars)
+function generateReferralCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
 }
 
 /**
@@ -56,6 +69,9 @@ export default async function inquiryRoutes(server: FastifyInstance) {
     const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
     const fullBookingStatusUrl = `${DASHBOARD_URL}/booking-status?token=${accessToken}`;
 
+    const now = new Date();
+    const slaDeadline = new Date(now.getTime() + 48 * 60 * 60 * 1000); // +48 hours
+
     const createdLead = db.insert(leads).values({
       serviceId: body.serviceId,
       chefId: service.chefId,
@@ -68,10 +84,25 @@ export default async function inquiryRoutes(server: FastifyInstance) {
       status: "new",
       accessToken, // MAI-805
       accessTokenExpiresAt, // MAI-805
+      inquiryReceivedAt: now, // MAI-1745: SLA start
+      slaDeadlineAt: slaDeadline, // MAI-1745: SLA deadline (+48h)
+      referralCode: body.referralCode || null, // MAI-1778: track referral source
     }).returning().all()[0];
 
     // MAI-805: Pass booking status URL to email
     await sendDinerConfirmationEmail({
+      leadId: createdLead.id,
+      dinerName: body.clientName || "there",
+      dinerEmail: body.email,
+      chefName: chef.name,
+      serviceName: service.name,
+      eventDate: body.eventDate || null,
+      guestCount: body.guestCount,
+      bookingStatusUrl: fullBookingStatusUrl,
+    });
+
+    // MAI-1745: Send "Request Received" confirmation to diner immediately
+    await sendDinerRequestReceivedEmail({
       leadId: createdLead.id,
       dinerName: body.clientName || "there",
       dinerEmail: body.email,
@@ -95,6 +126,21 @@ export default async function inquiryRoutes(server: FastifyInstance) {
       bookingId: createdLead.id,
     });
 
+    // MAI-1809: Create in-app notification for chef
+    createNotification({
+      userId: chef.id,
+      type: 'lead_received',
+      title: 'New Booking Request',
+      body: `You have a new booking request from ${body.clientName || 'a diner'} for ${service.name}`,
+      metadata: {
+        leadId: createdLead.id,
+        dinerEmail: body.email,
+        serviceName: service.name,
+        guestCount: body.guestCount,
+        eventDate: body.eventDate,
+      },
+    });
+
     // Set diner recognition cookies (30 day expiry)
     const cookieMaxAge = 30 * 24 * 60 * 60;
     const cookieOptions = `Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`;
@@ -106,11 +152,40 @@ export default async function inquiryRoutes(server: FastifyInstance) {
       reply.header("Set-Cookie", `diner_phone=${encodeURIComponent(body.phone)}; ${cookieOptions}`);
     }
 
+    // MAI-1778: Get or create diner account and generate referral code
+    // Note: anonymous diners get a placeholder password hash (empty string)
+    // since they don't authenticate via password
+    let dinerAccount = db.select().from(users).where(eq(users.email, body.email.toLowerCase())).get();
+    if (!dinerAccount) {
+      const now = new Date();
+      const result = db.insert(users).values({
+        email: body.email.toLowerCase(),
+        passwordHash: '', // Anonymous diner — no password auth
+        name: body.clientName || 'Guest',
+        role: 'diner',
+        phone: body.phone || null,
+        createdAt: now,
+      }).returning().all();
+      dinerAccount = result[0];
+    }
+
+    // Get or generate referral code for this diner
+    let dinerReferralCode = db.select().from(referralCodes).where(eq(referralCodes.dinerId, dinerAccount.id)).get();
+    if (!dinerReferralCode) {
+      const code = generateReferralCode();
+      const created = db.insert(referralCodes).values({
+        code,
+        dinerId: dinerAccount.id,
+      }).returning().get();
+      dinerReferralCode = created;
+    }
+
     return reply.status(201).send({
       success: true,
       leadId: createdLead.id,
       message: "Inquiry submitted successfully",
       bookingStatusUrl, // MAI-805: Return the URL for client reference
+      referralCode: dinerReferralCode.code, // MAI-1836: Return diner's referral code
     });
   });
 }

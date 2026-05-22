@@ -132,6 +132,13 @@ export default function buildChefDiscoveryPage(): string {
   .price-range input { width: 80px; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; }
   .price-range span { color: #888; }
 
+  .filter-date-input, .filter-guests-input, .filter-occasion-select { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; background: white; color: #333; cursor: pointer; transition: border-color 0.2s; }
+  .filter-date-input:focus, .filter-guests-input:focus, .filter-occasion-select:focus { outline: none; border-color: #c9a227; }
+  .filter-guests-input::placeholder { color: #aaa; }
+
+  .clear-all-btn { width: 100%; background: #f0f0f0; color: #555; border: 1px solid #ddd; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s; margin-top: 0.5rem; }
+  .clear-all-btn:hover { background: #e0e0e0; color: #333; }
+
   .results-area { min-width: 0; }
   .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
   .results-count { font-size: 1.1rem; color: #555; }
@@ -285,6 +292,31 @@ export default function buildChefDiscoveryPage(): string {
         <input type="number" id="maxPrice" placeholder="Max" min="0" onchange="applyFilters()">
       </div>
     </div>
+
+    <div class="filter-group">
+      <label>Date</label>
+      <input type="date" id="filterDate" class="filter-date-input" min="" onchange="applyFilters()">
+    </div>
+
+    <div class="filter-group">
+      <label>Guests</label>
+      <input type="number" id="filterGuests" class="filter-guests-input" placeholder="Any" min="1" max="50" onchange="applyFilters()">
+    </div>
+
+    <div class="filter-group">
+      <label>Occasion</label>
+      <select id="filterOccasion" class="filter-occasion-select" onchange="applyFilters()">
+        <option value="">Any Occasion</option>
+        <option value="Birthday">Birthday</option>
+        <option value="Corporate">Corporate</option>
+        <option value="Date Night">Date Night</option>
+        <option value="Holiday">Holiday</option>
+        <option value="Celebration">Celebration</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+
+    <button class="clear-all-btn" onclick="clearAllFilters()">Clear all</button>
   </aside>
 
   <main class="results-area">
@@ -391,12 +423,94 @@ export default function buildChefDiscoveryPage(): string {
 <script>
 var API_BASE = '';
 var allChefs = [];
-var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null, sort: 'price_asc' };
+var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null, sort: 'price_asc', date: '', guests: '', occasion: '' };
 
 // MAI-1079: Track chef discovery page view on load
 (function() {
   trackChefDiscoveryEvent({ event: 'chef_discovery_view' });
 })();
+
+// Initialize date input min to today
+(function() {
+  var dateInput = document.getElementById('filterDate');
+  if (dateInput) {
+    dateInput.min = new Date().toISOString().split('T')[0];
+  }
+})();
+
+// Read URL params on load and pre-fill filters
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var date = params.get('date');
+  var guests = params.get('guests');
+  var occasion = params.get('occasion');
+  var minPrice = params.get('minPrice');
+  var maxPrice = params.get('maxPrice');
+  var sort = params.get('sort');
+  var cuisines = params.get('cuisines');
+  var dietary = params.get('dietary');
+
+  if (date) {
+    var dateInput = document.getElementById('filterDate');
+    if (dateInput) dateInput.value = date;
+    currentFilters.date = date;
+  }
+  if (guests) {
+    var guestsInput = document.getElementById('filterGuests');
+    if (guestsInput) guestsInput.value = guests;
+    currentFilters.guests = guests;
+  }
+  if (occasion) {
+    var occasionSelect = document.getElementById('filterOccasion');
+    if (occasionSelect) occasionSelect.value = occasion;
+    currentFilters.occasion = occasion;
+  }
+  if (minPrice) {
+    var minPriceInput = document.getElementById('minPrice');
+    if (minPriceInput) minPriceInput.value = minPrice;
+    currentFilters.minPrice = parseFloat(minPrice);
+  }
+  if (maxPrice) {
+    var maxPriceInput = document.getElementById('maxPrice');
+    if (maxPriceInput) maxPriceInput.value = maxPrice;
+    currentFilters.maxPrice = parseFloat(maxPrice);
+  }
+  if (sort) {
+    var sortSelect = document.getElementById('sortSelect');
+    if (sortSelect) sortSelect.value = sort;
+    currentFilters.sort = sort;
+  }
+  if (cuisines) {
+    cuisines.split(',').forEach(function(c) {
+      var cb = document.querySelector('#cuisineFilters input[value="' + c + '"]');
+      if (cb) cb.checked = true;
+    });
+    currentFilters.cuisines = cuisines.split(',').filter(Boolean);
+  }
+  if (dietary) {
+    dietary.split(',').forEach(function(d) {
+      var cb = document.querySelector('#dietaryFilters input[value="' + d + '"]');
+      if (cb) cb.checked = true;
+    });
+    currentFilters.dietary = dietary.split(',').filter(Boolean);
+  }
+})();
+
+function updateUrlParams() {
+  var params = new URLSearchParams();
+
+  if (currentFilters.date) params.set('date', currentFilters.date);
+  if (currentFilters.guests) params.set('guests', currentFilters.guests);
+  if (currentFilters.occasion) params.set('occasion', currentFilters.occasion);
+  if (currentFilters.minPrice != null) params.set('minPrice', currentFilters.minPrice.toString());
+  if (currentFilters.maxPrice != null) params.set('maxPrice', currentFilters.maxPrice.toString());
+  if (currentFilters.sort && currentFilters.sort !== 'price_asc') params.set('sort', currentFilters.sort);
+  if (currentFilters.cuisines.length > 0) params.set('cuisines', currentFilters.cuisines.join(','));
+  if (currentFilters.dietary.length > 0) params.set('dietary', currentFilters.dietary.join(','));
+
+  var newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+  window.history.replaceState({}, '', newUrl);
+}
 
 function escapeHtml(text) {
   if (!text) return '';
@@ -506,6 +620,9 @@ function resetFilters() {
   document.querySelectorAll('#dietaryFilters input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
   document.getElementById('minPrice').value = '';
   document.getElementById('maxPrice').value = '';
+  document.getElementById('filterDate').value = '';
+  document.getElementById('filterGuests').value = '';
+  document.getElementById('filterOccasion').value = '';
   applyFilters();
 }
 
@@ -528,9 +645,17 @@ function applyFilters() {
   currentFilters.maxPrice = maxPriceEl.value ? parseFloat(maxPriceEl.value) : null;
   currentFilters.sort = document.getElementById('sortSelect').value;
 
+  var dateEl = document.getElementById('filterDate');
+  currentFilters.date = dateEl.value || '';
+  var guestsEl = document.getElementById('filterGuests');
+  currentFilters.guests = guestsEl.value || '';
+  var occasionEl = document.getElementById('filterOccasion');
+  currentFilters.occasion = occasionEl.value || '';
+
   // MAI-1079: Track filter application
   var activeFilters = currentFilters.cuisines.length + currentFilters.dietary.length +
-    (currentFilters.minPrice ? 1 : 0) + (currentFilters.maxPrice ? 1 : 0) + (currentFilters.sort !== 'price_asc' ? 1 : 0);
+    (currentFilters.minPrice ? 1 : 0) + (currentFilters.maxPrice ? 1 : 0) + (currentFilters.sort !== 'price_asc' ? 1 : 0) +
+    (currentFilters.date ? 1 : 0) + (currentFilters.guests ? 1 : 0) + (currentFilters.occasion ? 1 : 0);
   if (activeFilters > 0) {
     trackChefDiscoveryEvent({
       event: 'filter_applied',
@@ -541,6 +666,7 @@ function applyFilters() {
   }
 
   renderChefs();
+  updateUrlParams();
 }
 
 function renderChefs() {

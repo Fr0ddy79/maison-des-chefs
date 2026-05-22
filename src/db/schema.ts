@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -143,7 +143,7 @@ export const reviews = sqliteTable('reviews', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   chefId: integer('chef_id').notNull().references(() => users.id),
   serviceId: integer('service_id').notNull().references(() => services.id),
-  dinerId: integer('diner_id').notNull().references(() => users.id),
+  dinerId: integer('diner_id').references(() => users.id), // nullable for guest checkout reviews
   bookingId: integer('booking_id').notNull().references(() => bookings.id),
   rating: integer('rating').notNull(), // 1-5
   comment: text('comment'),
@@ -204,6 +204,15 @@ export const leads = sqliteTable('leads', {
   staleLeadReengagementSentAt: integer('stale_lead_reengagement_sent_at', { mode: 'timestamp' }),
   // MAI-1396: Lead expiration email sent timestamp (for idempotency)
   leadExpiredSentAt: integer('lead_expired_sent_at', { mode: 'timestamp' }),
+  // MAI-1745: SLA tracking fields
+  inquiryReceivedAt: integer('inquiry_received_at', { mode: 'timestamp' }), // Set on lead creation (now())
+  slaDeadlineAt: integer('sla_deadline_at', { mode: 'timestamp' }), // inquiryReceivedAt + 48 hours
+  // MAI-1745: SLA check-in email sent timestamp (for idempotency)
+  slaCheckInSentAt: integer('sla_check_in_sent_at', { mode: 'timestamp' }),
+  // MAI-1745: "Request received" confirmation email sent timestamp (for idempotency)
+  requestReceivedSentAt: integer('request_received_sent_at', { mode: 'timestamp' }),
+  // MAI-1822: Payment status for Stripe payment tracking
+  paymentStatus: text('payment_status', { enum: ['unpaid', 'paid', 'failed', 'refunded'] }).notNull().default('unpaid'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -268,4 +277,32 @@ export const outreachTouches = sqliteTable('outreach_touches', {
   responseAt: integer('response_at', { mode: 'timestamp' }),
   notes: text('notes'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// MAI-1778: Referral Reward System
+// Stores referral credit earned by diners (from referral program)
+export const dinerCredits = sqliteTable('diner_credits', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  dinerId: integer('diner_id').notNull().references(() => users.id),
+  amount: integer('amount').notNull(), // integer in cents (e.g., 2500 = $25.00)
+  earnedFromReferralId: integer('earned_from_referral_id').references((): any => referralCodes.id), // FK to referralCodes table, nullable
+  used: integer('used', { mode: 'boolean' }).notNull().default(false), // whether credit has been used
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(), // expiration date (12 months from earning)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// MAI-1778: Referral Reward System
+// Stores unique referral codes generated per diner (8-char alphanumeric)
+export const referralCodes = sqliteTable('referral_codes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  code: text('code').notNull().unique(), // 8-char alphanumeric, unique
+  dinerId: integer('diner_id').notNull().references(() => users.id), // diner who earned this code
+  usedByDinerId: integer('used_by_diner_id').references((): any => users.id), // nullable - who used this code
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  usedAt: integer('used_at', { mode: 'timestamp' }), // when the code was used
+}, (table) => {
+  return {
+    codeIndex: uniqueIndex('referral_code_idx').on(table.code),
+    dinerIndex: uniqueIndex('referral_diner_idx').on(table.dinerId),
+  };
 });

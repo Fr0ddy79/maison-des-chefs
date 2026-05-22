@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { services, users, chefProfiles, bookings } from '../db/schema.js';
 import { eq, gte, lte, sql, and } from 'drizzle-orm';
 
-export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number): Promise<string> {
+export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number, referralCodeFromUrl?: string, ctaFromUrl?: string): Promise<string> {
   // Simple query without complex joins to avoid drizzle issues
   const serviceBase = db.select({
     id: services.id,
@@ -53,6 +53,14 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
   const welcomeBackHtml = isReturningDiner && dinerName
     ? `<div class="welcome-back"><span class="welcome-icon">👋</span> Welcome back, <strong>${escapeHtml(dinerName)}</strong>! Your info has been pre-filled below.</div>`
     : '';
+
+  // MAI-1867: Map CTA variant to button text (extends service detail page A/B test to booking page)
+  // Variants: control, testA (Request Your Date), testB (Request Booking), testC (Check Availability)
+  const ctaVariant = ctaFromUrl && ['control', 'testA', 'testB', 'testC', 'testD'].includes(ctaFromUrl) ? ctaFromUrl : null;
+  const ctaButtonText = ctaVariant === 'testB' ? 'Request Booking'
+    : ctaVariant === 'testA' || ctaVariant === 'testD' ? 'Request Your Date'
+    : ctaVariant === 'testC' ? 'Check Availability'
+    : 'Get Your Quote'; // Default — backwards compatible
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -219,8 +227,9 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           : `<div class="price-callout">
               <div class="price-quote">Chef will provide a quote</div>
             </div>`}
-        <form id="inquiryForm">
+        <form id="inquiryForm" data-cta-text="${ctaButtonText}">
           <input type="hidden" name="serviceId" value="${service.id}">
+          <input type="hidden" id="referralCodeInput" name="referralCode" value="${escapeHtml(referralCodeFromUrl || '')}">
           <div class="form-row">
             <div class="form-group">
               <label for="clientName">Your Name <span class="required">*</span></label>
@@ -264,7 +273,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             <div class="trust-item"><span class="icon">✓</span><span>Free cancellation</span></div>
             <div class="trust-item"><span class="icon">⭐</span><span>Verified chefs</span></div>
           </div>
-          <button type="submit" class="submit-btn" id="submitBtn">Get Your Quote</button>
+          <button type="submit" class="submit-btn" id="submitBtn">${ctaButtonText}</button>
           <p class="privacy-note">Your information is only used to send your quote request to the chef.</p>
         </form>
       </div>
@@ -342,6 +351,23 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
     }
     if (guestCountInput) guestCountInput.addEventListener('change', updateEstimatedTotal);
+    // Guest session handling for returning guests (MAI-1744)
+    function getGuestSessionId() {
+      const match = document.cookie.match(/guest_session_id=([^;]+)/);
+      return match ? match[1] : null;
+    }
+    function setGuestSessionId(sessionId) {
+      document.cookie = "guest_session_id=" + sessionId + "; path=/; max-age=2592000; SameSite=Lax";
+    }
+    function generateGuestSessionId() {
+      return "g_" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    }
+    function ensureGuestSessionId() {
+      let id = getGuestSessionId();
+      if (!id) { id = generateGuestSessionId(); setGuestSessionId(id); }
+      return id;
+    }
+
 
     // MAI-834: Track analytics with auth_status dimension
     function trackAnalytics(event, data) {
@@ -363,6 +389,23 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
 
     // MAI-1010: Track booking form view on page load
     trackAnalytics('booking_form_view', { service_id: serviceId });
+    // Pre-fill for returning guests with cookie (MAI-1744)
+    (async function() {
+      var sid = getGuestSessionId();
+      if (sid && !${isReturningDiner ? 'true' : 'false'}) {
+        try {
+          var r = await fetch('/api/guest/prefill?session=' + encodeURIComponent(sid));
+          if (r.ok) {
+            var p = await r.json();
+            if (p.name && document.getElementById('clientName')) { document.getElementById('clientName').value = p.name; document.getElementById('clientName').classList.add('prefilled'); }
+            if (p.email && document.getElementById('email')) { document.getElementById('email').value = p.email; document.getElementById('email').classList.add('prefilled'); }
+            if (p.phone && document.getElementById('phone')) { document.getElementById('phone').value = p.phone; document.getElementById('phone').classList.add('prefilled'); }
+            if (p.guestCount && document.getElementById('guestCount')) document.getElementById('guestCount').value = p.guestCount;
+          }
+        } catch (_) {}
+      }
+    })();
+
 
     // MAI-1366: Inline Auth Panel
     const isAuthenticated = ${isReturningDiner ? 'true' : 'false'};
@@ -475,6 +518,17 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
     }
 
+    // MAI-823 / MAI-1836: Copy referral link to clipboard
+    function copyReferralLink(btn, code) {
+      const referralLink = window.location.origin + '/booking-status?ref=' + code;
+      navigator.clipboard.writeText(referralLink).then(function() {
+        btn.textContent = 'Copied!';
+        btn.style.background = '#ffe082';
+      }).catch(function() {
+        btn.textContent = 'Error';
+      });
+    }
+
     async function submitInquiryWithData(formData) {
       const submitBtn = document.getElementById('submitBtn');
       const successMessage = document.getElementById('successMessage');
@@ -482,6 +536,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       trackAnalytics('booking_form_submit', { service_id: formData.serviceId });
       submitBtn.disabled = true;
       submitBtn.textContent = 'Sending...';
+      // Assign guest session cookie for pre-fill tracking (MAI-1744)
+      formData.guestSessionId = ensureGuestSessionId();
       try {
         const response = await fetch('/api/inquiry', {
           method: 'POST',
@@ -492,7 +548,16 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           const result = await response.clone().json();
           trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
           document.getElementById('inquiryForm').style.display = 'none';
-          successMessage.innerHTML = '<strong>✓ Your quote request was sent!</strong><p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>' + (result.bookingStatusUrl ? '<div style="margin-top:1.25rem;padding:1.25rem;background:#f0f8e8;border:1px solid #a5d6a7;border-radius:10px;text-align:center;"><p style="margin-bottom:0.75rem;font-size:0.9rem;color:#555;">Check your email for updates.</p><p style="margin-bottom:1rem;font-size:1.1rem;font-weight:600;color:#2e7d32;">Track your booking status</p><div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;"><a href="' + result.bookingStatusUrl + '" style="min-width:180px;flex:1;max-width:280px;display:inline-block;background:#2e7d32;color:white;padding:0.85rem 1rem;border-radius:8px;text-decoration:none;font-weight:600;font-size:1rem;text-align:center;cursor:pointer;">Track your booking status →</a><button onclick="navigator.clipboard.writeText(\'' + result.bookingStatusUrl + '\');this.textContent=\'Copied!\';this.style.background=\'#c8e6c9\';" style="min-width:100px;padding:0.85rem 1rem;background:white;border:2px solid #a5d6a7;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;">📋 Copy</button></div></div>' : '');
+          let successHtml = '<strong>\xe2\x9c\x93 Your quote request was sent!</strong><p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>';
+          if (result.bookingStatusUrl) {
+            successHtml += '<div style="margin-top:1.25rem;padding:1.25rem;background:#f0f8e8;border:1px solid #a5d6a7;border-radius:10px;text-align:center;"><p style="margin-bottom:0.75rem;font-size:0.9rem;color:#555;">Check your email for updates.</p><p style="margin-bottom:1rem;font-size:1.1rem;font-weight:600;color:#2e7d32;">Track your booking status</p><div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;"><a href="' + result.bookingStatusUrl + '" style="min-width:180px;flex:1;max-width:280px;display:inline-block;background:#2e7d32;color:white;padding:0.85rem 1rem;border-radius:8px;text-decoration:none;font-weight:600;font-size:1rem;text-align:center;cursor:pointer;">Track your booking status \xe2\x9e\xa6</a><button onclick="navigator.clipboard.writeText(\' + result.bookingStatusUrl + \');this.textContent=\'Copied!\';this.style.background=\'#c8e6c9\'" style="min-width:100px;padding:0.85rem 1rem;background:white;border:2px solid #a5d6a7;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;">\xe2\x9b\x8b Copy</button></div></div>';
+          }
+          // MAI-1836: Referral share card for inquiry success
+          if (result.referralCode) {
+            const refCode = result.referralCode;
+            successHtml += '<div style="margin-top:1.25rem;padding:1.25rem;background:#fff8e1;border:1px solid #ffe082;border-radius:10px;text-align:center;"><h3 style="margin-bottom:0.5rem;font-size:1.1rem;color:#f57c00;">\xf0\x9f\x8d\xad Know someone who loves private dining?</h3><p style="margin-bottom:1rem;font-size:0.9rem;color:#555;">Share and you\'ll both get $25 credit when they book.</p><div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;"><button onclick="copyReferralLink(this, \'' + refCode + '\')" style="min-width:100px;padding:0.75rem 1rem;background:#fff;color:#f57c00;border:2px solid #ffe082;border-radius:8px;font-weight:600;font-size:0.9rem;cursor:pointer;">\xe2\x9b\x8b Copy Link</button><a href="/referral/track?code=' + refCode + '&source=email" style="min-width:100px;padding:0.75rem 1rem;background:#fff;color:#f57c00;border:2px solid #ffe082;border-radius:8px;font-weight:600;font-size:0.9rem;text-decoration:none;text-align:center;cursor:pointer;">\xe2\x9c\x89 Email</a><a href="/referral/track?code=' + refCode + '&source=whatsapp" target="_blank" style="min-width:100px;padding:0.75rem 1rem;background:#fff;color:#f57c00;border:2px solid #ffe082;border-radius:8px;font-weight:600;font-size:0.9rem;text-decoration:none;text-align:center;cursor:pointer;">\xf0\x9f\x92\xac WhatsApp</a></div></div>';
+          }
+          successMessage.innerHTML = successHtml;
           successMessage.classList.add('show');
           successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {
@@ -504,7 +569,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: 'network_error' });
         alert('Network error. Please try again.');
       }
-      finally { submitBtn.disabled = false; submitBtn.textContent = 'Get Your Quote'; }
+      finally { submitBtn.disabled = false; submitBtn.textContent = submitBtn.textContent || 'Get Your Quote'; }
     }
 
     document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
@@ -518,41 +583,11 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         eventDate: form.eventDate.value || undefined,
         guestCount: parseInt(form.guestCount.value) || 1,
         message: form.message.value || undefined,
+        referralCode: form.referralCode?.value || undefined,
       };
       if (!formData.email) { alert('Please enter your email address.'); return; }
-
-      if (!isAuthenticated) {
-        // Store form data and show auth panel
-        pendingFormData = formData;
-        showAuthPanel();
-        return;
-      }
+      // Auth is optional - submit immediately (MAI-1744)
       submitInquiryWithData(formData);
-    });
-          const result = await response.clone().json();
-          // MAI-834: Track successful inquiry analytics
-          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
-          form.style.display = 'none';
-          // Show booking status URL if available
-          const statusUrlSection = document.getElementById('bookingStatusUrlSection');
-          const statusUrlLink = document.getElementById('bookingStatusUrlLink');
-          if (statusUrlSection && statusUrlLink && result.bookingStatusUrl) {
-            statusUrlLink.href = result.bookingStatusUrl;
-            statusUrlLink.textContent = result.bookingStatusUrl;
-            statusUrlSection.style.display = 'block';
-          }
-          successMessage.classList.add('show');
-          successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-          const error = await response.json();
-          trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: error.error || 'unknown' });
-          alert('Error: ' + (error.error || 'Failed to submit inquiry'));
-        }
-      } catch (err) {
-        trackAnalytics('booking_inquiry_error', { service_id: formData.serviceId, error: 'network_error' });
-        alert('Network error. Please try again.');
-      }
-      finally { submitBtn.disabled = false; submitBtn.textContent = 'Get Your Quote'; }
     });
   </script>
 </body>

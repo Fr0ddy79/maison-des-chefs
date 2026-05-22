@@ -76,12 +76,17 @@ function calculate_response_time_tier(chefId: number): ResponseTimeTier {
   }
 }
 
-// Query param schema for preferences pre-fill
+// Query param schema for preferences pre-fill + MAI-1913 browse filters
 const searchQuerySchema = z.object({
   cuisines: z.string().optional(), // comma-separated cuisine tags
   dietary: z.string().optional(), // comma-separated dietary tags
   partySize: z.coerce.number().int().min(1).max(8).optional(),
   delivery: z.enum(['true', 'false']).optional(),
+  // MAI-1913: Chef browse filters
+  date: z.string().optional(), // YYYY-MM-DD - filter by chef's blocked dates on published services
+  occasion: z.string().optional(), // e.g. "Birthday", "Corporate", "Date Night", "Holiday" - filters by service category
+  minPrice: z.coerce.number().min(0).optional(), // minimum price per person
+  maxPrice: z.coerce.number().min(0).optional(), // maximum price per person
 });
 
 export default async function chefRoutes(server: FastifyInstance) {
@@ -134,6 +139,61 @@ export default async function chefRoutes(server: FastifyInstance) {
         if (hasMatchingService) filteredChefIds.add(chef.id);
       }
       chefs = chefs.filter(c => filteredChefIds.has(c.id));
+    }
+
+    // MAI-1913: Date filter - exclude chefs who have the requested date blocked on any published service
+    if (query.date) {
+      const requestedDate = query.date;
+      chefs = chefs.filter(chef => {
+        const chefServices = db.select({ blockedDates: services.blockedDates })
+          .from(services)
+          .where(and(eq(services.chefId, chef.id), eq(services.status, 'published')))
+          .all();
+        // Chef is available if NO published service has this date blocked
+        return !chefServices.some(svc => {
+          const blockedDates: string[] = JSON.parse(svc.blockedDates as string || '[]');
+          return blockedDates.includes(requestedDate);
+        });
+      });
+    }
+
+    // MAI-1913: Party size filter - include chefs with at least one published service
+    // where minGuests <= partySize <= maxGuests
+    if (query.partySize != null) {
+      const requestedPartySize = query.partySize;
+      chefs = chefs.filter(chef => {
+        const chefServices = db.select({ minGuests: services.minGuests, maxGuests: services.maxGuests })
+          .from(services)
+          .where(and(eq(services.chefId, chef.id), eq(services.status, 'published')))
+          .all();
+        return chefServices.some(svc =>
+          svc.minGuests <= requestedPartySize && requestedPartySize <= svc.maxGuests
+        );
+      });
+    }
+
+    // MAI-1913: Occasion filter - include chefs with at least one published service
+    // whose category matches the occasion (case-insensitive partial match)
+    if (query.occasion) {
+      const occasionLower = query.occasion.toLowerCase();
+      chefs = chefs.filter(chef => {
+        const chefServices = db.select({ category: services.category })
+          .from(services)
+          .where(and(eq(services.chefId, chef.id), eq(services.status, 'published')))
+          .all();
+        return chefServices.some(svc => {
+          const cat = (svc.category || '').toLowerCase();
+          return cat.includes(occasionLower) || occasionLower.includes(cat);
+        });
+      });
+    }
+
+    // MAI-1913: Price range filter - filter by chefProfiles.pricePerPerson
+    if (query.minPrice != null) {
+      chefs = chefs.filter(chef => (chef.pricePerPerson as number) >= query.minPrice!);
+    }
+    if (query.maxPrice != null) {
+      chefs = chefs.filter(chef => (chef.pricePerPerson as number) <= query.maxPrice!);
     }
 
     return chefs.map(c => ({

@@ -43,6 +43,13 @@
       "when": 1778760405566,
       "tag": "0005_add_stagnation_alert_field",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779300000000,
+      "tag": "0006_mai_1745_sla_tracking",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { reviews, services, bookings, users } from '../db/schema.js';
+import { reviews, services, bookings, users, leads } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 
 const createReviewSchema = z.object({
   bookingId: z.number().int().positive(),
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(1000).optional(),
+});
+
+const guestReviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
   comment: z.string().max(1000).optional(),
 });
@@ -55,6 +60,91 @@ export default async function reviewRoutes(server: FastifyInstance) {
     return reply.status(201).send({
       ...created,
       dinerName: diner?.name ?? 'Anonymous',
+    });
+  });
+
+  // Submit a review for guest checkout (MAI-1912)
+  // POST /api/reviews/lead/:leadId?token=XXX
+  // Allows guests to submit reviews without authentication
+  server.post('/reviews/lead/:leadId', async (request, reply) => {
+    const { leadId } = z.object({ leadId: z.string() }).parse(request.params);
+    const { token } = z.object({ token: z.string() }).parse(request.query);
+    const leadIdNum = parseInt(leadId);
+
+    // Validate the lead and token
+    const lead = db.select({
+      id: leads.id,
+      accessToken: leads.accessToken,
+      accessTokenExpiresAt: leads.accessTokenExpiresAt,
+      bookingId: leads.bookingId,
+      status: leads.status,
+    })
+      .from(leads)
+      .where(eq(leads.id, leadIdNum))
+      .get();
+
+    if (!lead) {
+      return reply.status(404).send({ error: 'Lead not found' });
+    }
+
+    // Verify token matches
+    if (!lead.accessToken || lead.accessToken !== token) {
+      return reply.status(403).send({ error: 'Invalid access token' });
+    }
+
+    // Check token hasn't expired
+    if (lead.accessTokenExpiresAt && new Date(lead.accessTokenExpiresAt) < new Date()) {
+      return reply.status(403).send({ error: 'Access token has expired' });
+    }
+
+    // Verify lead has a booking
+    if (!lead.bookingId) {
+      return reply.status(400).send({ error: 'No booking associated with this lead' });
+    }
+
+    // Verify booking status is confirmed
+    const booking = db.select().from(bookings).where(eq(bookings.id, lead.bookingId)).get();
+    if (!booking) {
+      return reply.status(404).send({ error: 'Booking not found' });
+    }
+    if (booking.status !== 'confirmed') {
+      return reply.status(403).send({ error: 'Only confirmed bookings can be reviewed' });
+    }
+
+    // MAI-1917: Email verification gate for guest checkout users
+    // Guest checkout = booking.dinerId IS NULL
+    // Authenticated users (dinerId not null) bypass this check always
+    if (booking.dinerId === null) {
+      if (!booking.emailVerified) {
+        return reply.status(403).send({
+          error: 'Please verify your email before submitting a review',
+        });
+      }
+    }
+
+    // Check if already reviewed
+    const existingReview = db.select().from(reviews).where(eq(reviews.bookingId, lead.bookingId)).get();
+    if (existingReview) {
+      return reply.status(409).send({ error: 'This booking has already been reviewed' });
+    }
+
+    // Parse and validate body
+    const body = guestReviewSchema.parse(request.body);
+
+    // Create the review (dinerId is NULL for guest reviews)
+    const created = db.insert(reviews).values({
+      chefId: booking.chefId,
+      serviceId: booking.serviceId,
+      dinerId: null, // NULL for guest checkout reviews
+      bookingId: lead.bookingId,
+      rating: body.rating,
+      comment: body.comment ?? null,
+    }).returning().all()[0];
+
+    return reply.status(201).send({
+      success: true,
+      message: 'Thanks for your review!',
+      reviewId: created.id,
     });
   });
 

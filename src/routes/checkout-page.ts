@@ -67,6 +67,7 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     const lead = db.select({
       id: leads.id,
       serviceId: leads.serviceId, // MAI-1075: Add for booking_created analytics
+      bookingId: leads.bookingId, // MAI-1880: Needed for review submission
       serviceName: services.name,
       serviceDescription: services.description,
       chefName: users.name,
@@ -289,6 +290,118 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     .share-btn.whatsapp-btn:hover { background: #16a34a; }
     .share-icon { font-size: 1.1rem; }
     
+    /* MAI-1880: Review prompt styles */
+    .review-prompt-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      text-align: left;
+    }
+    .review-prompt-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 0.5rem;
+    }
+    .review-prompt-subtitle {
+      color: #666;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .star-rating {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .star-rating .star {
+      font-size: 2rem;
+      cursor: pointer;
+      color: #d1d5db;
+      transition: color 0.2s;
+    }
+    .star-rating .star:hover,
+    .star-rating .star.active {
+      color: #f59e0b;
+    }
+    .star-rating .star.filled {
+      color: #f59e0b;
+    }
+    .review-comment-wrap {
+      margin-bottom: 1rem;
+    }
+    .review-comment-label {
+      display: block;
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 0.5rem;
+    }
+    .review-comment {
+      width: 100%;
+      min-height: 100px;
+      padding: 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .review-comment:focus {
+      outline: none;
+      border-color: #c9a227;
+    }
+    .char-count {
+      font-size: 0.8rem;
+      color: #888;
+      text-align: right;
+      margin-top: 0.25rem;
+    }
+    .char-count.warning {
+      color: #dc2626;
+    }
+    .review-submit-btn {
+      background: #c9a227;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .review-submit-btn:hover:not(:disabled) {
+      background: #b8922a;
+    }
+    .review-submit-btn:disabled {
+      background: #d1d5db;
+      cursor: not-allowed;
+    }
+    .review-success {
+      text-align: center;
+      padding: 2rem;
+    }
+    .review-success-icon {
+      font-size: 3rem;
+      margin-bottom: 0.75rem;
+    }
+    .review-success-text {
+      font-size: 1.1rem;
+      color: #15803d;
+      font-weight: 600;
+    }
+    .review-error {
+      background: #fee2e2;
+      border: 1px solid #ef4444;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      color: #dc2626;
+      font-size: 0.9rem;
+      margin-top: 0.75rem;
+    }
+    
     @media (max-width: 600px) {
       .detail-grid { grid-template-columns: 1fr; }
       .page-content { padding-top: 5rem; }
@@ -367,6 +480,38 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     
     ${referralCtaHtml}
     
+    ${isConverted && lead.bookingId ? `
+    <div class="review-prompt-card" id="review-prompt">
+      <h3 class="review-prompt-title">⭐ How was your experience?</h3>
+      <p class="review-prompt-subtitle">Share your feedback to help future diners discover great chefs.</p>
+      
+      <div id="review-form-container">
+        <div class="star-rating" id="star-rating">
+          <span class="star" data-value="1">★</span>
+          <span class="star" data-value="2">★</span>
+          <span class="star" data-value="3">★</span>
+          <span class="star" data-value="4">★</span>
+          <span class="star" data-value="5">★</span>
+        </div>
+        <input type="hidden" id="review-rating" name="rating" value="0">
+        
+        <div class="review-comment-wrap">
+          <label class="review-comment-label" for="review-comment">Comment (optional)</label>
+          <textarea id="review-comment" class="review-comment" maxlength="1000" placeholder="Tell us about your experience with Chef ${lead.chefName || 'your chef'}..."></textarea>
+          <div class="char-count" id="char-count">0 / 1000</div>
+        </div>
+        
+        <button type="button" class="review-submit-btn" id="review-submit" disabled>Submit Review</button>
+        <div id="review-error" class="review-error" style="display: none;"></div>
+      </div>
+      
+      <div id="review-success" class="review-success" style="display: none;">
+        <div class="review-success-icon">🎉</div>
+        <p class="review-success-text">Thanks for your review!</p>
+      </div>
+    </div>
+    ` : ''}
+    
     <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
       <a href="/diner/bookings" class="cta-button">View My Bookings</a>
       <a href="/services" class="cta-button secondary">Browse More Services</a>
@@ -408,6 +553,110 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
         navigator.sendBeacon('/api/analytics/event', JSON.stringify(analyticsData));
       }
     }
+
+    // MAI-1880: Review prompt interactivity
+    (function() {
+      var leadId = ${lead.id};
+      var bookingId = ${lead.bookingId || 'null'};
+      var accessToken = '${query.token}';
+      var stars = document.querySelectorAll('.star-rating .star');
+      var ratingInput = document.getElementById('review-rating');
+      var commentInput = document.getElementById('review-comment');
+      var charCount = document.getElementById('char-count');
+      var submitBtn = document.getElementById('review-submit');
+      var errorDiv = document.getElementById('review-error');
+      var formContainer = document.getElementById('review-form-container');
+      var successDiv = document.getElementById('review-success');
+      var rating = 0;
+
+      if (!stars.length || !submitBtn) return;
+
+      function updateStars(value) {
+        stars.forEach(function(star) {
+          star.classList.toggle('filled', parseInt(star.dataset.value) <= value);
+          star.classList.toggle('active', parseInt(star.dataset.value) === value);
+        });
+        rating = value;
+        ratingInput.value = value;
+        submitBtn.disabled = value === 0;
+      }
+
+      stars.forEach(function(star) {
+        star.addEventListener('click', function() {
+          updateStars(parseInt(star.dataset.value));
+        });
+        star.addEventListener('mouseover', function() {
+          var val = parseInt(star.dataset.value);
+          stars.forEach(function(s) {
+            s.classList.toggle('hovered', parseInt(s.dataset.value) <= val);
+          });
+        });
+        star.addEventListener('mouseout', function() {
+          stars.forEach(function(s) { s.classList.remove('hovered'); });
+        });
+      });
+
+      if (commentInput && charCount) {
+        commentInput.addEventListener('input', function() {
+          var len = commentInput.value.length;
+          charCount.textContent = len + ' / 1000';
+          charCount.classList.toggle('warning', len > 900);
+        });
+      }
+
+      if (submitBtn) {
+        submitBtn.addEventListener('click', function() {
+          if (rating === 0) return;
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Submitting...';
+          errorDiv.style.display = 'none';
+
+          var body = {
+            bookingId: bookingId,
+            rating: rating,
+            comment: commentInput && commentInput.value.trim() ? commentInput.value.trim() : undefined
+          };
+
+          fetch('/api/reviews/lead/' + leadId + '?token=' + accessToken, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          })
+          .then(function(resp) {
+            if (resp.status === 201) {
+              formContainer.style.display = 'none';
+              successDiv.style.display = 'block';
+            } else if (resp.status === 409) {
+              errorDiv.textContent = 'You have already submitted a review for this booking.';
+              errorDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Submit Review';
+            } else if (resp.status === 403) {
+              errorDiv.textContent = 'Invalid access. Please refresh the page and try again.';
+              errorDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Submit Review';
+            } else if (resp.status === 404) {
+              errorDiv.textContent = 'Booking not found.';
+              errorDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Submit Review';
+            } else {
+              errorDiv.textContent = 'Something went wrong. Please try again.';
+              errorDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Submit Review';
+            }
+          })
+          .catch(function() {
+            errorDiv.textContent = 'Network error. Please check your connection and try again.';
+            errorDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Review';
+          });
+        });
+      }
+    })();
   </script>
 </body>
 </html>`;

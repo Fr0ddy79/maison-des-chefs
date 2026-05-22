@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import Stripe from 'stripe';
 import { db } from '../db/index.js';
-import { leads, bookings, services } from '../db/schema.js';
+import { leads, bookings, services, referralCodes, dinerCredits, users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { sendBookingConfirmation } from '../services/chef-notification.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
   apiVersion: '2026-04-22.dahlia',
@@ -89,11 +90,12 @@ export default async function webhookRoutes(server: FastifyInstance) {
           referralCode = generateReferralCode();
         }
 
-        // Update lead status to converted
+        // Update lead status to converted and payment_status to paid
         db.update(leads)
           .set({
             status: 'converted',
             referralCode,
+            paymentStatus: 'paid',
           })
           .where(eq(leads.id, parsedLeadId))
           .run();
@@ -101,6 +103,7 @@ export default async function webhookRoutes(server: FastifyInstance) {
         // Create booking record so diner can see it in "My Bookings"
         const now = new Date();
         const totalPrice = lead.quoteAmount || 0;
+
 
         db.insert(bookings).values({
           serviceId: lead.serviceId,
@@ -114,6 +117,83 @@ export default async function webhookRoutes(server: FastifyInstance) {
           notes: `Converted from lead ${lead.id}`,
           createdAt: now,
         }).run();
+
+        // MAI-1822: Send booking confirmation to chef via email + WhatsApp
+        const newBooking = db.select({ id: bookings.id }).from(bookings).orderBy(bookings.id).get();
+        if (newBooking) {
+          sendBookingConfirmation(lead.chefId, {
+            bookingId: newBooking.id,
+            leadId: lead.id,
+            chefId: lead.chefId,
+            serviceId: lead.serviceId,
+            guestName: lead.clientName || 'Guest',
+            guestEmail: lead.email || '',
+            guestPhone: lead.phone,
+            eventDate: lead.eventDate || '',
+            guestCount: lead.guestCount || 0,
+            totalPrice,
+          }).catch(err => {
+            console.error(`[Webhook] Failed to send booking confirmation to chef ${lead.chefId}:`, err);
+          });
+        }
+
+        // MAI-1778: Credit trigger — when referee completes first booking,
+        // both referee and referrer get $25 credit
+        const REFERRAL_CREDIT_CENTS = 2500;
+        const REFERRAL_CREDIT_MONTHS = 12;
+
+        // Find who used this referral code (referee is the current lead's diner via email)
+        // Look up referrer by the referralCode
+        const referrerCode = db.select().from(referralCodes).where(eq(referralCodes.code, referralCode)).get();
+        if (referrerCode && referrerCode.dinerId) {
+          const expiresAt = new Date();
+          expiresAt.setMonth(expiresAt.getMonth() + REFERRAL_CREDIT_MONTHS);
+
+          // Credit the referrer ($25)
+          db.insert(dinerCredits).values({
+            dinerId: referrerCode.dinerId,
+            amount: REFERRAL_CREDIT_CENTS,
+            earnedFromReferralId: referrerCode.id,
+            used: false,
+            expiresAt,
+          }).run();
+
+          // Credit the referee — find referee by email in users table (lead email = diner email)
+          const refereeUser = db.select({ id: users.id }).from(users).where(eq(users.email, lead.email || '')).get();
+          if (refereeUser) {
+            db.insert(dinerCredits).values({
+              dinerId: refereeUser.id,
+              amount: REFERRAL_CREDIT_CENTS,
+              earnedFromReferralId: referrerCode.id,
+              used: false,
+              expiresAt,
+            }).run();
+          }
+
+          console.log(`[Referral] Credited $25 to referrer (diner ${referrerCode.dinerId}) and referee (${lead.email}) for lead ${leadId}`);
+        } else {
+          console.log(`[Referral] No referrer found for code ${referralCode} on lead ${leadId}`);
+        }
+
+        // MAI-1879: Mark credits as used after payment confirmation
+        const applyCreditSession = session.metadata?.applyCredit === 'true';
+        if (applyCreditSession) {
+          const creditIdsRaw = session.metadata?.creditIds;
+          if (creditIdsRaw) {
+            try {
+              const creditIds = JSON.parse(creditIdsRaw) as number[];
+              for (const creditId of creditIds) {
+                db.update(dinerCredits)
+                  .set({ used: true })
+                  .where(eq(dinerCredits.id, creditId))
+                  .run();
+              }
+              console.log(`[Credit] Marked ${creditIds.length} credit(s) as used for lead ${leadId}`);
+            } catch (e) {
+              console.error('[Credit] Failed to parse creditIds:', creditIdsRaw, e);
+            }
+          }
+        }
 
         console.log(`Lead ${leadId} converted: status updated and booking created`);
         break;

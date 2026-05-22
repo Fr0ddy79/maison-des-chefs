@@ -1,8 +1,10 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { Resend } from 'resend';
 import { db, schema } from '../db/index.js';
-import { eq, and, inArray, lt, isNull, or } from 'drizzle-orm';
+import { eq, and, lt, isNull, or } from 'drizzle-orm';
 import { sendExpiredEmail } from './diner-confirmation-email.js';
+import { createNotification } from '../api/notifications.js';
+import { addOutreachTouch } from '../api/outreach.js';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
@@ -21,6 +23,7 @@ interface ExpiredLeadRow {
   guestCount: number | null;
   message: string | null;
   accessToken: string | null;
+  slaDeadlineAt: Date | null;
   createdAt: Date;
   inquiryConfirmSentAt: Date | null;
   leadExpiredSentAt: Date | null;
@@ -40,9 +43,9 @@ let registeredTask: ScheduledTask | null = null;
 
 /**
  * Start the lead expiration scheduler.
- * MAI-1396: Runs every 6 hours to find leads where:
+ * MAI-1756: Runs every 6 hours to find leads where:
  *   - status IN ('new', 'pending') — no chef response yet
- *   - createdAt < NOW() - 72 hours
+ *   - slaDeadlineAt < NOW() — SLA window has passed (MAI-1756: decouple from email)
  *   - leadExpiredSentAt IS NULL (not already sent)
  */
 export function startLeadExpirationScheduler(): void {
@@ -77,17 +80,18 @@ export function stopLeadExpirationScheduler(): void {
 }
 
 /**
- * Process leads that have expired (no chef response for 72+ hours).
- * Finds leads where:
+ * Process leads that have expired (SLA window passed with no chef response).
+ * MAI-1756: Finds leads where:
  *   - status IN ('new', 'pending') — no chef response yet
- *   - createdAt < NOW() - 72 hours (72h = 72 * 60 * 60 * 1000 ms)
+ *   - slaDeadlineAt < NOW() — SLA window has passed (decoupled from email)
  *   - leadExpiredSentAt IS NULL (not already sent)
- * Then marks them as 'expired' and sends the diner an email.
+ * Then marks them as 'expired' and sends the diner a notification.
  */
 export async function processLeadExpiration(): Promise<void> {
-  const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+  const now = new Date();
 
-  // Find leads: no response, older than 72h, not already expired
+  // Find leads: no response, SLA deadline passed, not already expired
+  // MAI-1756: Use slaDeadlineAt instead of fixed 72h window
   const leadsToExpire = await db
     .select()
     .from(schema.leads)
@@ -98,9 +102,9 @@ export async function processLeadExpiration(): Promise<void> {
           eq(schema.leads.status, 'new'),
           eq(schema.leads.status, 'pending')
         ),
-        // Created more than 72 hours ago
-        lt(schema.leads.createdAt, seventyTwoHoursAgo),
-        // Not already sent expired email
+        // SLA deadline has passed (slaDeadlineAt = inquiryReceivedAt + 48h)
+        lt(schema.leads.slaDeadlineAt, now),
+        // Not already sent expired notification
         isNull(schema.leads.leadExpiredSentAt)
       )
     )
@@ -141,8 +145,20 @@ export async function processLeadExpiration(): Promise<void> {
     const bookingStatusUrl = getBookingStatusUrl(lead as ExpiredLeadRow);
     const browseUrl = SERVICES_URL;
 
-    // Send expired email
-    const success = await sendExpiredEmail({
+    // Mark lead as expired and record leadExpiredSentAt (idempotency) — regardless of email success
+    // This fixes the bug where leads never expired when email failed but RESEND_API_KEY was configured
+    await db
+      .update(schema.leads)
+      .set({
+        status: 'expired',
+        leadExpiredSentAt: new Date(),
+      } as Record<string, unknown>)
+      .where(eq(schema.leads.id, lead.id));
+
+    console.log(`[LeadExpiration] Lead ${lead.id} marked as expired.`);
+
+    // Try to send email (best effort — does not block expiration)
+    const emailSuccess = await sendExpiredEmail({
       leadId: lead.id,
       dinerName: lead.clientName || 'there',
       dinerEmail: lead.email,
@@ -154,19 +170,44 @@ export async function processLeadExpiration(): Promise<void> {
       browseUrl,
     });
 
-    if (success) {
-      // Mark lead status as 'expired' and record email sent time (idempotency)
-      await db
-        .update(schema.leads)
-        .set({
-          status: 'expired',
-          leadExpiredSentAt: new Date(),
-        } as Record<string, unknown>)
-        .where(eq(schema.leads.id, lead.id));
+    if (!emailSuccess) {
+      console.error(`[LeadExpiration] Failed to send expired email for lead ${lead.id} (lead still marked expired)`);
+    }
 
-      console.log(`[LeadExpiration] Lead ${lead.id} marked as expired and email sent.`);
+    // Send in-app notification to diner if they have an account (userId lookup by email)
+    const [dinerUser] = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.email, lead.email))
+      .limit(1);
+
+    if (dinerUser) {
+      createNotification({
+        userId: dinerUser.id,
+        type: 'lead_expired',
+        title: 'Your inquiry has expired',
+        body: `No chef responded to your ${serviceName} inquiry. Browse other chefs to find your perfect match.`,
+      });
+      console.log(`[LeadExpiration] In-app notification sent to diner user ${dinerUser.id} for lead ${lead.id}`);
     } else {
-      console.error(`[LeadExpiration] Failed to send expired email for lead ${lead.id}`);
+      console.log(`[LeadExpiration] Diner has no account (guest), skipping in-app notification for lead ${lead.id}`);
+    }
+
+    // MAI-1756: Add outreach tracker entry for lead expiration event
+    // Stub: log for now; full outreach tracking would require campaign_id setup
+    try {
+      await addOutreachTouch({
+        chefId: lead.chefId,
+        campaignId: 0, // System event — no campaign
+        channel: 'email',
+        touchNumber: 0, // System event
+        sentAt: new Date(),
+        status: 'sent',
+        notes: `Lead ${lead.id} expired — SLA deadline passed (${lead.slaDeadlineAt}). Notification sent to diner ${lead.email}.`,
+      });
+    } catch (outreachErr) {
+      // Non-fatal: outreach tracking failure should not block expiration
+      console.warn(`[LeadExpiration] Failed to add outreach touch for lead ${lead.id}:`, outreachErr);
     }
   }
 }

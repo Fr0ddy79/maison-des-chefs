@@ -12,6 +12,7 @@ import { startQuoteReminderScheduler } from './services/quote-reminder.js';
 import { startStaleLeadReEngagementScheduler } from './services/diner-stale-lead-email.js';
 import { startLeadExpirationScheduler } from './services/lead-expiration.js';
 import { startDinerStagnationAlertScheduler } from './services/diner-stagnation-alert.js';
+import { startSlaCheckInScheduler } from './services/sla-check-in.js';
 import { db } from './db/index.js';
 import { users, chefProfiles, services, bookings, leads, dinerPreferences, reviews } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
@@ -23,6 +24,7 @@ import bookingRoutes from './api/bookings.js';
 import bookingStatusRoutes from './api/booking-status.js';
 import onboardingWizardRoutes from './api/onboarding-wizard.js';
 import dinerPreferencesRoutes from './api/diner-preferences.js';
+import dinerReferralRoutes from './api/diner-referral.js';
 import searchRoutes from './api/search.js';
 import inquiryRoutes from './api/inquiry.js';
 import multiInquiryRoutes from './api/multi-inquiry.js';
@@ -47,6 +49,7 @@ import bookingAddonRoutes from './api/booking-addons.js';
 import reviewRoutes from './api/reviews.js';
 import notificationRoutes from './api/notifications.js';
 import outreachRoutes from './api/outreach.js';
+import leadsRoutes from './api/leads.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
@@ -102,6 +105,7 @@ server.register(bookingRoutes, { prefix: '/bookings' });
 server.register(bookingStatusRoutes, { prefix: '/api/booking-status' }); // Public - no auth required
 server.register(onboardingWizardRoutes, { prefix: '/api/onboarding' });
 server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
+server.register(dinerReferralRoutes, { prefix: '/api/v1/diner' });
 server.register(searchRoutes, { prefix: '/api/v1/search' });
 server.register(inquiryRoutes, { prefix: '/api/inquiry' });
 server.register(multiInquiryRoutes, { prefix: '/api/multi-inquiry' });
@@ -118,6 +122,7 @@ server.register(bookingAddonRoutes, { prefix: '/api/booking' }); // MAI-875: Boo
 server.register(reviewRoutes, { prefix: '/api' });
 server.register(notificationRoutes, { prefix: '/api/notifications' });
 server.register(outreachRoutes, { prefix: '/api/admin/outreach' });
+server.register(leadsRoutes, { prefix: '/api/leads' });
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {
@@ -188,8 +193,12 @@ server.get('/book/:serviceId', async (request, reply) => {
   const url = new URL(request.url, config.app.url);
   const prefillGuestsParam = url.searchParams.get('guests');
   const guestCount = prefillGuestsParam ? parseInt(prefillGuestsParam, 10) : undefined;
+  // MAI-1778: Read referral code from URL (passed via /?ref=CODE from referral links)
+  const referralCodeFromUrl = url.searchParams.get('ref') || undefined;
+  // MAI-1867: Read CTA variant from URL (set by service detail page A/B test)
+  const ctaFromUrl = url.searchParams.get('cta') || undefined;
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount);
+  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount, referralCodeFromUrl, ctaFromUrl);
 });
 
 // Review submission page (MAI-1214)
@@ -314,6 +323,7 @@ const start = async () => {
   startStaleLeadReEngagementScheduler();
   startLeadExpirationScheduler();
   startDinerStagnationAlertScheduler();
+  startSlaCheckInScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });
 };
 

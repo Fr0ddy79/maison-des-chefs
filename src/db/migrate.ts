@@ -405,6 +405,14 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-1822: Add payment_status column for Stripe payment tracking
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'`);
+    console.log('Migration: Added payment_status column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

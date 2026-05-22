@@ -68,7 +68,8 @@ function getNextSteps(status: string, checkoutUrl: string | null): string[] {
         'Chef has sent you a quote!',
         'Review the quote details below',
         'Complete payment to confirm your booking',
-        checkoutUrl ? `<a href="${checkoutUrl}" class="cta-button">View Quote & Pay →</a>` : 'Payment link not available',
+        checkoutUrl ? `<a href="${checkoutUrl}" class="cta-button">Accept & Pay →</a>` : 'Payment link not available',
+        '<a href="/services" class="secondary-link">Decline - Browse other chefs</a>',
       ];
     case 'accepted':
       return [
@@ -186,6 +187,7 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
       referralCode: leads.referralCode, // MAI-823: Referral tracking
       referralSource: leads.referralSource, // MAI-823: Referral tracking
       selectedAddons: leads.selectedAddons, // MAI-1147: Upsell tracking
+      slaDeadlineAt: leads.slaDeadlineAt, // MAI-1745: SLA deadline for timer
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -209,6 +211,68 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
     }
 
     // Build the booking status page
+    return buildBookingStatusPage(lead, token);
+  });
+
+  // MAI-1790: GET /lead-status?token=XXX - Public lead status page (alternative URL)
+  // Provides a simpler, more focused lead tracking experience
+  server.get('/lead-status', async (request, reply) => {
+    const query = request.query as Record<string, string>;
+    const token = query.token;
+
+    if (!token) {
+      return buildErrorPage('No token provided', 'Please use the link from your confirmation email to access your lead status.');
+    }
+
+    if (token.length !== 64) {
+      return buildErrorPage('Invalid token', 'The access token appears to be invalid. Please use the link from your confirmation email.');
+    }
+
+    // Find lead by access token
+    const lead = db.select({
+      id: leads.id,
+      serviceId: leads.serviceId,
+      eventDate: leads.eventDate,
+      guestCount: leads.guestCount,
+      status: leads.status,
+      message: leads.message,
+      createdAt: leads.createdAt,
+      accessToken: leads.accessToken,
+      accessTokenExpiresAt: leads.accessTokenExpiresAt,
+      email: leads.email,
+      clientName: leads.clientName,
+      quoteAmount: leads.quoteAmount,
+      quoteMessage: leads.quoteMessage,
+      quoteSentAt: leads.quoteSentAt,
+      referralCode: leads.referralCode,
+      referralSource: leads.referralSource,
+      selectedAddons: leads.selectedAddons,
+      slaDeadlineAt: leads.slaDeadlineAt,
+      inquiryReceivedAt: leads.inquiryReceivedAt,
+      firstResponseAt: leads.firstResponseAt,
+      serviceName: services.name,
+      serviceDescription: services.description,
+      chefId: leads.chefId,
+      chefName: users.name,
+      chefLocation: chefProfiles.location,
+    })
+      .from(leads)
+      .innerJoin(services, eq(leads.serviceId, services.id))
+      .innerJoin(users, eq(leads.chefId, users.id))
+      .leftJoin(chefProfiles, eq(leads.chefId, chefProfiles.userId))
+      .where(eq(leads.accessToken, token))
+      .get();
+
+    if (!lead) {
+      return buildErrorPage('Lead not found', 'No lead was found with this access token. Please check your email link or contact support.');
+    }
+
+    // Check if token has expired
+    if (lead.accessTokenExpiresAt && new Date(lead.accessTokenExpiresAt) < new Date()) {
+      return buildExpiredPage(lead);
+    }
+
+    // Build the lead status page (reuses the existing booking status page builder)
     return buildBookingStatusPage(lead, token);
   });
 
@@ -239,6 +303,7 @@ export default async function bookingStatusPageRoutes(server: FastifyInstance) {
       referralCode: leads.referralCode,
       referralSource: leads.referralSource,
       selectedAddons: leads.selectedAddons,
+      slaDeadlineAt: leads.slaDeadlineAt, // MAI-1745: SLA deadline for timer
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -423,6 +488,31 @@ function buildBookingStatusPage(lead: any, token: string): string {
   const currentStage = getCurrentStage(lead.status);
   const isStale = (lead.status === 'new' || lead.status === 'pending') && (Date.now() - new Date(lead.createdAt).getTime()) > 12 * 60 * 60 * 1000;
 
+  // MAI-1790: Calculate elapsed time since inquiry was received
+  const elapsedMs = Date.now() - new Date(lead.createdAt).getTime();
+  const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60));
+  const elapsedMinutes = Math.floor((elapsedMs % (1000 * 60 * 60)) / (1000 * 60));
+  const elapsedTime = elapsedHours > 0
+    ? `${elapsedHours}h ${elapsedMinutes}m ago`
+    : `${elapsedMinutes}m ago`;
+
+  // MAI-1745: SLA timer — show for new/pending leads with a deadline
+  const slaTimer = (lead.status === 'new' || lead.status === 'pending')
+    ? (() => {
+        const deadline = lead.slaDeadlineAt ? new Date(lead.slaDeadlineAt) : null;
+        if (!deadline) return null;
+        const remaining = deadline.getTime() - Date.now();
+        if (remaining <= 0) {
+          return { expired: true, label: 'SLA window has passed' };
+        }
+        const totalMinutes = Math.floor(remaining / 60000);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const label = hours > 0 ? `${hours}h ${minutes}m remaining` : `${minutes}m remaining`;
+        return { expired: false, hours, minutes, totalMinutes, label };
+      })()
+    : null;
+
   const nextStepsHtml = nextSteps.map(step => {
     if (step.includes('<a href=')) {
       return `<li>${step}</li>`;
@@ -509,7 +599,10 @@ function buildBookingStatusPage(lead: any, token: string): string {
   ` : '';
 
   // MAI-823: Referral CTA for converted bookings
-  const referralCtaHtml = isConverted ? `
+  // MAI-1799: Extended to show for all non-terminal lead statuses (new, pending, quoted, accepted)
+  const nonTerminalStatuses = ['new', 'pending', 'quoted', 'accepted'];
+  const showReferralCta = isConverted || nonTerminalStatuses.includes(lead.status);
+  const referralCtaHtml = showReferralCta ? `
     <div class="referral-card">
       <h3 class="referral-title">🍽️ Share the experience & earn $25 toward your next booking</h3>
       <p class="referral-description">Know someone who'd love this experience? Share your unique referral link and earn $25 credits each time someone books using it!</p>
@@ -1014,10 +1107,17 @@ function buildBookingStatusPage(lead: any, token: string): string {
     <div class="booking-card">
       <div class="status-banner" style="background: ${statusDisplay.bgColor};">
         <div class="status-icon">${statusDisplay.icon}</div>
-        <div class="status-label">${statusDisplay.label}</div>
+        <div id="currentStatusLabel" class="status-label">${statusDisplay.label}</div>
         <div class="status-description">${statusDisplay.description}</div>
       </div>
-      
+      ${slaTimer ? `
+      ${slaTimer.expired
+        ? `<div class="sla-timer sla-expired" style="background:#fef3c7;border:2px solid #f59e0b;border-radius:8px;padding:12px 16px;margin:12px 0;text-align:center;font-size:14px;color:#92400e;">⏰ ${slaTimer.label}</div>`
+        : `<div class="sla-timer" style="background:#e8f5e9;border:2px solid #22c55e;border-radius:8px;padding:12px 16px;margin:12px 0;text-align:center;font-size:14px;color:#166534;">⏱️ Chef typically responds within 24–48h &nbsp;•&nbsp; <strong>${slaTimer.label}</strong></div>`
+      }` : ''}
+      ${(lead.status === 'new' || lead.status === 'pending') && !slaTimer ? `
+      <div style="text-align:center;font-size:13px;color:#6b7280;margin:8px 0;">Submitted ${elapsedTime}</div>
+      ` : ''}
       ${timelineHtml}
       
       <div class="event-info">
@@ -1303,6 +1403,27 @@ function buildBookingStatusPage(lead: any, token: string): string {
           timestamp: new Date().toISOString()
         }));
       }
+      
+      // MAI-1737: Poll for status updates every 60 seconds
+      setInterval(async function() {
+        try {
+          var response = await fetch('/api/booking-status/' + token, {
+            headers: { 'Accept': 'application/json' }
+          });
+          if (!response.ok) return;
+          var data = await response.json();
+          var newStatus = data.booking?.status;
+          var currentStatusEl = document.getElementById('currentStatusLabel');
+          var currentStatus = currentStatusEl ? currentStatusEl.textContent : null;
+          var newStatusLabel = data.booking?.statusLabel;
+          // Reload page if status changed or if we're still in a non-terminal state
+          if (newStatus && newStatusLabel && newStatusLabel !== currentStatus) {
+            window.location.reload();
+          }
+        } catch (e) {
+          // Silently fail polling — don't disrupt UX
+        }
+      }, 60000);
     });
   </script>
 </body>
