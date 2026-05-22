@@ -1087,14 +1087,19 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       };
       
       try {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function() { controller.abort(); }, 10000);
+
         var response = await fetch('/api/multi-inquiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData),
+          signal: controller.signal,
         });
-        
+        clearTimeout(timeoutId);
+
         var result = await response.json();
-        
+
         if (!response.ok) {
           alert('Error: ' + (result.error || 'Failed to submit inquiry'));
           submitBtn.disabled = false;
@@ -1126,7 +1131,8 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
           '<button class="modal-submit-btn" onclick="closeCompareModal(); location.reload();" style="margin-top:1rem;">Back to Services</button>' +
         '</div>';
       } catch (err) {
-        alert('Network error. Please try again.');
+        var isTimeout = err.name === 'AbortError';
+        alert(isTimeout ? 'Request timed out. Please check your connection and try again.' : 'Network error. Please try again.');
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Inquiry to ' + selectedChefs.length + ' Chef' + (selectedChefs.length > 1 ? 's' : '');
       }

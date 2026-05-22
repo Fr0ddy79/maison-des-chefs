@@ -956,11 +956,16 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
   };
 
   try {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 10000);
+
     var response = await fetch('/api/multi-inquiry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     var result = await response.json();
 
@@ -1003,9 +1008,10 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
       '<button class="modal-submit-btn" onclick="closeInquiryModal(); location.reload();" style="margin-top:1rem;">Back to Chefs<\/button>' +
     '<\/div>';
   } catch (err) {
+    var isTimeout = err.name === 'AbortError';
     var errorEl = document.getElementById('modalEmailError');
     if (errorEl) {
-      errorEl.textContent = 'Network error. Please check your connection and try again.';
+      errorEl.textContent = isTimeout ? 'Request timed out. Please check your connection and try again.' : 'Network error. Please check your connection and try again.';
       errorEl.style.display = 'block';
     }
     submitBtn.disabled = false;
