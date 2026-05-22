@@ -222,6 +222,17 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     .info-box { background: #e8f4f8; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
     .info-box p { color: #0c5460; font-size: 0.9rem; margin: 0; }
     
+    /* Checkout step indicator */
+    .checkout-steps { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 2rem; }
+    .checkout-step { display: flex; align-items: center; gap: 0.5rem; color: #9ca3af; font-size: 0.9rem; font-weight: 500; }
+    .checkout-step.active { color: #c9a227; }
+    .checkout-step.completed { color: #22c55e; }
+    .step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 600; background: #e5e7eb; color: #9ca3af; }
+    .checkout-step.active .step-num { background: #c9a227; color: white; }
+    .checkout-step.completed .step-num { background: #22c55e; color: white; }
+    .step-connector { width: 60px; height: 2px; background: #e5e7eb; margin: 0 0.5rem; }
+    .checkout-step.completed + .step-connector { background: #22c55e; }
+    
     footer { background: #1a1a1a; color: white; padding: 2rem; text-align: center; margin-top: 2rem; }
     footer .logo { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem; }
     footer p { color: rgba(255,255,255,0.6); font-size: 0.85rem; }
@@ -250,6 +261,24 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     <div class="page-header">
       <h1>Complete Your Payment</h1>
       <p>Hi ${dinerName}, review your booking and complete payment to confirm your experience.</p>
+    </div>
+    
+    <!-- Checkout progress indicator -->
+    <div class="checkout-steps">
+      <div class="checkout-step completed">
+        <span class="step-num">1</span>
+        <span>Review</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="checkout-step active">
+        <span class="step-num">2</span>
+        <span>Payment</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="checkout-step">
+        <span class="step-num">3</span>
+        <span>Confirmed</span>
+      </div>
     </div>
     
     <div class="checkout-grid">

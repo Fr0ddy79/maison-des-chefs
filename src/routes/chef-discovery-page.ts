@@ -414,7 +414,7 @@ export default function buildChefDiscoveryPage(): string {
         </span>
         <span class="field-error" id="modalMessageError" style="color:#e53935;font-size:0.8rem;display:none;"></span>
       </div>
-        <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Send Inquiry to <span id="modalChefCount">0</span> Chef<span id="modalPluralS">s</span></button>
+        <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Request Free Quotes</button>
       </form>
     </div>
   </div>
@@ -976,7 +976,7 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
         errorEl.style.display = 'block';
       }
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
+      submitBtn.textContent = 'Request Free Quotes';
       return;
     }
 
@@ -1015,7 +1015,7 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
       errorEl.style.display = 'block';
     }
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Send Inquiry to ' + selectedChefIds.size + ' Chef' + (selectedChefIds.size > 1 ? 's' : '');
+    submitBtn.textContent = 'Request Free Quotes';
   }
 });
 <\/script>
