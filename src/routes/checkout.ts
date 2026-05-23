@@ -219,6 +219,24 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     .help-text a { color: #c9a227; text-decoration: none; }
     .help-text a:hover { text-decoration: underline; }
     
+    /* Social Proof Card - MAI-1967 */
+    .social-proof-card { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; }
+    .social-proof-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .chef-avatar-section { display: flex; align-items: center; gap: 0.75rem; }
+    .chef-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #c9a227 0%, #b8922a 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 1.1rem; }
+    .chef-info { }
+    .chef-name { font-weight: 600; color: #2c3e50; font-size: 1rem; }
+    .chef-badge { display: inline-flex; align-items: center; gap: 0.25rem; background: #dcfce7; color: #16a34a; font-size: 0.75rem; font-weight: 500; padding: 0.2rem 0.5rem; border-radius: 4px; margin-top: 0.25rem; }
+    .rating-section { text-align: right; }
+    .rating-stars { color: #f59e0b; font-size: 1.1rem; letter-spacing: 2px; }
+    .rating-value { font-weight: 700; color: #2c3e50; font-size: 1.1rem; }
+    .rating-count { color: #666; font-size: 0.8rem; }
+    .social-proof-stats { display: flex; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+    .stat-item { flex: 1; text-align: center; }
+    .stat-number { font-weight: 700; color: #2c3e50; font-size: 1.1rem; }
+    .stat-label { color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .verified-badge { display: inline-flex; align-items: center; }
+    
     .info-box { background: #e8f4f8; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
     .info-box p { color: #0c5460; font-size: 0.9rem; margin: 0; }
     
@@ -344,6 +362,40 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       </div>
       
       <div class="payment-card">
+        <!-- Social Proof - MAI-1967 -->
+        <div class="social-proof-card">
+          <div class="social-proof-header">
+            <div class="chef-avatar-section">
+              <div class="chef-avatar">CM</div>
+              <div class="chef-info">
+                <div class="chef-name">Chef ${lead.chefName || 'Marcel'}</div>
+                <div class="chef-badge">
+                  <span class="verified-badge">✓</span> Verified Chef
+                </div>
+              </div>
+            </div>
+            <div class="rating-section">
+              <div class="rating-stars">★★★★★</div>
+              <div class="rating-value">5.0</div>
+              <div class="rating-count">12 reviews</div>
+            </div>
+          </div>
+          <div class="social-proof-stats">
+            <div class="stat-item">
+              <div class="stat-number">8</div>
+              <div class="stat-label">People booked</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-number">30+</div>
+              <div class="stat-label">Events completed</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-number">100%</div>
+              <div class="stat-label">Satisfaction</div>
+            </div>
+          </div>
+        </div>
+        
         <h3 class="payment-title">Payment Summary</h3>
         
         <div id="error-message"></div>
