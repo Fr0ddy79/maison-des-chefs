@@ -1,7 +1,7 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { Resend } from 'resend';
 import { db, schema } from '../db/index.js';
-import { eq, and, lt, isNull, or } from 'drizzle-orm';
+import { eq, and, lt, isNull, isNotNull, or } from 'drizzle-orm';
 import { sendExpiredEmail } from './diner-confirmation-email.js';
 import { createNotification } from '../api/notifications.js';
 import { addOutreachTouch } from '../api/outreach.js';
@@ -104,6 +104,9 @@ export async function processLeadExpiration(): Promise<void> {
         ),
         // SLA deadline has passed (slaDeadlineAt = inquiryReceivedAt + 48h)
         lt(schema.leads.slaDeadlineAt, now),
+        // MAI-1951: Only expire leads that have received the SLA check-in nudge first
+        // This sequences the flow: chef gets "please respond" email → then diner gets expiration
+        isNotNull(schema.leads.slaCheckInSentAt),
         // Not already sent expired notification
         isNull(schema.leads.leadExpiredSentAt)
       )

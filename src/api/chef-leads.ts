@@ -415,7 +415,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
     }
 
     const { leadId } = z.object({ leadId: z.string() }).parse(request.params);
-    const body = z.object({ status: z.enum(["new", "responded", "converted", "lost"]) }).parse(request.body);
+    const body = z.object({ status: z.enum(["new", "responded", "quoted", "converted", "lost"]) }).parse(request.body);
 
     const lead = db.select().from(leads).where(eq(leads.id, parseInt(leadId))).get();
     if (!lead) {
@@ -461,19 +461,40 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
 
 
     const now = new Date();
-    // Pre-composed accept message
-    const preComposedMessage = `Hi ${lead.clientName || 'there'}, I'd love to cook for you! I'll send a quote within 24 hours.`;
 
-    // MAI-823: Generate referral code on first conversion
-    const referralCode = generateReferralCode();
+    // Fetch service to get pricePerPerson (MAI-1932)
+    const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
+    const chef = db.select().from(users).where(eq(users.id, userId)).get();
+
+    if (!service || !chef) {
+      return reply.status(500).send({ error: "Service or chef not found" });
+    }
+
+    // Calculate quote amount: pricePerPerson × guestCount (MAI-1932)
+    const quoteAmount = service.pricePerPerson * (lead.guestCount || 0);
+
+    // MAI-1932: Auto-generate quote message with chef name, service, date, guests, amount, CTA
+    const quoteMessage = `Hi ${lead.clientName || 'there'},
+
+Chef ${chef.name} is excited to host your ${service.name}! 🎉
+
+📅 Event: ${lead.eventDate || 'TBD'}
+👥 Guests: ${lead.guestCount || 0}
+💰 Quote: $${quoteAmount.toFixed(2)}
+
+Click below to accept and book your experience.
+
+To proceed, reply to this message or book directly through our platform. We're here to help with any questions!
+
+— Chef ${chef.name}`;
 
     const updatedLead = db
       .update(leads)
       .set({
-        status: "converted",
-        quoteMessage: preComposedMessage,
+        status: "quoted",
+        quoteAmount,
+        quoteMessage,
         quoteSentAt: now,
-        referralCode,
         firstChefActionAt: lead.firstChefActionAt ?? now,
         firstResponseAt: lead.firstResponseAt ?? now,
       } as Record<string, unknown>)
@@ -482,7 +503,6 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       .all()[0];
 
     // Create booking record so diner can see it in "My Bookings"
-    const totalPrice = lead.quoteAmount || 0;
     db.insert(bookings).values({
       serviceId: lead.serviceId,
       chefId: lead.chefId,
@@ -490,33 +510,28 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
       guestEmail: lead.email || null,
       eventDate: lead.eventDate || '',
       guestCount: lead.guestCount || 0,
-      totalPrice,
-      status: 'confirmed',
-      notes: `One-click accept from lead ${lead.id}`,
+      totalPrice: quoteAmount,
+      status: 'pending',
+      notes: `Auto-quote from one-click accept lead ${lead.id}`,
       createdAt: now,
     }).run();
 
-    // MAI-1396: Send accepted/confirmed email to diner
+    // MAI-1932: Send quote email to diner (not accepted email)
     if (lead.email) {
-      const service = db.select().from(services).where(eq(services.id, lead.serviceId)).get();
-      const chef = db.select().from(users).where(eq(users.id, userId)).get();
-      if (service && chef) {
-        const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
-        const DINER_BOOKINGS_URL = process.env.DINER_BOOKINGS_URL || 'https://maisondeschefs.com/diner/bookings';
-        const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
-        await sendAcceptedEmail({
-          leadId: lead.id,
-          dinerName: lead.clientName || "there",
-          dinerEmail: lead.email,
-          chefName: chef.name,
-          serviceName: service.name,
-          eventDate: lead.eventDate,
-          guestCount: lead.guestCount,
-          quoteAmount: lead.quoteAmount || undefined,
-          bookingStatusUrl: fullBookingStatusUrl,
-          dinerBookingsUrl: DINER_BOOKINGS_URL,
-        });
-      }
+      const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
+      const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
+      await sendQuoteEmail({
+        leadId: lead.id,
+        dinerName: lead.clientName || "there",
+        dinerEmail: lead.email,
+        chefName: chef.name,
+        serviceName: service.name,
+        eventDate: lead.eventDate,
+        guestCount: lead.guestCount || 0,
+        quoteAmount,
+        quoteMessage,
+        bookingStatusUrl: fullBookingStatusUrl,
+      });
     }
 
     return { success: true, lead: updatedLead };
