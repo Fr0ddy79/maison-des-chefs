@@ -665,8 +665,64 @@ function applyFilters() {
     });
   }
 
-  renderChefs();
+  // MAI-1960: When date, guests, or occasion filters are set, call the API
+  // instead of client-side filtering (those filters require server-side logic)
+  var hasApiFilters = currentFilters.date || currentFilters.guests || currentFilters.occasion;
+  if (hasApiFilters) {
+    fetchChefsFromApi();
+  } else {
+    renderChefs();
+  }
   updateUrlParams();
+}
+
+// MAI-1960: Fetch chefs from API when date/guests/occasion filters are active
+async function fetchChefsFromApi() {
+  var loadingEl = document.getElementById('loadingState');
+  var errorEl = document.getElementById('errorState');
+  var emptyEl = document.getElementById('emptyState');
+  var gridEl = document.getElementById('chefGrid');
+
+  loadingEl.style.display = 'block';
+  errorEl.style.display = 'none';
+  emptyEl.style.display = 'none';
+  gridEl.style.display = 'none';
+
+  try {
+    var params = new URLSearchParams();
+    if (currentFilters.date) params.set('date', currentFilters.date);
+    if (currentFilters.guests) params.set('partySize', currentFilters.guests);
+    if (currentFilters.occasion) params.set('occasion', currentFilters.occasion);
+    if (currentFilters.minPrice != null) params.set('minPrice', currentFilters.minPrice.toString());
+    if (currentFilters.maxPrice != null) params.set('maxPrice', currentFilters.maxPrice.toString());
+    if (currentFilters.cuisines.length > 0) params.set('cuisines', currentFilters.cuisines.join(','));
+    if (currentFilters.dietary.length > 0) params.set('dietary', currentFilters.dietary.join(','));
+
+    var url = API_BASE + '/api/chefs?' + params.toString();
+    var response = await fetch(url);
+    if (!response.ok) throw new Error('API error');
+    var chefs = await response.json();
+
+    // Enrich with services and stats from preloaded data for display
+    allChefs = chefs.map(function(chef: any) {
+      var preloaded = PRELOADED_CHEFS.find(function(p: any) { return p.id === chef.id; });
+      return Object.assign({}, preloaded || {}, chef, {
+        services: preloaded ? preloaded.services : [],
+        avgResponseMs: preloaded ? preloaded.avgResponseMs : null,
+        leadCount: preloaded ? preloaded.leadCount : 0,
+        avgRating: preloaded ? preloaded.avgRating : null,
+        reviewCount: preloaded ? preloaded.reviewCount : 0,
+      });
+    });
+
+    loadingEl.style.display = 'none';
+    renderChefs();
+    gridEl.style.display = 'grid';
+  } catch (err) {
+    console.error('Error fetching chefs from API:', err);
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'block';
+  }
 }
 
 function renderChefs() {
