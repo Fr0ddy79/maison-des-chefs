@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { bookings, services, users, leads } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, isNull } from 'drizzle-orm';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
 import { sendBookingAcceptedEmail } from '../services/diner-booking-accepted-email.js';
 import { sendBookingDeclinedEmail } from '../services/diner-booking-declined-email.js';
@@ -137,6 +137,9 @@ export default async function bookingRoutes(server: FastifyInstance) {
         .all();
     } else {
       // MAI-1519: Include updatedAt and chefNote (via lead) for diner booking cards
+      // MAI-1969: Also return guest bookings where guestEmail matches the diner's email
+      const diner = db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get();
+
       return db.select({
         id: bookings.id,
         serviceId: bookings.serviceId,
@@ -150,12 +153,21 @@ export default async function bookingRoutes(server: FastifyInstance) {
         serviceName: services.name,
         chefName: users.name,
         chefNote: leads.chefNote,
+        guestEmail: bookings.guestEmail,
       })
         .from(bookings)
         .innerJoin(services, eq(bookings.serviceId, services.id))
         .innerJoin(users, eq(bookings.chefId, users.id))
         .leftJoin(leads, eq(bookings.id, leads.bookingId))
-        .where(eq(bookings.dinerId, userId))
+        .where(
+          or(
+            eq(bookings.dinerId, userId),
+            and(
+              isNull(bookings.dinerId),
+              diner ? eq(bookings.guestEmail, diner.email) : undefined
+            )
+          )
+        )
         .all();
     }
   });

@@ -502,11 +502,20 @@ To proceed, reply to this message or book directly through our platform. We're h
       .returning()
       .all()[0];
 
+    // Look up diner by email to set dinerId on booking (MAI-1969)
+    let dinerId: number | null = null;
+    if (lead.email) {
+      const diner = db.select({ id: users.id }).from(users).where(eq(users.email, lead.email.toLowerCase())).get();
+      if (diner) {
+        dinerId = diner.id;
+      }
+    }
+
     // Create booking record so diner can see it in "My Bookings"
     db.insert(bookings).values({
       serviceId: lead.serviceId,
       chefId: lead.chefId,
-      dinerId: null,
+      dinerId,
       guestEmail: lead.email || null,
       eventDate: lead.eventDate || '',
       guestCount: lead.guestCount || 0,
