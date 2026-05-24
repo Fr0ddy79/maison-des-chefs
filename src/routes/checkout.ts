@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
-import { leads, services, users, chefProfiles } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { leads, services, users, chefProfiles, bookings, reviews } from '../db/schema.js';
+import { eq, and, sql, count } from 'drizzle-orm';
 import { HARDCODED_ADDONS, getAddonsByIds } from '../data/addons.js';
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
@@ -115,6 +115,28 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     const addonsTotalDisplay = `$${addonsTotal.toFixed(2)}`;
     const totalWithAddonsDisplay = `$${totalWithAddons.toFixed(2)}`;
     const dinerName = lead.clientName || 'there';
+
+    // Get real social proof stats for this chef - MAI-2007
+    const chefBookingStats = db.select({
+      totalBookings: count(bookings.id),
+      completedBookings: sql`SUM(CASE WHEN ${bookings.status} IN ('completed', 'confirmed') THEN 1 ELSE 0 END)`,
+    })
+      .from(bookings)
+      .where(eq(bookings.chefId, lead.chefId))
+      .get();
+
+    const chefReviewStats = db.select({
+      avgRating: sql`AVG(${reviews.rating})`,
+      reviewCount: count(reviews.id),
+    })
+      .from(reviews)
+      .where(eq(reviews.chefId, lead.chefId))
+      .get();
+
+    const realBookingsCount = (chefBookingStats?.totalBookings as number) || 0;
+    const realCompletedCount = parseInt(String(chefBookingStats?.completedBookings || '0'));
+    const avgRating = chefReviewStats?.avgRating ? parseFloat(String(chefReviewStats.avgRating)).toFixed(1) : null;
+    const reviewCount = (chefReviewStats?.reviewCount as number) || 0;
 
     // Serialize addons for JS
     const addonsJson = JSON.stringify(HARDCODED_ADDONS);
@@ -366,34 +388,49 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         <div class="social-proof-card">
           <div class="social-proof-header">
             <div class="chef-avatar-section">
-              <div class="chef-avatar">CM</div>
+              <div class="chef-avatar">${(lead.chefName || 'M').charAt(0).toUpperCase()}${lead.chefName ? lead.chefName.split(' ').pop()?.[0] || '' : ''}</div>
               <div class="chef-info">
-                <div class="chef-name">Chef ${lead.chefName || 'Marcel'}</div>
+                <div class="chef-name">Chef ${lead.chefName || 'Your Chef'}</div>
                 <div class="chef-badge">
                   <span class="verified-badge">✓</span> Verified Chef
                 </div>
               </div>
             </div>
             <div class="rating-section">
+              ${avgRating ? `
+              <div class="rating-stars">${'★'.repeat(Math.round(parseFloat(avgRating)))}</div>
+              <div class="rating-value">${avgRating}</div>
+              <div class="rating-count">${reviewCount} review${reviewCount !== 1 ? 's' : ''}</div>
+              ` : `
               <div class="rating-stars">★★★★★</div>
               <div class="rating-value">5.0</div>
-              <div class="rating-count">12 reviews</div>
+              <div class="rating-count">New chef</div>
+              `}
             </div>
           </div>
+          ${realBookingsCount > 0 ? `
           <div class="social-proof-stats">
             <div class="stat-item">
-              <div class="stat-number">8</div>
+              <div class="stat-number">${realBookingsCount}</div>
               <div class="stat-label">People booked</div>
             </div>
             <div class="stat-item">
-              <div class="stat-number">30+</div>
+              <div class="stat-number">${realCompletedCount}+</div>
               <div class="stat-label">Events completed</div>
             </div>
             <div class="stat-item">
-              <div class="stat-number">100%</div>
-              <div class="stat-label">Satisfaction</div>
+              <div class="stat-number">${avgRating ? '★' + avgRating : 'New'}</div>
+              <div class="stat-label">${avgRating ? 'Rating' : 'Just launched'}</div>
             </div>
           </div>
+          ` : `
+          <div class="social-proof-stats">
+            <div class="stat-item">
+              <div class="stat-number">Be first</div>
+              <div class="stat-label">to book this chef</div>
+            </div>
+          </div>
+          `}
         </div>
         
         <h3 class="payment-title">Payment Summary</h3>
