@@ -4,7 +4,7 @@ import { db } from "../db/index.js";
 import { leads, services, users, bookings, chefProfiles, notifications } from "../db/schema.js";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
 import { sendQuoteEmail, sendDeclinedEmail, sendAcceptedEmail } from "../services/diner-confirmation-email.js";
-import crypto from "crypto";
+import crypto, { createHash } from "crypto";
 
 /**
  * MAI-1670: Fire-and-forget analytics event tracker for server-side use.
@@ -205,6 +205,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
 
     const now = new Date();
     const quoteToken = generateQuoteToken();
+    const quoteTokenHash = createHash('sha256').update(quoteToken).digest('hex');
 
     const updatedLead = db
       .update(leads)
@@ -215,6 +216,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         chefNote: body.chefNote ?? '',
         quoteSentAt: now,
         quoteToken,
+        quoteTokenHash,
         firstChefActionAt: lead.firstChefActionAt ?? now,
         firstResponseAt: lead.firstResponseAt ?? now,
       } as Record<string, unknown>)
@@ -488,6 +490,9 @@ To proceed, reply to this message or book directly through our platform. We're h
 
 — Chef ${chef.name}`;
 
+    const quoteToken = generateQuoteToken();
+    const quoteTokenHash = createHash('sha256').update(quoteToken).digest('hex');
+
     const updatedLead = db
       .update(leads)
       .set({
@@ -495,6 +500,8 @@ To proceed, reply to this message or book directly through our platform. We're h
         quoteAmount,
         quoteMessage,
         quoteSentAt: now,
+        quoteToken,
+        quoteTokenHash,
         firstChefActionAt: lead.firstChefActionAt ?? now,
         firstResponseAt: lead.firstResponseAt ?? now,
       } as Record<string, unknown>)
