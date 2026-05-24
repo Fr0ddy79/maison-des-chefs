@@ -242,6 +242,7 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
 
     // Send quote email to diner
     if (service && chef) {
+      const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
       await sendQuoteEmail({
         leadId: lead.id,
         dinerName: lead.clientName || "there",
@@ -253,6 +254,8 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         quoteAmount: body.amount,
         quoteMessage: body.message,
         chefNote: body.chefNote,
+        // MAI-2037: Use quoteToken + /book/{leadId} format for booking URL
+        bookingUrl: `${DASHBOARD_URL}/book/${lead.id}?token=${quoteToken}`,
       });
     }
 
@@ -535,7 +538,8 @@ To proceed, reply to this message or book directly through our platform. We're h
     // MAI-1932: Send quote email to diner (not accepted email)
     if (lead.email) {
       const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
-      const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
+      // MAI-2037: Use quoteToken + /book/{leadId} format for booking URL
+      const bookingUrl = `${DASHBOARD_URL}/book/${lead.id}?token=${quoteToken}`;
       await sendQuoteEmail({
         leadId: lead.id,
         dinerName: lead.clientName || "there",
@@ -546,7 +550,7 @@ To proceed, reply to this message or book directly through our platform. We're h
         guestCount: lead.guestCount || 0,
         quoteAmount,
         quoteMessage,
-        bookingStatusUrl: fullBookingStatusUrl,
+        bookingUrl,
       });
     }
 

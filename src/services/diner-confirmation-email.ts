@@ -46,7 +46,8 @@ interface QuoteEmailParams {
   quoteMessage?: string;
   chefNote?: string;
   quoteToken?: string; // MAI-766: Raw token for booking deep link
-  bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry
+  bookingUrl?: string; // MAI-2037: Booking URL using quoteToken + /book/{leadId} format
+  bookingStatusUrl?: string; // MAI-805: URL for guests to track their inquiry (legacy/fallback)
 }
 
 interface DeclinedEmailParams {
@@ -412,8 +413,9 @@ function formatQuoteAmount(amount: number): string {
  * Build the quote email content sent when a chef responds with a price quote.
  */
 function buildQuoteEmail(params: QuoteEmailParams): { subject: string; html: string; text: string } {
-  // MAI-805: Use the provided booking status URL or default
-  const bookingLink = params.bookingStatusUrl || `${DASHBOARD_URL}/booking-status`;
+  // MAI-2037: Use bookingUrl (quoteToken + /book/{leadId} format) as primary CTA
+  // Falls back to bookingStatusUrl for legacy compatibility
+  const bookingLink = params.bookingUrl || params.bookingStatusUrl || `${DASHBOARD_URL}/booking-status`;
   const formattedAmount = formatQuoteAmount(params.quoteAmount);
   
   return {
