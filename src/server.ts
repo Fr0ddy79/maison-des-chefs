@@ -9,7 +9,7 @@ import { config } from './config/index.js';
 import { migrate } from './db/migrate.js';
 import { UserPayload } from './types.js';
 import { startQuoteReminderScheduler } from './services/quote-reminder.js';
-import { startStaleLeadReEngagementScheduler } from './services/diner-stale-lead-email.js';
+import { startStaleLeadReEngagementScheduler } from './services/stale-quoted-lead-reengagement.js';
 import { startLeadExpirationScheduler } from './services/lead-expiration.js';
 import { startDinerStagnationAlertScheduler } from './services/diner-stagnation-alert.js';
 import { startSlaCheckInScheduler } from './services/sla-check-in.js';
@@ -50,10 +50,12 @@ import reviewRoutes from './api/reviews.js';
 import notificationRoutes from './api/notifications.js';
 import outreachRoutes from './api/outreach.js';
 import leadsRoutes from './api/leads.js';
+import quoteRoutes from './api/quotes.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
 import buildReviewPage from './routes/review-page.js';
+import buildQuoteDisplayPage from './routes/quote-display-page.js';
 
 // Extend FastifyInstance to include authenticate decorator
 declare module 'fastify' {
@@ -123,6 +125,7 @@ server.register(reviewRoutes, { prefix: '/api' });
 server.register(notificationRoutes, { prefix: '/api/notifications' });
 server.register(outreachRoutes, { prefix: '/api/admin/outreach' });
 server.register(leadsRoutes, { prefix: '/api/leads' });
+server.register(quoteRoutes); // Public - no auth, handles /api/quotes/*
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {
@@ -210,6 +213,19 @@ server.get('/review/:bookingId', async (request, reply) => {
   }
   reply.header('Content-Type', 'text/html; charset=utf-8');
   return buildReviewPage(bookingIdNum);
+});
+
+// Quote display page (MAI-2000: FE Quote Display Page)
+server.get('/book/:leadId', async (request, reply) => {
+  const { leadId } = request.params as { leadId: string };
+  const url = new URL(request.url, config.app.url);
+  const token = url.searchParams.get('token') || '';
+  const leadIdNum = parseInt(leadId);
+  if (isNaN(leadIdNum) || !token) {
+    return '<html><body><h1>Invalid Link</h1><a href="/">Back to Homepage</a></body></html>';
+  }
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildQuoteDisplayPage(leadIdNum, token);
 });
 
 // Homepage route

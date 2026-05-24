@@ -148,6 +148,22 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     .trust-messaging { display: flex; justify-content: center; gap: 1.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
     .trust-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #666; }
     .trust-item .icon { font-size: 1rem; }
+    .reviews-section { margin: 1.5rem 0; padding: 1.25rem 0; border-top: 1px solid #eee; }
+    .aggregate-rating { display: inline-flex; align-items: center; gap: 0.5rem; background: #fff9e6; border: 1px solid #ffe082; padding: 0.6rem 1rem; border-radius: 8px; margin-bottom: 1rem; cursor: pointer; text-decoration: none; }
+    .aggregate-rating:hover { background: #fff3cd; }
+    .aggregate-rating .rating-number { font-size: 1.1rem; font-weight: 700; color: #2c3e50; }
+    .aggregate-rating .rating-stars { color: #f5a623; font-size: 1rem; }
+    .aggregate-rating .rating-count { color: #666; font-size: 0.9rem; }
+    .reviews-list { list-style: none; padding: 0; margin: 0; }
+    .review-card { background: #f8f9fa; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 0.75rem; }
+    .review-card:last-child { margin-bottom: 0; }
+    .review-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .review-stars { color: #f5a623; letter-spacing: 1px; }
+    .review-author { font-weight: 600; color: #2c3e50; font-size: 0.9rem; }
+    .review-date { color: #999; font-size: 0.85rem; }
+    .review-comment { color: #555; font-size: 0.9rem; line-height: 1.5; margin: 0; }
+    .show-all-reviews { display: block; text-align: center; color: #c9a227; font-size: 0.9rem; font-weight: 500; margin-top: 0.75rem; cursor: pointer; }
+    .show-all-reviews:hover { color: #b8922a; text-decoration: underline; }
     @media (max-width: 768px) { .content-grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -276,6 +292,10 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           <button type="submit" class="submit-btn" id="submitBtn">${ctaButtonText}</button>
           <p class="privacy-note">Your information is only used to send your quote request to the chef.</p>
         </form>
+      </div>
+      <div class="reviews-section" id="reviewsSection">
+        <div id="aggregateRating"></div>
+        <div id="reviewsContainer"></div>
       </div>
       <div class="booking-card">
         <div class="service-summary">
@@ -571,6 +591,71 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
       finally { submitBtn.disabled = false; submitBtn.textContent = submitBtn.textContent || 'Get Your Quote'; }
     }
+
+    // Load service reviews on page load
+    (function() {
+      function renderStars(rating) {
+        var stars = '';
+        for (var i = 1; i <= 5; i++) { stars += i <= rating ? '★' : '☆'; }
+        return stars;
+      }
+      function formatDate(dateStr) {
+        if (!dateStr) return '';
+        var date = new Date(dateStr);
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return months[date.getMonth()] + ' ' + date.getFullYear();
+      }
+      function escapeHtml(text) {
+        if (!text) return '';
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+      function renderReviewCards(reviewsData) {
+        if (!reviewsData || !reviewsData.reviews || reviewsData.reviews.length === 0) return '';
+        var html = '<ul class="reviews-list">';
+        reviewsData.reviews.slice(0, 3).forEach(function(r) {
+          var authorName = r.dinerName || 'Guest Diner';
+          html += '<li class="review-card">';
+          html += '<div class="review-header">';
+          html += '<span class="review-stars">' + renderStars(r.rating) + '</span>';
+          html += '<span class="review-author">' + escapeHtml(authorName) + '</span>';
+          html += '<span class="review-date">' + formatDate(r.createdAt) + '</span>';
+          html += '</div>';
+          if (r.comment) {
+            html += '<p class="review-comment">"' + escapeHtml(r.comment) + '"</p>';
+          }
+          html += '</li>';
+        });
+        html += '</ul>';
+        if (reviewsData.reviewCount > 3) {
+          html += '<span class="show-all-reviews">Show all ' + reviewsData.reviewCount + ' reviews</span>';
+        }
+        return html;
+      }
+      function renderAggregateRating(reviewsData) {
+        if (!reviewsData || reviewsData.reviewCount === 0) return '';
+        var stars = renderStars(Math.round(reviewsData.avgRating));
+        var singular = reviewsData.reviewCount === 1 ? 'review' : 'reviews';
+        return '<a href="#reviewsSection" class="aggregate-rating" onclick="document.getElementById('reviewsContainer').scrollIntoView({behavior:'smooth'}); return false;">' +
+          '<span class="rating-number">' + reviewsData.avgRating.toFixed(1) + '</span>' +
+          '<span class="rating-stars">' + stars + '</span>' +
+          '<span class="rating-count">(' + reviewsData.reviewCount + ' ' + singular + ')</span>' +
+          '</a>';
+      }
+      async function loadServiceReviews() {
+        try {
+          var response = await fetch('/api/services/' + serviceId + '/reviews');
+          if (!response.ok) return;
+          var data = await response.json();
+          var aggEl = document.getElementById('aggregateRating');
+          var container = document.getElementById('reviewsContainer');
+          if (aggEl) aggEl.innerHTML = renderAggregateRating(data);
+          if (container) container.innerHTML = renderReviewCards(data);
+        } catch (err) { console.error('Error loading reviews:', err); }
+      }
+      loadServiceReviews();
+    })();
 
     document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
       e.preventDefault();
