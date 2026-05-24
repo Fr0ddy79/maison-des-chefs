@@ -1,6 +1,6 @@
 // Standalone booking page - avoids pages.ts complexity for cookie pre-fill
 import { db } from '../db/index.js';
-import { services, users, chefProfiles, bookings } from '../db/schema.js';
+import { services, users, chefProfiles, bookings, leads } from '../db/schema.js';
 import { eq, gte, lte, sql, and } from 'drizzle-orm';
 
 export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number, referralCodeFromUrl?: string, ctaFromUrl?: string): Promise<string> {
@@ -37,6 +37,39 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     .from(chefProfiles)
     .where(eq(chefProfiles.userId, serviceBase.chefId))
     .get();
+
+  // Compute avg response time for this chef (for trust badge)
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const chefLeads = db.select({
+    firstResponseAt: leads.firstResponseAt,
+    createdAt: leads.createdAt,
+  })
+    .from(leads)
+    .where(eq(leads.chefId, serviceBase.chefId))
+    .all();
+  
+  let avgResponseTimeMs = null;
+  if (chefLeads.length > 0) {
+    const responseTimes = chefLeads
+      .filter(l => l.firstResponseAt && l.createdAt)
+      .map(l => new Date(l.firstResponseAt!).getTime() - new Date(l.createdAt!).getTime());
+    if (responseTimes.length > 0) {
+      avgResponseTimeMs = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+    }
+  }
+
+  // Build response time badge if we have data
+  function formatResponseTimeBadge(avgMs) {
+    if (avgMs == null || avgMs <= 0) return null;
+    const minutes = Math.round(avgMs / 60000);
+    if (minutes < 60) return '⚡ Typically responds within ' + minutes + ' min';
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return '⚡ Typically responds within ' + hours + ' hr';
+    const days = Math.round(hours / 24);
+    return '⚡ Typically responds within ' + days + ' day' + (days > 1 ? 's' : '');
+  }
+  const responseTimeBadge = formatResponseTimeBadge(avgResponseTimeMs);
 
   const service = {
     ...serviceBase,
@@ -288,6 +321,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             <div class="trust-item"><span class="icon">🔒</span><span>No payment required today</span></div>
             <div class="trust-item"><span class="icon">✓</span><span>Free cancellation</span></div>
             <div class="trust-item"><span class="icon">⭐</span><span>Verified chefs</span></div>
+            ${responseTimeBadge ? `<div class="trust-item"><span class="icon">⚡</span><span>${responseTimeBadge}</span></div>` : ''}
           </div>
           <button type="submit" class="submit-btn" id="submitBtn">${ctaButtonText}</button>
           <p class="privacy-note">Your information is only used to send your quote request to the chef.</p>
