@@ -37,6 +37,7 @@ import { buildHomePage } from './routes/pages.js';
 import buildBookingPage from './routes/booking-page.js';
 import dinerBookingsPage from './routes/diner-bookings-page.js';
 import buildChefLeadsPage from './routes/chef-leads-page.js';
+import buildChefDashboardPage from './routes/chef-dashboard-page.js';
 import buildChefBookingsPage from './routes/chef-bookings-page.js';
 import buildChefDiscoveryPage from './routes/chef-discovery-page.js';
 import buildChefComparePage from './routes/chef-compare-page.js';
@@ -134,6 +135,12 @@ server.get('/chef/leads', async (request, reply) => {
   return buildChefLeadsPage();
 });
 
+// Chef dashboard page (MAI-2062)
+server.get('/chef/dashboard', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefDashboardPage();
+});
+
 // Chef bookings dashboard page (MAI-1159 Task 2)
 server.get('/chef/bookings', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
@@ -217,7 +224,7 @@ server.get('/review/:bookingId', async (request, reply) => {
 });
 
 // Quote display page (MAI-2000: FE Quote Display Page)
-server.get('/book/:leadId', async (request, reply) => {
+server.get('/quote/:leadId', async (request, reply) => {
   const { leadId } = request.params as { leadId: string };
   const url = new URL(request.url, config.app.url);
   const token = url.searchParams.get('token') || '';

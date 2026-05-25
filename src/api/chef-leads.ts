@@ -254,8 +254,8 @@ export default async function chefLeadsRoutes(server: FastifyInstance) {
         quoteAmount: body.amount,
         quoteMessage: body.message,
         chefNote: body.chefNote,
-        // MAI-2037: Use quoteToken + /book/{leadId} format for booking URL
-        bookingUrl: `${DASHBOARD_URL}/book/${lead.id}?token=${quoteToken}`,
+        // MAI-2037: Use quoteToken + /quote/{leadId} format for booking URL
+        bookingUrl: `${DASHBOARD_URL}/quote/${lead.id}?token=${quoteToken}`,
       });
     }
 
@@ -538,8 +538,8 @@ To proceed, reply to this message or book directly through our platform. We're h
     // MAI-1932: Send quote email to diner (not accepted email)
     if (lead.email) {
       const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
-      // MAI-2037: Use quoteToken + /book/{leadId} format for booking URL
-      const bookingUrl = `${DASHBOARD_URL}/book/${lead.id}?token=${quoteToken}`;
+      // MAI-2037: Use quoteToken + /quote/{leadId} format for booking URL
+      const bookingUrl = `${DASHBOARD_URL}/quote/${lead.id}?token=${quoteToken}`;
       await sendQuoteEmail({
         leadId: lead.id,
         dinerName: lead.clientName || "there",
@@ -688,6 +688,24 @@ To proceed, reply to this message or book directly through our platform. We're h
       .run();
 
     return { success: true, templates: body.templates };
+  });
+
+  // GET /api/chef/dashboard/stats — Pending leads count for dashboard banner (MAI-2062)
+  server.get("/dashboard/stats", { preHandler: [server.authenticate] }, async (request, reply) => {
+    const { userId, role } = request.user as { userId: number; role: string };
+    if (role !== "chef") {
+      return reply.status(403).send({ error: "Only chefs can access dashboard stats" });
+    }
+
+    const pendingCountResult = db.select({ count: sql`count(*)` })
+      .from(leads)
+      .where(and(
+        eq(leads.chefId, userId),
+        sql`${leads.status} IN ('new', 'responded')`
+      ))
+      .get();
+    const pendingCount = (pendingCountResult?.count as number | null) ?? 0;
+    return { pendingLeads: pendingCount };
   });
 
   // GET /api/chef/notifications — list notifications for chef (MAI-1700)
