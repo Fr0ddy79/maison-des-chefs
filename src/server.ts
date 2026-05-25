@@ -13,6 +13,7 @@ import { startStaleLeadReEngagementScheduler } from './services/stale-quoted-lea
 import { startLeadExpirationScheduler } from './services/lead-expiration.js';
 import { startDinerStagnationAlertScheduler } from './services/diner-stagnation-alert.js';
 import { startSlaCheckInScheduler } from './services/sla-check-in.js';
+import { startReviewRequestScheduler } from './services/review-request-scheduler.js';
 import { db } from './db/index.js';
 import { users, chefProfiles, services, bookings, leads, dinerPreferences, reviews } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
@@ -340,7 +341,7 @@ const start = async () => {
   startLeadExpirationScheduler();
   startDinerStagnationAlertScheduler();
   startSlaCheckInScheduler();
-  await server.listen({ port: config.port, host: '0.0.0.0' });
+  startReviewRequestScheduler();
 };
 
 start();

@@ -535,6 +535,24 @@ function getChefPhoto(cuisineTypes) {
   return 'https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=600&h=400&fit=crop&crop=face';
 }
 
+function getPriceRangeHtml(chef) {
+  if (!chef.services || chef.services.length === 0) {
+    var pp = chef.pricePerPerson;
+    return pp != null ? '$' + pp.toFixed(0) + '<span>/person</span>' : 'Price on request';
+  }
+  var prices = chef.services.map(function(s) { return s.pricePerPerson; }).filter(function(p) { return p != null && p > 0; });
+  if (prices.length === 0) {
+    return 'Price on request';
+  }
+  var minPrice = Math.min.apply(null, prices);
+  var maxPrice = Math.max.apply(null, prices);
+  if (prices.length === 1) {
+    return '$' + minPrice.toFixed(0) + '<span>/person</span>';
+  }
+  // Multiple price points: show full range to set accurate expectations
+  return '$' + minPrice.toFixed(0) + ' – $' + maxPrice.toFixed(0) + '<span>/person</span>';
+}
+
 function getMinPrice(chef) {
   if (!chef.services || chef.services.length === 0) {
     return chef.pricePerPerson || null;
@@ -557,7 +575,7 @@ function renderChefCard(chef) {
   var minPrice = getMinPrice(chef);
   // Use chef's uploaded photo if available, otherwise fall back to cuisine-based placeholder
   var photo = chef.photoUrl || getChefPhoto(chef.cuisineTypes || []);
-  var priceHtml = minPrice != null ? '$' + minPrice.toFixed(0) + '<span>/person</span>' : 'Price on request';
+  var priceHtml = getPriceRangeHtml(chef);
   var responseTime = formatResponseTime(chef.avgResponseMs);
   var responseHtml = responseTime ? '<span class="chef-stat">⚡ ' + responseTime + '</span>' : '';
   var responseBadge = '';
