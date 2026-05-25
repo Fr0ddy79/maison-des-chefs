@@ -83,12 +83,18 @@ export function trackReferralShareEvent(data: {
 }
 
 // MAI-845: Stale lead re-engagement email sent
-export function trackStaleLeadReengagementSent(data: {
+interface StaleLeadReengagementSentData {
   leadId: number;
   chefId: number;
   serviceId: number;
-  daysSinceCreated: number;
-}): void {
+  daysSinceCreated?: number;
+  touchNumber?: 1 | 2 | 3;
+  emailType?: string;
+  quoteAmount?: number;
+  daysSinceQuote?: number;
+}
+
+export function trackStaleLeadReengagementSent(data: StaleLeadReengagementSentData): void {
   if (process.env.NODE_ENV !== 'production') {
     console.log('[Analytics] Stale lead re-engagement sent:', data);
   }
