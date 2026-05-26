@@ -20,6 +20,7 @@ interface BookingConfirmationParams {
   totalPrice: number;
   bookingStatusUrl?: string;
   dinerBookingsUrl?: string;
+  referralCode?: string; // MAI-2122: diner's own referral code to share with friends
 }
 
 /**
@@ -97,7 +98,10 @@ function buildBookingConfirmationEmail(params: BookingConfirmationParams): { sub
       <p style="font-size: 13px; color: #1a73e8; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">🎁 Share the Love</p>
       <p style="font-size: 18px; color: #2c3e50; margin: 0 0 12px; font-weight: 600;">Give $25, Get $25</p>
       <p style="font-size: 14px; color: #555; margin: 0 0 18px; line-height: 1.5;">Know someone who'd love a private chef experience? Share your referral code and you'll both get $25 credit toward your next booking!</p>
-      <a href="${dinerBookingsLink}" style="display: inline-block; background: #4285f4; color: white; padding: 12px 24px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">Get My Referral Code →</a>
+      ${params.referralCode
+        ? `<div style="background: white; border: 2px dashed #4285f4; border-radius: 8px; padding: 8px 16px; font-size: 1.1rem; font-weight: 700; color: #1a73e8; letter-spacing: 0.1em; display: inline-block; margin-bottom: 16px;">${params.referralCode}</div><br><a href="${dinerBookingsLink}" style="display: inline-block; background: #4285f4; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">View My Bookings →</a>`
+        : `<a href="${dinerBookingsLink}" style="display: inline-block; background: #4285f4; color: white; padding: 12px 24px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">Get My Referral Code →</a>`
+      }
     </div>
     
     <h3 style="color: #2c3e50; margin-top: 25px;">Need to reach us?</h3>
@@ -132,7 +136,7 @@ Chef ${params.chefName} will reach out within 24 hours to confirm details and di
 
 🎁 SHARE THE LOVE — Give $25, Get $25!
 Know someone who'd love a private chef experience? Share your referral code and you'll both get $25 credit toward your next booking!
-Get your referral code → ${dinerBookingsLink}
+${params.referralCode ? `Your referral code: ${params.referralCode}` : `Get your referral code → ${dinerBookingsLink}`}
 
 View your bookings → ${dinerBookingsLink}
 

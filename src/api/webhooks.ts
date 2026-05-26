@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { leads, bookings, services, referralCodes, dinerCredits, users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { sendBookingConfirmation } from '../services/chef-notification.js';
+import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
   apiVersion: '2026-04-22.dahlia',
@@ -74,6 +75,7 @@ export default async function webhookRoutes(server: FastifyInstance) {
           guestCount: leads.guestCount,
           quoteAmount: leads.quoteAmount,
           referralCode: leads.referralCode,
+          accessToken: leads.accessToken,
         })
           .from(leads)
           .where(eq(leads.id, parsedLeadId))
@@ -134,6 +136,35 @@ export default async function webhookRoutes(server: FastifyInstance) {
             totalPrice,
           }).catch(err => {
             console.error(`[Webhook] Failed to send booking confirmation to chef ${lead.chefId}:`, err);
+          });
+        }
+
+        // MAI-2122: Send booking confirmation email to diner with their referral code
+        if (lead.email && newBooking) {
+          const dinerUser = db.select({ id: users.id, name: users.name }).from(users).where(eq(users.email, lead.email.toLowerCase())).get();
+          const dinerReferralCode = dinerUser
+            ? db.select({ code: referralCodes.code }).from(referralCodes).where(eq(referralCodes.dinerId, dinerUser.id)).get()
+            : null;
+          const service = db.select({ name: services.name }).from(services).where(eq(services.id, lead.serviceId)).get();
+          const chef = db.select({ name: users.name }).from(users).where(eq(users.id, lead.chefId)).get();
+          const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://maisondeschefs.com';
+          const DINER_BOOKINGS_URL = process.env.DINER_BOOKINGS_URL || 'https://maisondeschefs.com/diner/bookings';
+          const fullBookingStatusUrl = lead.accessToken ? `${DASHBOARD_URL}/booking-status?token=${lead.accessToken}` : undefined;
+
+          sendBookingConfirmationEmail({
+            bookingId: newBooking.id,
+            dinerName: dinerUser?.name || lead.clientName || 'there',
+            dinerEmail: lead.email,
+            chefName: chef?.name || 'your chef',
+            serviceName: service?.name || 'your booking',
+            eventDate: lead.eventDate || '',
+            guestCount: lead.guestCount || 0,
+            totalPrice,
+            bookingStatusUrl: fullBookingStatusUrl,
+            dinerBookingsUrl: DINER_BOOKINGS_URL,
+            referralCode: dinerReferralCode?.code,
+          }).catch(err => {
+            console.error(`[Webhook] Failed to send booking confirmation email to diner ${lead.email}:`, err);
           });
         }
 

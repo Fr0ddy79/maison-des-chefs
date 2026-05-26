@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { bookings, services, users, leads } from '../db/schema.js';
+import { bookings, services, users, leads, referralCodes } from '../db/schema.js';
 import { eq, and, or, isNull } from 'drizzle-orm';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
 import { sendBookingAcceptedEmail } from '../services/diner-booking-accepted-email.js';
@@ -77,6 +77,12 @@ export default async function bookingRoutes(server: FastifyInstance) {
 
     // Send booking confirmation email to diner (fire-and-forget)
     if (diner?.email) {
+      // MAI-2122: Look up diner's referral code to include in email
+      const dinerReferralCode = db.select({ code: referralCodes.code })
+        .from(referralCodes)
+        .where(eq(referralCodes.dinerId, diner.id))
+        .get();
+
       sendBookingConfirmationEmail({
         bookingId: created.id,
         dinerName: diner.name || 'Guest',
@@ -86,6 +92,7 @@ export default async function bookingRoutes(server: FastifyInstance) {
         eventDate: body.eventDate,
         guestCount: body.guestCount,
         totalPrice,
+        referralCode: dinerReferralCode?.code,
       }).catch(err => console.error('[BookingConfirmation] Failed to send email:', err));
     }
 
