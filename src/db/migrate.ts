@@ -413,6 +413,32 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-1745: Add SLA tracking fields to leads if they don't exist
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN inquiry_received_at INTEGER`);
+    console.log('Migration: Added inquiry_received_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN sla_deadline_at INTEGER`);
+    console.log('Migration: Added sla_deadline_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN sla_check_in_sent_at INTEGER`);
+    console.log('Migration: Added sla_check_in_sent_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN request_received_sent_at INTEGER`);
+    console.log('Migration: Added request_received_sent_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

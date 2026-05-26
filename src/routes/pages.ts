@@ -1963,8 +1963,8 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .hero-ctas { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
     .hero-cta-primary { background: #c9a227; color: white; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 1.1rem; transition: background 0.2s, transform 0.2s; }
     .hero-cta-primary:hover { background: #b8922a; transform: translateY(-2px); }
-    .hero-cta-secondary { background: rgba(255,255,255,0.1); color: white; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1.1rem; border: 1px solid rgba(255,255,255,0.3); transition: background 0.2s; }
-    .hero-cta-secondary:hover { background: rgba(255,255,255,0.2); }
+    .hero-cta-secondary { background: white; color: #1a1a2e; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1.1rem; transition: background 0.2s, transform 0.2s; }
+    .hero-cta-secondary:hover { background: #f0f0f0; transform: translateY(-2px); }
     .hero-trust { margin-top: 2rem; color: rgba(255,255,255,0.6); font-size: 0.9rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
     .hero-trust span { display: flex; align-items: center; gap: 0.4rem; }
     .hero-social-proof { margin-top: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; color: rgba(255,255,255,0.75); font-size: 0.95rem; flex-wrap: wrap; }
@@ -2059,8 +2059,8 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
       <h1>Your Private Chef,<br><span>For Every Occasion</span></h1>
       <p class="hero-sub">From intimate dinner parties to corporate events — discover and book verified private chefs in Montreal in minutes.</p>
       <div class="hero-ctas">
-        <a href="/services" class="hero-cta-primary" onclick="trackHeroCtaClick('primary', 'Browse Chefs & Services')">Browse Chefs & Services</a>
-        <a href="/services?sort=popular" class="hero-cta-secondary" onclick="trackHeroCtaClick('secondary', 'See Most Popular')">🔥 See Most Popular</a>
+        <a href="/services" class="hero-cta-primary" onclick="trackHeroCtaClick('primary', 'Find Your Perfect Chef')">Find Your Perfect Chef</a>
+        <a href="/services?sort=popular" class="hero-cta-secondary" onclick="trackHeroCtaClick('secondary', 'Find Top-Rated Chefs')">Find Top-Rated Chefs</a>
       </div>
       ${stats.reviewCount > 0 || stats.bookingCount > 0 ? `
       <div class="hero-social-proof">
