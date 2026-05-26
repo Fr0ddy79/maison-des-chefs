@@ -217,8 +217,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     </div>
     ${welcomeBackHtml}
     <div class="auth-panel" id="authPanel">
-      <h2>Sign In to Continue</h2>
-      <p>Create an account or sign in to request this booking.</p>
+      <h2>Track Your Bookings</h2>
+      <p>Sign in to save your progress and get faster updates.</p>
       <div class="auth-toggle">
         <button id="tabSignIn" class="active" onclick="showAuthTab('signin')">Sign In</button>
         <button id="tabMagic" onclick="showAuthTab('magic')">Magic Link</button>
@@ -252,7 +252,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     <div class="success-message" id="successMessage">
       <strong>✓ Your quote request was sent!</strong>
       <p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>
-      <p style="margin-top: 0.25rem;">Check your email for updates.</p>
+      <p style="margin-top: 0.25rem;">Save your booking status link to track your inquiry.</p>
       <div id="bookingStatusUrlSection" style="display:none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #a5d6a7;">
         <p style="margin-bottom: 0.5rem;">Track your inquiry status:</p>
         <div style="background: #f0f8e8; border: 1px solid #a5d6a7; border-radius: 6px; padding: 0.75rem 1rem; word-break: break-all;">
@@ -604,7 +604,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           document.getElementById('inquiryForm').style.display = 'none';
           let successHtml = '<strong>\xe2\x9c\x93 Your quote request was sent!</strong><p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>';
           if (result.bookingStatusUrl) {
-            successHtml += '<div style="margin-top:1.25rem;padding:1.25rem;background:#f0f8e8;border:1px solid #a5d6a7;border-radius:10px;text-align:center;"><p style="margin-bottom:0.75rem;font-size:0.9rem;color:#555;">Check your email for updates.</p><p style="margin-bottom:1rem;font-size:1.1rem;font-weight:600;color:#2e7d32;">Track your booking status</p><div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;"><a href="' + result.bookingStatusUrl + '" style="min-width:180px;flex:1;max-width:280px;display:inline-block;background:#2e7d32;color:white;padding:0.85rem 1rem;border-radius:8px;text-decoration:none;font-weight:600;font-size:1rem;text-align:center;cursor:pointer;">Track your booking status \xe2\x9e\xa6</a><button onclick="navigator.clipboard.writeText(\' + result.bookingStatusUrl + \');this.textContent=\'Copied!\';this.style.background=\'#c8e6c9\'" style="min-width:100px;padding:0.85rem 1rem;background:white;border:2px solid #a5d6a7;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;">\xe2\x9b\x8b Copy</button></div></div>';
+            successHtml += '<div style="margin-top:1.25rem;padding:1.25rem;background:#f0f8e8;border:1px solid #a5d6a7;border-radius:10px;text-align:center;"><p style="margin-bottom:0.75rem;font-size:0.9rem;color:#555;">Save your booking status link to track your inquiry.</p><p style="margin-bottom:1rem;font-size:1.1rem;font-weight:600;color:#2e7d32;">Track your booking status</p><div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;"><a href="' + result.bookingStatusUrl + '" style="min-width:180px;flex:1;max-width:280px;display:inline-block;background:#2e7d32;color:white;padding:0.85rem 1rem;border-radius:8px;text-decoration:none;font-weight:600;font-size:1rem;text-align:center;cursor:pointer;">Track your booking status \xe2\x9e\xa6</a><button onclick="navigator.clipboard.writeText(\' + result.bookingStatusUrl + \');this.textContent=\'Copied!\';this.style.background=\'#c8e6c9\'" style="min-width:100px;padding:0.85rem 1rem;background:white;border:2px solid #a5d6a7;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;">\xe2\x9b\x8b Copy</button></div></div>';
           }
           // MAI-1836: Referral share card for inquiry success
           if (result.referralCode) {
