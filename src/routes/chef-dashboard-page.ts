@@ -183,7 +183,7 @@ export default function buildChefDashboardPage(): string {
   html += '        var token = localStorage.getItem(\'token\');\n';
   html += '        if (!token) { loading.style.display = \'none\'; authPrompt.style.display = \'block\'; return; }\n';
   html += '        // Load pending leads count for banner\n';
-  html += '        var statsRes = await fetch(API_BASE + \'/api/chef/leads/dashboard/stats\', { headers: { \'Authorization\': \'Bearer \' + token } });\n';
+  html += '        var statsRes = await fetch(API_BASE + \'/api/chef/dashboard/stats\', { headers: { \'Authorization\': \'Bearer \' + token } });\n';
   html += '        if (statsRes.status === 401) { loading.style.display = \'none\'; authPrompt.style.display = \'block\'; return; }\n';
   html += '        var statsData = statsRes.ok ? await statsRes.json() : { pendingLeads: 0 };\n';
   html += '        var pendingLeads = statsData.pendingLeads || 0;\n';

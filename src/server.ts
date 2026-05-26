@@ -351,4 +351,17 @@ const start = async () => {
   startReviewRequestScheduler();
 };
 
-start();
+const PORT = parseInt(process.env.PORT || '3001', 10);
+
+start().then(() => {
+  server.listen({ port: PORT, host: '0.0.0.0' }, (err, addr) => {
+    if (err) {
+      console.error('Server failed to start:', err);
+      process.exit(1);
+    }
+    console.log(`Server running at http://localhost:${PORT}`);
+  });
+}).catch(err => {
+  console.error('Startup error:', err);
+  process.exit(1);
+});

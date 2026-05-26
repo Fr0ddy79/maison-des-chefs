@@ -220,21 +220,18 @@ export default async function quoteRoutes(server: FastifyInstance) {
       }
 
       // Mark lead as accepted
-      const now = new Date();
-      const [updatedLead] = await db
+      await db
         .update(leads)
         .set({
           status: 'accepted',
-          updatedAt: now,
         } as Record<string, unknown>)
         .where(and(
           eq(leads.id, leadIdNum)
-        ))
-        .returning();
+        ));
 
       return reply.send({
         success: true,
-        status: updatedLead.status,
+        status: 'accepted',
       });
     } catch (err) {
       console.error('Quote accept error:', err);
