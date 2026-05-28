@@ -604,8 +604,8 @@ function buildBookingStatusPage(lead: any, token: string): string {
   const showReferralCta = isConverted || nonTerminalStatuses.includes(lead.status);
   const referralCtaHtml = showReferralCta ? `
     <div class="referral-card">
-      <h3 class="referral-title">🍽️ Share the experience & earn $25 toward your next booking</h3>
-      <p class="referral-description">Know someone who'd love this experience? Share your unique referral link and earn $25 credits each time someone books using it!</p>
+      <h3 class="referral-title">🍽️ Give your friends €25 off their booking — get a FREE DESSERT when they confirm</h3>
+      <p class="referral-description">Your friends get €25 off their first booking. You get a free dessert when they confirm theirs. Share your link below!</p>
       ${lead.referralCode ? `
       <div class="referral-code-section">
         <p class="referral-code-label">Your Referral Code:</p>
@@ -613,13 +613,13 @@ function buildBookingStatusPage(lead: any, token: string): string {
       </div>
       ` : ''}
       <div class="share-buttons">
-        <a href="/referral/track?code=${lead.referralCode || ''}&source=copy" class="share-btn copy-btn" onclick="copyReferralLink(this, '${lead.referralCode || ''}'); return false;">
-          <span class="share-icon">📋</span> Copy Link
+        <a href="/referral/track?code=${lead.referralCode || ''}&source=copy" class="share-btn copy-btn" onclick="copyReferralLink(this, '${lead.referralCode || ''}'); trackReferralShare('copy', '${lead.referralCode || ''}'); return false;">
+          <span class="share-icon">📋</span> Get My Link
         </a>
-        <a href="/referral/track?code=${lead.referralCode || ''}&source=email" class="share-btn email-btn" onclick="return confirm('Send referral link via email?')">
+        <a href="/referral/track?code=${lead.referralCode || ''}&source=email" class="share-btn email-btn" onclick="trackReferralShare('email', '${lead.referralCode || ''}'); return confirm('Send referral link via email?');">
           <span class="share-icon">✉️</span> Email
         </a>
-        <a href="/referral/track?code=${lead.referralCode || ''}&source=whatsapp" class="share-btn whatsapp-btn" target="_blank" rel="noopener">
+        <a href="/referral/track?code=${lead.referralCode || ''}&source=whatsapp" class="share-btn whatsapp-btn" target="_blank" rel="noopener" onclick="trackReferralShare('whatsapp', '${lead.referralCode || ''}');">
           <span class="share-icon">💬</span> WhatsApp
         </a>
       </div>
@@ -1260,6 +1260,21 @@ function buildBookingStatusPage(lead: any, token: string): string {
       }).catch(function() {
         alert('Failed to copy. Please copy the link manually.');
       });
+    }
+
+    // MAI-2145: Track referral share clicks for analytics
+    function trackReferralShare(channel, code) {
+      try {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+          event: 'referral_share_click',
+          code: code || '',
+          channel: channel,
+          timestamp: new Date().toISOString(),
+          leadId: window.leadId || null
+        }));
+      } catch (e) {
+        // Non-blocking analytics
+      }
     }
     
     // MAI-1014: Trigger stale lead re-engagement email

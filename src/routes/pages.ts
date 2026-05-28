@@ -382,7 +382,8 @@ export default async function pageRoutes(server: FastifyInstance) {
     const cardParam = url.searchParams.get('card');
     const cookieCardVariant = cookies?.card_variant;
     const validCardVariants = ['control', 'simplified'];
-    const cardVariant = validCardVariants.includes(cardParam || '') ? cardParam : (validCardVariants.includes(cookieCardVariant || '') ? cookieCardVariant : 'control');
+    // Card A/B Test: simplified card is the default (MAI-2151)
+    const cardVariant = validCardVariants.includes(cardParam || '') ? cardParam : (validCardVariants.includes(cookieCardVariant || '') ? cookieCardVariant : 'simplified');
 
     const service = db.select({
       id: services.id,
@@ -2231,6 +2232,17 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
       };
       navigator.sendBeacon('/api/analytics/event', JSON.stringify(payload));
     });
+
+    // MAI-2151: Fire homepage_view event on load
+    (function() {
+      const payload = {
+        event: 'homepage_view',
+        auth_status: 'anonymous',
+        timestamp: new Date().toISOString()
+      };
+      navigator.sendBeacon('/api/analytics/event', JSON.stringify(payload));
+      console.log('[Analytics] Homepage view:', payload);
+    })();
   </script>
 </body>
 </html>`;

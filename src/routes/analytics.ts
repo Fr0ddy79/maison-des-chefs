@@ -307,3 +307,112 @@ export function trackHeroSearchEvent(data: HeroSearchEventData): void {
     console.log('[Analytics] Hero search submitted:', eventData);
   }
 }
+
+// MAI-2151: Homepage view event for funnel analytics
+export function trackHomepageViewEvent(): void {
+  const eventData = {
+    event: 'homepage_view',
+    auth_status: 'anonymous',
+    timestamp: new Date().toISOString()
+  };
+
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Homepage view:', eventData);
+  }
+}
+
+// MAI-2151: Booking page view event for funnel analytics
+interface BookingPageViewEventData {
+  serviceId: number;
+  chefId: number;
+  cardVariant: string;
+  ctaVariant: string;
+}
+
+export function trackBookingPageViewEvent(data: BookingPageViewEventData): void {
+  const eventData = {
+    event: 'booking_page_view',
+    service_id: data.serviceId,
+    chef_id: data.chefId,
+    card_variant: data.cardVariant,
+    cta_variant: data.ctaVariant,
+    auth_status: 'guest',
+    timestamp: new Date().toISOString()
+  };
+
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Booking page view:', eventData);
+  }
+}
+
+// MAI-2151: Booking submit event for funnel analytics
+interface BookingSubmitEventData {
+  serviceId: number;
+  chefId: number;
+  guestCount: number;
+  cardVariant: string;
+  ctaVariant: string;
+}
+
+export function trackBookingSubmitEvent(data: BookingSubmitEventData): void {
+  const eventData = {
+    event: 'booking_submit',
+    service_id: data.serviceId,
+    chef_id: data.chefId,
+    guest_count: data.guestCount,
+    card_variant: data.cardVariant,
+    cta_variant: data.ctaVariant,
+    auth_status: 'guest',
+    timestamp: new Date().toISOString()
+  };
+
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Booking submit:', eventData);
+  }
+}
+
+// MAI-2151: Booking success event for funnel analytics
+interface BookingSuccessEventData {
+  bookingId: number;
+  serviceId: number;
+  chefId: number;
+  leadId: number;
+  guestCount: number;
+  cardVariant: string;
+  ctaVariant: string;
+}
+
+export function trackBookingSuccessEvent(data: BookingSuccessEventData): void {
+  const eventData = {
+    event: 'booking_success',
+    booking_id: data.bookingId,
+    service_id: data.serviceId,
+    chef_id: data.chefId,
+    lead_id: data.leadId,
+    guest_count: data.guestCount,
+    card_variant: data.cardVariant,
+    cta_variant: data.ctaVariant,
+    auth_status: 'guest',
+    timestamp: new Date().toISOString()
+  };
+
+  if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+    (navigator as any).sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics] Booking success:', eventData);
+  }
+}

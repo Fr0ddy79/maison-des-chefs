@@ -523,10 +523,36 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     
     function toggleAddon(addonId) {
       const index = selectedAddonIds.indexOf(addonId);
+      const { name: addonName, price: addonPrice } = getAddonDetails(addonId);
+      
       if (index === -1) {
         selectedAddonIds.push(addonId);
+        // Fire analytics: addon_selected
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+            event: 'addon_selected',
+            leadId: parseInt(leadId),
+            addon_id: addonId,
+            addon_name: addonName,
+            addon_price: addonPrice,
+            total_selected: selectedAddonIds.length,
+            timestamp: new Date().toISOString()
+          }));
+        }
       } else {
         selectedAddonIds.splice(index, 1);
+        // Fire analytics: addon_deselected
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+            event: 'addon_deselected',
+            leadId: parseInt(leadId),
+            addon_id: addonId,
+            addon_name: addonName,
+            addon_price: addonPrice,
+            total_selected: selectedAddonIds.length,
+            timestamp: new Date().toISOString()
+          }));
+        }
       }
       renderAddonCards();
       updatePaymentSummary();
@@ -540,6 +566,7 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       saveAddonSelection();
     }
     
+    let addonViewedFired = false;
     function updatePaymentSummary() {
       const addonsRow = document.getElementById('addons-row');
       const addonsTotal = document.getElementById('addons-total');
@@ -560,6 +587,23 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       
       const grandTotalAmount = baseQuoteAmount + addonsTotalAmount;
       grandTotal.textContent = '$' + grandTotalAmount.toFixed(2);
+      
+      // Fire addon_viewed once when addon section becomes visible
+      if (!addonViewedFired && selectedAddonIds.length > 0) {
+        addonViewedFired = true;
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+            event: 'addon_viewed',
+            leadId: parseInt(leadId),
+            timestamp: new Date().toISOString()
+          }));
+        }
+      }
+    }
+    
+    function getAddonDetails(addonId) {
+      const addon = availableAddons.find(a => a.id === addonId);
+      return addon ? { name: addon.name, price: addon.price } : { name: addonId, price: 0 };
     }
     
     async function saveAddonSelection() {
@@ -592,6 +636,15 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       payButton.classList.add('loading');
       payButton.textContent = '';
       
+      // Fire analytics: checkout_session_attempted
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+          event: 'checkout_session_attempted',
+          leadId: parseInt(leadId),
+          timestamp: new Date().toISOString()
+        }));
+      }
+      
       try {
         const response = await fetch('/api/checkout/' + leadId + '/create-session?token=' + token, {
           method: 'POST',
@@ -601,16 +654,44 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         const data = await response.json();
         
         if (!response.ok) {
+          // Fire analytics: checkout_session_failed
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+              event: 'checkout_session_failed',
+              leadId: parseInt(leadId),
+              error: data.message || data.error || 'HTTP ' + response.status,
+              status: response.status,
+              timestamp: new Date().toISOString()
+            }));
+          }
           throw new Error(data.message || data.error || 'Failed to create checkout session');
         }
         
         if (data.url) {
+          // Fire analytics: checkout_session_created
+          if (navigator.sendBeacon && data.sessionId) {
+            navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+              event: 'checkout_session_created',
+              leadId: parseInt(leadId),
+              sessionId: data.sessionId,
+              timestamp: new Date().toISOString()
+            }));
+          }
           // Redirect to Stripe Checkout
           window.location.href = data.url;
         } else {
           throw new Error('No checkout URL received');
         }
       } catch (error) {
+        // Fire analytics: checkout_session_failed
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+            event: 'checkout_session_failed',
+            leadId: parseInt(leadId),
+            error: error.message || 'Unknown error',
+            timestamp: new Date().toISOString()
+          }));
+        }
         showError(error.message || 'An error occurred. Please try again.');
       }
     }

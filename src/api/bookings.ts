@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { bookings, services, users, leads, referralCodes } from '../db/schema.js';
-import { eq, and, or, isNull } from 'drizzle-orm';
+import { bookings, services, users, leads, referralCodes, chefAvailabilitySlots, chefBlockedDates } from '../db/schema.js';
+import { eq, and, or, isNull, ne } from 'drizzle-orm';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
 import { sendBookingAcceptedEmail } from '../services/diner-booking-accepted-email.js';
 import { sendBookingDeclinedEmail } from '../services/diner-booking-declined-email.js';
@@ -32,6 +32,65 @@ export default async function bookingRoutes(server: FastifyInstance) {
     if (!service) {
       return reply.status(404).send({ error: 'Service not found' });
     }
+
+    // MAI-2135: Booking conflict detection — check chef availability before creating booking
+    const requestedDate = new Date(body.eventDate);
+    const dayOfWeek = requestedDate.getDay();
+
+    // 1. Check if chef has availability slots for this day of week
+    const availableSlots = db.select().from(chefAvailabilitySlots).where(
+      and(
+        eq(chefAvailabilitySlots.chefId, service.chefId),
+        eq(chefAvailabilitySlots.dayOfWeek, dayOfWeek),
+        eq(chefAvailabilitySlots.isActive, true)
+      )
+    ).all();
+
+    if (availableSlots.length === 0) {
+      return reply.status(409).send({
+        error: 'Booking conflict',
+        reason: 'Chef is not available on this day of the week',
+        conflictType: 'NO_AVAILABILITY_SLOT',
+      });
+    }
+
+    // 2. Check if chef has blocked this specific date
+    const blockedDate = db.select().from(chefBlockedDates).where(
+      and(
+        eq(chefBlockedDates.chefId, service.chefId),
+        eq(chefBlockedDates.date, body.eventDate)
+      )
+    ).get();
+
+    if (blockedDate) {
+      return reply.status(409).send({
+        error: 'Booking conflict',
+        reason: blockedDate.reason || 'Chef has blocked this date',
+        conflictType: 'DATE_BLOCKED',
+      });
+    }
+
+    // 3. Check for existing non-cancelled booking at the same date
+    const conflictingBooking = db.select({ id: bookings.id, status: bookings.status })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.chefId, service.chefId),
+          eq(bookings.eventDate, body.eventDate),
+          ne(bookings.status, 'cancelled')
+        )
+      )
+      .get();
+
+    if (conflictingBooking) {
+      return reply.status(409).send({
+        error: 'Booking conflict',
+        reason: `Chef already has a booking on this date (booking #${conflictingBooking.id})`,
+        conflictType: 'DATE_ALREADY_BOOKED',
+        existingBookingId: conflictingBooking.id,
+      });
+    }
+
     const totalPrice = service.pricePerPerson * body.guestCount;
 
     // Look up diner info BEFORE creating booking so we can create the lead

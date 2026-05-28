@@ -148,6 +148,10 @@ export default function buildChefDashboardPage(): string {
   html += '          <span class="quick-action-icon">&#128100;</span>\n';
   html += '          <div class="quick-action-text"><strong>My Profile</strong><span>Update your chef profile</span></div>\n';
   html += '        </a>\n';
+  html += '        <a href="/chef/settings/availability" class="quick-action-card">\n';
+  html += '          <span class="quick-action-icon">&#128197;</span>\n';
+  html += '          <div class="quick-action-text"><strong>Availability</strong><span>Set your available days and times</span></div>\n';
+  html += '        </a>\n';
   html += '        <a href="/services" class="quick-action-card">\n';
   html += '          <span class="quick-action-icon">&#127869;</span>\n';
   html += '          <div class="quick-action-text"><strong>Browse Services</strong><span>Explore other chefs</span></div>\n';

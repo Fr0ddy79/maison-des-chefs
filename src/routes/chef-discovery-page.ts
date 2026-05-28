@@ -157,7 +157,10 @@ export default function buildChefDiscoveryPage(): string {
   .chef-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
   .chef-name { font-size: 1.2rem; font-weight: 700; color: #2c3e50; }
   .verified-badge { background: #e3f2fd; color: #1565c0; padding: 0.15rem 0.5rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
-  .chef-location { color: #888; font-size: 0.9rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.25rem; }
+  .chef-location { color: #888; font-size: 0.9rem; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.25rem; }
+  .avail-badge { font-size: 0.8rem; font-weight: 600; }
+  .avail-badge.available { color: #27ae60; }
+  .avail-badge.unavailable { color: #aaa; }
   .cuisine-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
   .cuisine-badge { background: #fff3e0; color: #e65100; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.78rem; font-weight: 500; }
   .chef-price { font-size: 1.1rem; font-weight: 700; color: #2c3e50; margin-bottom: 0.5rem; }
@@ -428,6 +431,37 @@ var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null
 // MAI-1079: Track chef discovery page view on load
 (function() {
   trackChefDiscoveryEvent({ event: 'chef_discovery_view' });
+  // MAI-2135: Fetch availability badges for all chefs
+  (async function() {
+    var today = new Date().toISOString().split('T')[0];
+    var endDate = new Date();
+    endDate.setDate(endDate.getDate() + 7);
+    var endStr = endDate.toISOString().split('T')[0];
+    var chefIds = ${JSON.stringify(chefs.map(c => c.id))};
+    for (var i = 0; i < chefIds.length; i++) {
+      (function(cid) {
+        setTimeout(function() {
+          fetch('/api/chefs/' + cid + '/availability?start=' + today + '&end=' + endStr)
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+              if (!data || !data.slots) return;
+              var hasSlots = data.slots.some(function(s) { return !s.is_blocked && s.time_windows && s.time_windows.length > 0; });
+              var badge = document.getElementById('availBadge' + cid);
+              if (badge) {
+                if (hasSlots) {
+                  badge.innerHTML = '<span style="color:#27ae60;">● Available this week</span>';
+                  badge.className = 'avail-badge available';
+                } else {
+                  badge.innerHTML = '<span style="color:#aaa;">○ Check availability</span>';
+                  badge.className = 'avail-badge unavailable';
+                }
+              }
+            })
+            .catch(function() {});
+        }, i * 100); // stagger requests to avoid overwhelming the server
+      })(chefIds[i]);
+    }
+  })();
 })();
 
 // Initialize date input min to today
@@ -625,6 +659,7 @@ function renderChefCard(chef) {
       '</div>' +
       ratingHtml +
       '<div class="chef-location">📍 ' + escapeHtml(chef.location || 'Location not set') + '</div>' +
+      '<div id="availBadge' + chef.id + '" class="avail-badge" style="margin-bottom:0.4rem;"></div>' +
       '<div class="cuisine-badges">' + badges + '</div>' +
       '<div class="chef-price">' + priceHtml + '</div>' +
       '<div class="chef-stats">' + responseHtml + '</div>' +

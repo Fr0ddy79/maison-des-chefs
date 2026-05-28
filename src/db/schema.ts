@@ -236,6 +236,20 @@ export const chefBlockedDates = sqliteTable('chef_blocked_dates', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
+// Chef availability slots - weekly recurring template (MAI-2131)
+export const chefAvailabilitySlots = sqliteTable('chef_availability_slots', {
+  id: text('id').primaryKey(), // UUID
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  dayOfWeek: integer('day_of_week').notNull(), // 0=Sunday, 6=Saturday
+  startTime: text('start_time').notNull(), // HH:MM format
+  endTime: text('end_time').notNull(), // HH:MM format
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// chef_blocked_dates (MAI-2131) reuses the existing MAI-1251 table.
+// The existing chefBlockedDates model (above) is used for blocked-date operations.
+
 // Chef verification submissions (MAI-1326)
 export const chefVerificationSubmissions = sqliteTable('chef_verification_submissions', {
   id: integer('id').primaryKey({ autoIncrement: true }),

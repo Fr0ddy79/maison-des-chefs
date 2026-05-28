@@ -307,6 +307,13 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
             <input type="date" id="eventDate" name="eventDate" min="${new Date().toISOString().split('T')[0]}">
           </div>
           <div class="form-group">
+            <label for="preferredTime">Preferred Time</label>
+            <select id="preferredTime" name="preferredTime" style="width:100%;padding:0.75rem 1rem;border:1px solid #ddd;border-radius:6px;font-size:1rem;font-family:inherit;background:white;color:#333;cursor:pointer;">
+              <option value="">Select a date first</option>
+            </select>
+          </div>
+          <div id="availabilityWarning" style="display:none;padding:0.6rem 0.85rem;background:#fff3cd;border-radius:6px;margin-bottom:0.75rem;font-size:0.88rem;"></div>
+          <div class="form-group">
             <label for="message">Message to Chef</label>
             <textarea id="message" name="message" placeholder="Tell the chef about your event, dietary requirements, or any special requests..."></textarea>
           </div>
@@ -405,6 +412,86 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       }
     }
     if (guestCountInput) guestCountInput.addEventListener('change', updateEstimatedTotal);
+    // MAI-2135: Fetch chef availability when date is selected, populate time slots
+    const chefId = ${service.chefId};
+    const availabilityWarning = document.getElementById('availabilityWarning');
+    const eventDateInput = document.getElementById('eventDate');
+    const preferredTimeSelect = document.getElementById('preferredTime');
+    if (eventDateInput) {
+      eventDateInput.addEventListener('change', async function() {
+        const selectedDate = eventDateInput.value;
+        if (!selectedDate) return;
+        // Reset time select
+        if (preferredTimeSelect) {
+          preferredTimeSelect.innerHTML = '<option value="">Loading...</option>';
+        }
+        try {
+          const res = await fetch('/api/chefs/' + chefId + '/availability?start=' + selectedDate + '&end=' + selectedDate);
+          if (res.ok) {
+            const data = await res.json();
+            // Supports both legacy {slots[]} and new {days[]} response shapes
+            var dayData = null;
+            if (data.slots && data.slots.length > 0) {
+              // Actual API returns: { slots: [{ date, dayOfWeek, dayName, time_windows: [{start, end}], is_blocked, reason }] }
+              var slotData = data.slots[0];
+              dayData = {
+                isAvailable: !slotData.is_blocked && (slotData.time_windows && slotData.time_windows.length > 0),
+                reason: slotData.reason || (slotData.is_blocked ? 'Date is blocked' : null),
+                slots: slotData.time_windows || [],
+              };
+            }
+            if (dayData) {
+              if (!dayData.isAvailable) {
+                availabilityWarning.innerHTML = '<span style="color:#e74c3c;">&#9888;&#65039; ' + escapeHtml(dayData.reason || 'Chef is unavailable on this date. Please choose another.') + '</span>';
+                availabilityWarning.style.display = 'block';
+                if (preferredTimeSelect) {
+                  preferredTimeSelect.innerHTML = '<option value="">No times available</option>';
+                }
+              } else if (!dayData.slots || dayData.slots.length === 0) {
+                const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const dow = new Date(selectedDate + 'T00:00:00').getDay();
+                availabilityWarning.innerHTML = '<span style="color:#e74c3c;">&#9888;&#65039; Chef has no availability on ' + dayNames[dow] + 's. Please choose another date.</span>';
+                availabilityWarning.style.display = 'block';
+                if (preferredTimeSelect) {
+                  preferredTimeSelect.innerHTML = '<option value="">No times available</option>';
+                }
+              } else {
+                availabilityWarning.style.display = 'none';
+                // Populate time dropdown
+                if (preferredTimeSelect) {
+                  var timeOptions = '<option value="">Select a time</option>';
+                  for (var i = 0; i < dayData.slots.length; i++) {
+                    var ts = dayData.slots[i];
+                    var label = formatTime(ts.startTime) + ' - ' + formatTime(ts.endTime);
+                    timeOptions += '<option value="' + ts.startTime + '-' + ts.endTime + '">' + label + '</option>';
+                  }
+                  preferredTimeSelect.innerHTML = timeOptions;
+                }
+              }
+            }
+          }
+        } catch (_) {
+          if (preferredTimeSelect) {
+            preferredTimeSelect.innerHTML = '<option value="">Error loading times</option>';
+          }
+        }
+      });
+    }
+    function formatTime(time24) {
+      if (!time24) return '';
+      var parts = time24.split(':');
+      var h = parseInt(parts[0], 10);
+      var m = parts[1] || '00';
+      var ampm = h >= 12 ? 'PM' : 'AM';
+      var h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+      return h12 + ':' + m + ' ' + ampm;
+    }
+    function escapeHtml(text) {
+      if (!text) return '';
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
     // Guest session handling for returning guests (MAI-1744)
     function getGuestSessionId() {
       const match = document.cookie.match(/guest_session_id=([^;]+)/);
@@ -443,6 +530,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
 
     // MAI-1010: Track booking form view on page load
     trackAnalytics('booking_form_view', { service_id: serviceId });
+    // MAI-2151: Funnel event - booking page view
+    trackAnalytics('booking_page_view', { service_id: serviceId });
     // Pre-fill for returning guests with cookie (MAI-1744)
     (async function() {
       var sid = getGuestSessionId();
@@ -588,6 +677,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       const successMessage = document.getElementById('successMessage');
       if (!formData.email) { alert('Please enter your email address.'); return; }
       trackAnalytics('booking_form_submit', { service_id: formData.serviceId });
+          // MAI-2151: Funnel event - booking submit
+          trackAnalytics('booking_submit', { service_id: formData.serviceId });
       submitBtn.disabled = true;
       submitBtn.textContent = 'Sending...';
       // Assign guest session cookie for pre-fill tracking (MAI-1744)
@@ -601,6 +692,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         if (response.ok) {
           const result = await response.clone().json();
           trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
+          // MAI-2151: Funnel event - booking success
+          trackAnalytics('booking_success', { service_id: formData.serviceId, lead_id: result.leadId });
           document.getElementById('inquiryForm').style.display = 'none';
           let successHtml = '<strong>\xe2\x9c\x93 Your quote request was sent!</strong><p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>';
           if (result.bookingStatusUrl) {

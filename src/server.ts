@@ -20,6 +20,7 @@ import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
 
 import authRoutes from './api/auth.js';
 import chefRoutes from './api/chefs.js';
+import chefAvailabilityRoutes from './api/chef-availability.js';
 import serviceRoutes from './api/services.js';
 import bookingRoutes from './api/bookings.js';
 import bookingStatusRoutes from './api/booking-status.js';
@@ -55,6 +56,7 @@ import leadsRoutes from './api/leads.js';
 import quoteRoutes from './api/quotes.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
+import buildChefAvailabilitySettingsPage from './routes/chef-availability-settings-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
 import buildReviewPage from './routes/review-page.js';
 import buildQuoteDisplayPage from './routes/quote-display-page.js';
@@ -104,6 +106,7 @@ server.decorate('authenticate', async (request: FastifyRequest, reply: FastifyRe
 // Routes
 server.register(authRoutes, { prefix: '/auth' });
 server.register(chefRoutes, { prefix: '/api/chefs' });
+server.register(chefAvailabilityRoutes, { prefix: '/api/chefs' }); // MAI-2135: /api/chefs/:id/availability/*
 server.register(serviceRoutes, { prefix: '/api/services' });
 server.register(bookingRoutes, { prefix: '/bookings' });
 server.register(bookingStatusRoutes, { prefix: '/api/booking-status' }); // Public - no auth required
@@ -168,6 +171,12 @@ server.get('/chefs/:id', async (request, reply) => {
     return '<html><body><h1>Invalid Chef ID</h1><a href="/chefs">Back to Chefs</a></body></html>';
   }
   return buildChefPublicProfilePage(chefId);
+});
+
+// Chef availability settings (MAI-2135)
+server.get('/chef/settings/availability', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefAvailabilitySettingsPage();
 });
 
 // Chef onboarding wizard (MAI-1159)

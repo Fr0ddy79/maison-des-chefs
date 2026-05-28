@@ -143,8 +143,8 @@ export default async function checkoutPageRoutes(server: FastifyInstance) {
     // MAI-823: Referral CTA for converted bookings
     const referralCtaHtml = isConverted && lead.referralCode ? `
       <div class="referral-card">
-        <h3 class="referral-title">🍽️ Share the experience & earn $25 toward your next booking</h3>
-        <p class="referral-description">Know someone who'd love this experience? Share your unique referral link and earn $25 credits each time someone books using it!</p>
+        <h3 class="referral-title">🍽️ Give your friends €25 off their booking — get a FREE DESSERT when they confirm</h3>
+        <p class="referral-description">Your friends get €25 off their first booking. You get a free dessert when they confirm theirs. Share your link below!</p>
         <div class="referral-code-section">
           <p class="referral-code-label">Your Referral Code:</p>
           <div class="referral-code-box">${lead.referralCode}</div>
