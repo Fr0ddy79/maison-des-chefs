@@ -188,7 +188,8 @@ server.get('/chef/onboarding', async (request, reply) => {
 // Chef compare page (MAI-903/MAI-1124)
 server.get('/compare', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  const url = new URL(request.url);
+  const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || '3000'}`;
+  const url = new URL(request.url, baseUrl);
   const chefIds = url.searchParams.get('chefs') || '';
   return buildChefComparePage(chefIds);
 });
