@@ -9,6 +9,7 @@ import { config } from './config/index.js';
 import { migrate } from './db/migrate.js';
 import { UserPayload } from './types.js';
 import { startQuoteReminderScheduler } from './services/quote-reminder.js';
+import { startQuoteExpiryScheduler } from './services/quote-expiry.js';
 import { startStaleLeadReEngagementScheduler } from './services/stale-quoted-lead-reengagement.js';
 import { startLeadExpirationScheduler } from './services/lead-expiration.js';
 import { startDinerStagnationAlertScheduler } from './services/diner-stagnation-alert.js';
@@ -56,7 +57,10 @@ import leadsRoutes from './api/leads.js';
 import quoteRoutes from './api/quotes.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
-import buildChefAvailabilitySettingsPage from './routes/chef-availability-settings-page.js';
+declare module './routes/chef-availability-settings-page.js' {
+  export function buildChefAvailabilitySettingsPage(): string;
+}
+import { buildChefAvailabilitySettingsPage } from './routes/chef-availability-settings-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
 import buildReviewPage from './routes/review-page.js';
 import buildQuoteDisplayPage from './routes/quote-display-page.js';
@@ -354,6 +358,7 @@ server.get('/health', async () => ({ status: 'ok' }));
 const start = async () => {
   await migrate();
   startQuoteReminderScheduler();
+  startQuoteExpiryScheduler();
   startStaleLeadReEngagementScheduler();
   startLeadExpirationScheduler();
   startDinerStagnationAlertScheduler();

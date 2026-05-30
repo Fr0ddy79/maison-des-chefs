@@ -34,7 +34,7 @@ function buildDietaryBadges(dietaryTags: string[], maxDisplay = 3): string {
   return `<div class="dietary-badges">${badges}${overflow}</div>`;
 }
 
-const CUISINE_TYPES = ['French', 'Italian', 'Japanese', 'Mexican', 'Mediterranean', 'Latin American', 'French Fusion'];
+const CUISINE_TYPES = ['French', 'Italian', 'Japanese', 'Mexican', 'Mediterranean', 'Latin American', 'French Fusion', 'American', 'Indian', 'Middle Eastern', 'Other'];
 
 // Mapping from wizard cuisine tags (snake_case) to display cuisines (Title Case)
 const CUISINE_TAG_TO_DISPLAY: Record<string, string> = {
@@ -58,6 +58,10 @@ function getChefPhoto(cuisineTypes: string[]): string {
     'Mediterranean': 'https://images.unsplash.com/photo-1560252811-2b291c368f9c?w=400&h=400&fit=crop&crop=face',
     'Latin American': 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?w=400&h=400&fit=crop&crop=face',
     'French Fusion': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=400&fit=crop&crop=face',
+    'American': 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=400&h=400&fit=crop&crop=face',
+    'Indian': 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400&h=400&fit=crop&crop=face',
+    'Middle Eastern': 'https://images.unsplash.com/photo-1541518763669-27fef04b14ea?w=400&h=400&fit=crop&crop=face',
+    'Other': 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&h=400&fit=crop&crop=face',
   };
   for (const cuisine of cuisineTypes) {
     if (cuisinePhotos[cuisine]) {

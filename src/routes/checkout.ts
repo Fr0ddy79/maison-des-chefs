@@ -280,6 +280,117 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     #error-message { display: none; background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; color: #dc2626; font-size: 0.9rem; }
     #error-message.show { display: block; }
     
+    /* MAI-2251: Exit Intent Modal */
+    .exit-intent-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .exit-intent-overlay.show {
+      display: flex;
+    }
+    .exit-intent-modal {
+      background: white;
+      border-radius: 16px;
+      max-width: 480px;
+      width: 90%;
+      padding: 2rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      animation: slideUp 0.3s ease-out;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .exit-intent-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    .exit-intent-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #2c3e50;
+      margin-bottom: 0.75rem;
+    }
+    .exit-intent-description {
+      color: #666;
+      font-size: 1rem;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .exit-intent-offer {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 2px solid #22c55e;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .exit-intent-offer-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #15803d;
+      margin-bottom: 0.5rem;
+    }
+    .exit-intent-offer-detail {
+      color: #555;
+      font-size: 0.95rem;
+    }
+    .exit-intent-email-form {
+      margin-bottom: 1rem;
+    }
+    .exit-intent-email-input {
+      width: 100%;
+      padding: 0.875rem 1rem;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 1rem;
+      box-sizing: border-box;
+      margin-bottom: 0.75rem;
+    }
+    .exit-intent-email-input:focus {
+      outline: none;
+      border-color: #22c55e;
+    }
+    .exit-intent-complete-btn {
+      width: 100%;
+      background: #22c55e;
+      color: white;
+      border: none;
+      padding: 1rem;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .exit-intent-complete-btn:hover {
+      background: #16a34a;
+    }
+    .exit-intent-complete-btn:disabled {
+      background: #d1d5db;
+      cursor: not-allowed;
+    }
+    .exit-intent-decline-btn {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 0.9rem;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0.5rem;
+    }
+    .exit-intent-decline-btn:hover {
+      color: #666;
+    }
+    
     @media (max-width: 768px) {
       .checkout-grid { grid-template-columns: 1fr; }
       .payment-card { position: static; }
@@ -472,6 +583,24 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         <p class="help-text">
           Need help? <a href="mailto:support@maisondeschefs.com">Contact Support</a>
         </p>
+      </div>
+    </div>
+    
+    <!-- MAI-2251: Exit Intent Modal -->
+    <div class="exit-intent-overlay" id="exit-intent-overlay">
+      <div class="exit-intent-modal">
+        <div class="exit-intent-icon">🍰</div>
+        <h2 class="exit-intent-title">Wait! Get a Free Dessert</h2>
+        <p class="exit-intent-description">Complete your booking today and receive a complimentary dessert for your event.</p>
+        <div class="exit-intent-offer">
+          <div class="exit-intent-offer-title">🎁 Free Dessert with Your Booking</div>
+          <div class="exit-intent-offer-detail">Offer valid when you complete your payment today</div>
+        </div>
+        <div class="exit-intent-email-form">
+          <input type="email" class="exit-intent-email-input" id="exit-intent-email" placeholder="Enter your email to claim">
+          <button class="exit-intent-complete-btn" id="exit-intent-complete" onclick="handleExitIntentComplete()">Complete My Booking</button>
+        </div>
+        <button class="exit-intent-decline-btn" onclick="handleExitIntentDecline()">No thanks, I'll pass</button>
       </div>
     </div>
   </div>
@@ -695,6 +824,100 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         showError(error.message || 'An error occurred. Please try again.');
       }
     }
+    
+    // MAI-2251: Exit Intent Detection
+    (function() {
+      var exitIntentShown = sessionStorage.getItem('exitIntentShown') === 'true';
+      var leadIdNum = parseInt(leadId);
+      var hasEnteredCheckout = sessionStorage.getItem('checkoutEntered_' + leadIdNum) === 'true';
+      
+      // Mark that user has entered checkout for this lead
+      sessionStorage.setItem('checkoutEntered_' + leadIdNum, 'true');
+      
+      if (exitIntentShown || hasEnteredCheckout === false) {
+        return; // Already shown or not a valid checkout scenario
+      }
+      
+      // Detect exit intent (mouse leaving viewport)
+      function handleExitIntent(e) {
+        if (e.clientY <= 0 && !exitIntentShown) {
+          exitIntentShown = true;
+          sessionStorage.setItem('exitIntentShown', 'true');
+          showExitIntentModal();
+          // Fire analytics: exit_intent_shown
+          fireExitIntentEvent('exit_intent_shown', null, null);
+        }
+      }
+      
+      function showExitIntentModal() {
+        var overlay = document.getElementById('exit-intent-overlay');
+        if (overlay) {
+          overlay.classList.add('show');
+        }
+      }
+      
+      function fireExitIntentEvent(eventName, email, offerType) {
+        if (navigator.sendBeacon) {
+          var payload = {
+            event: eventName,
+            leadId: leadIdNum,
+            exit_intent_offer_type: offerType || 'free_dessert',
+            timestamp: new Date().toISOString()
+          };
+          if (email) {
+            payload.exit_intent_email = email;
+          }
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify(payload));
+        }
+      }
+      
+      window.handleExitIntentComplete = function() {
+        var emailInput = document.getElementById('exit-intent-email');
+        var email = emailInput ? emailInput.value.trim() : '';
+        
+        if (!email) {
+          if (emailInput) emailInput.style.borderColor = '#ef4444';
+          return;
+        }
+        
+        // Hide modal
+        var overlay = document.getElementById('exit-intent-overlay');
+        if (overlay) {
+          overlay.classList.remove('show');
+        }
+        
+        // Fire analytics: exit_intent_accepted (and email_captured if email provided)
+        var analyticsPayload = {
+          event: 'exit_intent_accepted',
+          leadId: leadIdNum,
+          exit_intent_offer_type: 'free_dessert',
+          timestamp: new Date().toISOString()
+        };
+        if (email) {
+          analyticsPayload.exit_intent_email = email;
+        }
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify(analyticsPayload));
+        }
+        
+        // Proceed to checkout
+        startCheckout();
+      };
+      
+      window.handleExitIntentDecline = function() {
+        var overlay = document.getElementById('exit-intent-overlay');
+        if (overlay) {
+          overlay.classList.remove('show');
+        }
+        // Fire analytics: exit_intent_declined
+        fireExitIntentEvent('exit_intent_declined', null, 'free_dessert');
+      };
+      
+      // Attach exit intent listener after a small delay to avoid immediate trigger
+      setTimeout(function() {
+        document.addEventListener('mouseout', handleExitIntent);
+      }, 2000);
+    })();
   </script>
 </body>
 </html>`;

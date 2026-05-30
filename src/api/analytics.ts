@@ -40,6 +40,9 @@ const analyticsEventSchema = z.object({
   cta_position: z.string().optional(),
   // MAI-1702: Hero search schema alignment (date and guestCount from hero search form)
   date: z.string().optional(),
+  // MAI-2251: Exit intent capture analytics
+  exit_intent_offer_type: z.string().optional(),
+  exit_intent_email: z.string().optional(),
 });
 
 function ensureDataDir() {
