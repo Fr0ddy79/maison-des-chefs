@@ -532,22 +532,6 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     trackAnalytics('booking_form_view', { service_id: serviceId });
     // MAI-2151: Funnel event - booking page view
     trackAnalytics('booking_page_view', { service_id: serviceId });
-    // Pre-fill for returning guests with cookie (MAI-1744)
-    (async function() {
-      var sid = getGuestSessionId();
-      if (sid && !${isReturningDiner ? 'true' : 'false'}) {
-        try {
-          var r = await fetch('/api/guest/prefill?session=' + encodeURIComponent(sid));
-          if (r.ok) {
-            var p = await r.json();
-            if (p.name && document.getElementById('clientName')) { document.getElementById('clientName').value = p.name; document.getElementById('clientName').classList.add('prefilled'); }
-            if (p.email && document.getElementById('email')) { document.getElementById('email').value = p.email; document.getElementById('email').classList.add('prefilled'); }
-            if (p.phone && document.getElementById('phone')) { document.getElementById('phone').value = p.phone; document.getElementById('phone').classList.add('prefilled'); }
-            if (p.guestCount && document.getElementById('guestCount')) document.getElementById('guestCount').value = p.guestCount;
-          }
-        } catch (_) {}
-      }
-    })();
 
 
     // MAI-1366: Inline Auth Panel

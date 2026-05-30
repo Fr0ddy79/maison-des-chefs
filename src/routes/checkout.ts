@@ -116,6 +116,12 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     const totalWithAddonsDisplay = `$${totalWithAddons.toFixed(2)}`;
     const dinerName = lead.clientName || 'there';
 
+    // MAI-2282: Calculate quote expiry time (48h from quoteSentAt)
+    const QUOTE_EXPIRY_HOURS = 48;
+    const quoteExpiryMs = lead.quoteSentAt
+      ? new Date(lead.quoteSentAt).getTime() + (QUOTE_EXPIRY_HOURS * 60 * 60 * 1000)
+      : null;
+
     // Get real social proof stats for this chef - MAI-2007
     const chefBookingStats = db.select({
       totalBookings: count(bookings.id),
@@ -236,6 +242,48 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     
     .secure-badge { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 1rem; color: #666; font-size: 0.85rem; }
     .secure-badge span { color: #22c55e; }
+    
+    /* MAI-2271: Trust Badges */
+    .payment-methods { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 8px; }
+    .payment-methods img { height: 24px; width: auto; }
+    .payment-methods .visa { height: 22px; }
+    .payment-methods .mc { height: 28px; }
+    .payment-methods .amex { height: 20px; }
+    
+    .money-back-badge { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; color: #16a34a; font-size: 0.85rem; font-weight: 500; }
+    .money-back-badge .icon { font-size: 1.1rem; }
+    
+    /* MAI-2271: What Happens After Payment Expandable */
+    .after-payment-section { margin-top: 1.25rem; border-top: 1px solid #eee; padding-top: 1rem; }
+    
+    /* MAI-2282: Quote Expiry Countdown */
+    .quote-countdown { padding: 1rem; border-radius: 8px; text-align: center; margin-bottom: 1rem; border: 2px solid; }
+    .quote-countdown.green { background: #d1fae5; border-color: #10b981; color: #065f46; }
+    .quote-countdown.yellow { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+    .quote-countdown.red { background: #fee2e2; border-color: #ef4444; color: #991b1b; animation: pulse-countdown 2s infinite; }
+    .quote-countdown.expired { background: #f3f4f6; border-color: #6b7280; color: #374151; }
+    @keyframes pulse-countdown { 0%, 100% { opacity: 1; } 50% { opacity: 0.75; } }
+    .countdown-label { font-size: 0.85rem; margin-bottom: 0.25rem; }
+    .countdown-timer { font-size: 1.5rem; font-weight: 700; margin: 0.25rem 0; }
+    .countdown-message { font-size: 0.8rem; opacity: 0.9; }
+    
+    /* MAI-2282: Expired Overlay */
+    .quote-expired-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .quote-expired-modal { background: white; border-radius: 16px; padding: 2.5rem; max-width: 400px; text-align: center; }
+    .quote-expired-icon { font-size: 3rem; margin-bottom: 1rem; }
+    .quote-expired-title { font-size: 1.5rem; font-weight: 700; color: #2c3e50; margin-bottom: 0.5rem; }
+    .quote-expired-message { color: #666; margin-bottom: 1.5rem; }
+    .quote-expired-cta { background: #c9a227; color: white; border: none; padding: 0.875rem 1.5rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+    .after-payment-toggle { display: flex; align-items: center; justify-content: center; gap: 0.5rem; background: none; border: none; color: #666; font-size: 0.9rem; cursor: pointer; padding: 0.5rem; width: 100%; transition: color 0.2s; }
+    .after-payment-toggle:hover { color: #c9a227; }
+    .after-payment-toggle .chevron { transition: transform 0.3s; font-size: 0.8rem; }
+    .after-payment-toggle.expanded .chevron { transform: rotate(180deg); }
+    .after-payment-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+    .after-payment-content.expanded { max-height: 300px; }
+    .after-payment-list { list-style: none; padding: 0; margin: 0; }
+    .after-payment-list li { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; color: #555; }
+    .after-payment-list li:last-child { border-bottom: none; }
+    .after-payment-list .check { color: #22c55e; font-weight: bold; font-size: 1rem; flex-shrink: 0; }
     
     .help-text { text-align: center; margin-top: 1.5rem; color: #888; font-size: 0.85rem; }
     .help-text a { color: #c9a227; text-decoration: none; }
@@ -567,6 +615,14 @@ export default async function checkoutRoutes(server: FastifyInstance) {
           </div>
         </div>
         
+        ${quoteExpiryMs ? `
+        <div class="quote-countdown" id="quote-countdown" data-expiry="${quoteExpiryMs}">
+          <div class="countdown-label">⏰ Your quote expires in:</div>
+          <div class="countdown-timer" id="countdown-timer">--:--:--</div>
+          <div class="countdown-message">Complete payment to lock in this price.</div>
+        </div>
+        ` : ''}
+        
         <button id="pay-button" class="pay-button" onclick="startCheckout()">
           Pay Now
         </button>
@@ -574,6 +630,35 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         <div class="secure-badge">
           <span>🔒</span>
           <span>Secure payment powered by Stripe</span>
+        </div>
+        
+        <!-- MAI-2271: Payment Method Icons -->
+        <div class="payment-methods">
+          <img src="https://cdn.jsdelivr.net/gh/lipis/flag-icons@6.6.6/flags/4x3/visa.svg" alt="Visa" class="visa" onerror="this.style.display='none'" />
+          <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" alt="Mastercard" class="mc" onerror="this.style.display='none'" />
+          <img src="https://upload.wikimedia.org/wikipedia/commons/3/30/American_Express_logo_%282018%29.svg" alt="Amex" class="amex" onerror="this.style.display='none'" />
+        </div>
+        
+        <!-- MAI-2271: Money-Back Guarantee Badge -->
+        <div class="money-back-badge">
+          <span class="icon">🛡️</span>
+          <span>Money-Back Guarantee</span>
+        </div>
+        
+        <!-- MAI-2271: What Happens After Payment -->
+        <div class="after-payment-section">
+          <button class="after-payment-toggle" onclick="toggleAfterPayment()">
+            <span>What happens after payment?</span>
+            <span class="chevron">▼</span>
+          </button>
+          <div class="after-payment-content" id="after-payment-content">
+            <ul class="after-payment-list">
+              <li><span class="check">✓</span> You'll receive an email confirmation instantly</li>
+              <li><span class="check">✓</span> Chef will receive your booking and contact you within 24h</li>
+              <li><span class="check">✓</span> Chef will confirm final event details 1 week before</li>
+              <li><span class="check">✓</span> You can manage or cancel from "My Bookings" anytime</li>
+            </ul>
+          </div>
         </div>
         
         <div class="info-box">
@@ -603,6 +688,16 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         <button class="exit-intent-decline-btn" onclick="handleExitIntentDecline()">No thanks, I'll pass</button>
       </div>
     </div>
+    
+    <!-- MAI-2282: Quote Expired Overlay -->
+    <div class="quote-expired-overlay" id="quote-expired-overlay" style="display:none;">
+      <div class="quote-expired-modal">
+        <div class="quote-expired-icon">⏰</div>
+        <h2 class="quote-expired-title">Quote Expired</h2>
+        <p class="quote-expired-message">Your quote from Chef ${lead.chefName || 'your chef'} has expired. To confirm your booking, you'll need to submit a new inquiry.</p>
+        <a href="/chefs" class="quote-expired-cta">Find a Chef →</a>
+      </div>
+    </div>
   </div>
   
   <footer>
@@ -622,10 +717,63 @@ export default async function checkoutRoutes(server: FastifyInstance) {
     const availableAddons = ${addonsJson};
     let selectedAddonIds = ${selectedAddonIdsJson};
     
+    // MAI-2282: Quote Expiry Countdown
+    const quoteCountdownEl = document.getElementById('quote-countdown');
+    const quoteExpiryMs = quoteCountdownEl ? parseInt(quoteCountdownEl.dataset.expiry) : null;
+    
+    function updateCountdown() {
+      if (!quoteExpiryMs) return;
+      const remaining = quoteExpiryMs - Date.now();
+      const countdownTimer = document.getElementById('countdown-timer');
+      if (!countdownTimer) return;
+      
+      if (remaining <= 0) {
+        // Quote expired - show overlay and disable pay button
+        countdownTimer.textContent = 'EXPIRED';
+        if (quoteCountdownEl) {
+          quoteCountdownEl.classList.remove('green', 'yellow', 'red');
+          quoteCountdownEl.classList.add('expired');
+        }
+        if (payButton) {
+          payButton.disabled = true;
+          payButton.style.opacity = '0.5';
+          payButton.style.cursor = 'not-allowed';
+          payButton.textContent = 'Quote Expired';
+        }
+        document.getElementById('quote-expired-overlay').style.display = 'flex';
+        // Fire analytics
+        if (typeof fireExitIntentEvent === 'function') {
+          fireExitIntentEvent('checkout_quote_expired', null, null);
+        }
+        return;
+      }
+      
+      const hours = Math.floor(remaining / 3600000);
+      const minutes = Math.floor((remaining % 3600000) / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      countdownTimer.textContent = \`\${hours}h \${minutes}m \${seconds}s\`;
+      
+      // Update urgency color
+      if (quoteCountdownEl) {
+        quoteCountdownEl.classList.remove('green', 'yellow', 'red', 'expired');
+        if (remaining < 6 * 3600000) {
+          quoteCountdownEl.classList.add('red');
+        } else if (remaining < 12 * 3600000) {
+          quoteCountdownEl.classList.add('yellow');
+        } else {
+          quoteCountdownEl.classList.add('green');
+        }
+      }
+    }
+    
     // Initialize UI
     document.addEventListener('DOMContentLoaded', function() {
       renderAddonCards();
       updatePaymentSummary();
+      if (quoteExpiryMs) {
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+      }
     });
     
     function renderAddonCards() {
@@ -774,6 +922,25 @@ export default async function checkoutRoutes(server: FastifyInstance) {
         }));
       }
       
+      // MAI-2271: Fire analytics for what_happens_after_payment_viewed if user expanded it
+      window.toggleAfterPayment = function() {
+        var btn = document.querySelector('.after-payment-toggle');
+        var content = document.getElementById('after-payment-content');
+        var isExpanding = !content.classList.contains('expanded');
+        
+        btn.classList.toggle('expanded');
+        content.classList.toggle('expanded');
+        
+        // Fire analytics event
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/analytics/event', JSON.stringify({
+            event: isExpanding ? 'what_happens_after_payment_viewed' : 'what_happens_after_payment_collapsed',
+            leadId: parseInt(leadId),
+            timestamp: new Date().toISOString()
+          }));
+        }
+      };
+      
       try {
         const response = await fetch('/api/checkout/' + leadId + '/create-session?token=' + token, {
           method: 'POST',
@@ -916,6 +1083,49 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       // Attach exit intent listener after a small delay to avoid immediate trigger
       setTimeout(function() {
         document.addEventListener('mouseout', handleExitIntent);
+        
+        // MAI-2264: Mobile/Touch exit intent - trigger on scroll depth or time
+        var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        var hasTriggedMobile = false;
+        
+        function triggerMobileExitIntent() {
+          if (!exitIntentShown && !hasTriggedMobile) {
+            hasTriggedMobile = true;
+            exitIntentShown = true;
+            sessionStorage.setItem('exitIntentShown', 'true');
+            showExitIntentModal();
+            fireExitIntentEvent('exit_intent_shown', null, 'mobile_scroll_trigger');
+          }
+        }
+        
+        if (isMobile) {
+          // Mobile: trigger after 45 seconds on page OR when user scrolls near bottom (within 20% of page)
+          setTimeout(function() {
+            triggerMobileExitIntent();
+          }, 45000);
+          
+          // Scroll depth trigger: when user scrolls to bottom 20% of page
+          window.addEventListener('scroll', function() {
+            var scrollTop = window.scrollY || document.documentElement.scrollTop;
+            var scrollHeight = document.documentElement.scrollHeight;
+            var clientHeight = document.documentElement.clientHeight;
+            var scrolledToBottom = scrollTop + clientHeight >= scrollHeight * 0.80;
+            if (scrolledToBottom) {
+              triggerMobileExitIntent();
+            }
+          });
+        } else {
+          // Desktop: also add time-based trigger as backup after 60 seconds
+          setTimeout(function() {
+            if (!exitIntentShown) {
+              // Show after 60 seconds if no mouse exit detected
+              exitIntentShown = true;
+              sessionStorage.setItem('exitIntentShown', 'true');
+              showExitIntentModal();
+              fireExitIntentEvent('exit_intent_shown', null, 'desktop_time_trigger');
+            }
+          }, 60000);
+        }
       }, 2000);
     })();
   </script>

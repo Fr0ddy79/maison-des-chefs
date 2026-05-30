@@ -439,6 +439,58 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-2131/MAI-2135: Create chef_availability_slots table for weekly recurring availability template
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS chef_availability_slots (
+        id TEXT PRIMARY KEY,
+        chef_id INTEGER NOT NULL REFERENCES users(id),
+        day_of_week INTEGER NOT NULL CHECK(day_of_week >= 0 AND day_of_week <= 6),
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created chef_availability_slots table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS chef_availability_slots_chef_id_idx ON chef_availability_slots(chef_id)`);
+    console.log('Migration: Created chef_availability_slots_chef_id_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
+  // MAI-2131/MAI-2135: Create chef_blocked_dates table for chef-specific blocked dates
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS chef_blocked_dates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chef_id INTEGER NOT NULL REFERENCES users(id),
+        date TEXT NOT NULL,
+        reason TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created chef_blocked_dates table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS chef_blocked_dates_chef_id_idx ON chef_blocked_dates(chef_id)`);
+    console.log('Migration: Created chef_blocked_dates_chef_id_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS chef_blocked_dates_date_idx ON chef_blocked_dates(date)`);
+    console.log('Migration: Created chef_blocked_dates_date_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }
