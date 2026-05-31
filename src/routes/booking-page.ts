@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { services, users, chefProfiles, bookings, leads } from '../db/schema.js';
 import { eq, gte, lte, sql, and } from 'drizzle-orm';
 
-export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number, referralCodeFromUrl?: string, ctaFromUrl?: string): Promise<string> {
+export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number, referralCodeFromUrl?: string, ctaFromUrl?: string, leadFormFromUrl?: string): Promise<string> {
   // Simple query without complex joins to avoid drizzle issues
   const serviceBase = db.select({
     id: services.id,
@@ -359,6 +359,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
   <script>
     const pricePerPerson = ${service.pricePerPerson && service.pricePerPerson > 0 ? service.pricePerPerson : 'null'};
     const serviceId = ${service.id};
+    // MAI-2329: Booking form variant (standard vs simplified) for A/B test tracking
+    const formVariant = '${leadFormFromUrl || 'standard'}';
     document.querySelectorAll('input[value]').forEach(field => { if (field.value) field.classList.add('prefilled'); });
     const estimatedTotalEl = document.getElementById('estimatedTotal');
     const estimatedTotalInlineEl = document.getElementById('estimatedTotalInline');
@@ -529,9 +531,24 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     }
 
     // MAI-1010: Track booking form view on page load
-    trackAnalytics('booking_form_view', { service_id: serviceId });
-    // MAI-2151: Funnel event - booking page view
-    trackAnalytics('booking_page_view', { service_id: serviceId });
+    // MAI-2329: Include formVariant for A/B test tracking
+    // MAI-2332: Track booking_form_viewed with service_id, form_variant, and referrer
+    // MAI-2333: Read UTM cookies for channel attribution
+    function getUTMCookies() {
+      const cookies = document.cookie.split(';');
+      const utm = { utm_source: '', utm_medium: '', utm_campaign: '' };
+      for (const cookie of cookies) {
+        const [name, val] = cookie.trim().split('=');
+        if (name === 'utm_source') utm.utm_source = val || '';
+        if (name === 'utm_medium') utm.utm_medium = val || '';
+        if (name === 'utm_campaign') utm.utm_campaign = val || '';
+      }
+      return utm;
+    }
+    const utmCookies = getUTMCookies();
+    trackAnalytics('booking_form_viewed', { service_id: serviceId, form_variant: formVariant, referrer: document.referrer || '', utm_source: utmCookies.utm_source || undefined, utm_medium: utmCookies.utm_medium || undefined, utm_campaign: utmCookies.utm_campaign || undefined });
+    // MAI-2151: Funnel event - booking page view (includes formVariant for MAI-2329)
+    trackAnalytics('booking_page_view', { service_id: serviceId, card_variant: formVariant, cta_variant: formVariant, utm_source: utmCookies.utm_source || undefined, utm_medium: utmCookies.utm_medium || undefined, utm_campaign: utmCookies.utm_campaign || undefined });
 
 
     // MAI-1366: Inline Auth Panel
@@ -660,9 +677,13 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       const submitBtn = document.getElementById('submitBtn');
       const successMessage = document.getElementById('successMessage');
       if (!formData.email) { alert('Please enter your email address.'); return; }
-      trackAnalytics('booking_form_submit', { service_id: formData.serviceId });
-          // MAI-2151: Funnel event - booking submit
-          trackAnalytics('booking_submit', { service_id: formData.serviceId });
+      // MAI-2329: Track booking form submit with formVariant for A/B test
+      // MAI-2332: Track booking_form_submitted with service_id, form_variant, lead_id, guest_count, event_date
+      // MAI-2333: Include UTM cookies for channel attribution
+      const utmSubmitCookies = getUTMCookies();
+      trackAnalytics('booking_form_submitted', { service_id: formData.serviceId, form_variant: formVariant, guest_count: formData.guestCount, event_date: formData.eventDate || '', utm_source: utmSubmitCookies.utm_source || undefined, utm_medium: utmSubmitCookies.utm_medium || undefined, utm_campaign: utmSubmitCookies.utm_campaign || undefined });
+          // MAI-2151: Funnel event - booking submit (includes formVariant for MAI-2329)
+          trackAnalytics('booking_submit', { service_id: formData.serviceId, card_variant: formVariant, cta_variant: formVariant, utm_source: utmSubmitCookies.utm_source || undefined, utm_medium: utmSubmitCookies.utm_medium || undefined, utm_campaign: utmSubmitCookies.utm_campaign || undefined });
       submitBtn.disabled = true;
       submitBtn.textContent = 'Sending...';
       // Assign guest session cookie for pre-fill tracking (MAI-1744)
@@ -675,9 +696,10 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         });
         if (response.ok) {
           const result = await response.clone().json();
-          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId });
-          // MAI-2151: Funnel event - booking success
-          trackAnalytics('booking_success', { service_id: formData.serviceId, lead_id: result.leadId });
+          // MAI-2329: Track booking inquiry success with formVariant
+          trackAnalytics('booking_inquiry_success', { service_id: formData.serviceId, lead_id: result.leadId, form_variant: formVariant, utm_source: utmSubmitCookies.utm_source || undefined, utm_medium: utmSubmitCookies.utm_medium || undefined, utm_campaign: utmSubmitCookies.utm_campaign || undefined });
+          // MAI-2151: Funnel event - booking success (includes formVariant for MAI-2329)
+          trackAnalytics('booking_success', { service_id: formData.serviceId, lead_id: result.leadId, card_variant: formVariant, cta_variant: formVariant, utm_source: utmSubmitCookies.utm_source || undefined, utm_medium: utmSubmitCookies.utm_medium || undefined, utm_campaign: utmSubmitCookies.utm_campaign || undefined });
           document.getElementById('inquiryForm').style.display = 'none';
           let successHtml = '<strong>\xe2\x9c\x93 Your quote request was sent!</strong><p style="margin-top: 0.5rem;">The chef will respond within 24-48 hours with a personalized quote.</p>';
           if (result.bookingStatusUrl) {
@@ -780,6 +802,7 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
         guestCount: parseInt(form.guestCount.value) || 1,
         message: form.message.value || undefined,
         referralCode: form.referralCode?.value || undefined,
+        formVariant: formVariant, // MAI-2329: Pass form variant to API for lead tracking
       };
       if (!formData.email) { alert('Please enter your email address.'); return; }
       // Auth is optional - submit immediately (MAI-1744)

@@ -15,6 +15,7 @@ import { startLeadExpirationScheduler } from './services/lead-expiration.js';
 import { startDinerStagnationAlertScheduler } from './services/diner-stagnation-alert.js';
 import { startSlaCheckInScheduler } from './services/sla-check-in.js';
 import { startReviewRequestScheduler } from './services/review-request-scheduler.js';
+import { startCheckoutAbandonmentScheduler } from './services/checkout-abandonment-detector.js';
 import { db } from './db/index.js';
 import { users, chefProfiles, services, bookings, leads, dinerPreferences, reviews } from './db/schema.js';
 import { eq, sql, and, isNotNull, desc } from 'drizzle-orm';
@@ -222,8 +223,10 @@ server.get('/book/:serviceId', async (request, reply) => {
   const referralCodeFromUrl = url.searchParams.get('ref') || undefined;
   // MAI-1867: Read CTA variant from URL (set by service detail page A/B test)
   const ctaFromUrl = url.searchParams.get('cta') || undefined;
+  // MAI-2329: Read lead_form variant from URL (standard vs simplified booking form)
+  const leadFormFromUrl = url.searchParams.get('lead_form') === 'simplified' ? 'simplified' : 'standard';
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount, referralCodeFromUrl, ctaFromUrl);
+  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount, referralCodeFromUrl, ctaFromUrl, leadFormFromUrl);
 });
 
 // Review submission page (MAI-1214)
@@ -364,6 +367,7 @@ const start = async () => {
   startDinerStagnationAlertScheduler();
   startSlaCheckInScheduler();
   startReviewRequestScheduler();
+  startCheckoutAbandonmentScheduler(); // MAI-2311: Checkout abandonment detection + recovery email
 };
 
 const PORT = parseInt(process.env.PORT || '3001', 10);

@@ -1,8 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { leads, services, users, referralCodes } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { leads, services, users, referralCodes, chefAvailabilitySlots, chefBlockedDates, bookings } from "../db/schema.js";
+import { eq, and, ne } from "drizzle-orm";
 import { sendDinerConfirmationEmail } from "../services/diner-confirmation-email.js";
 import { sendDinerRequestReceivedEmail } from "../services/diner-request-received-email.js";
 import { sendChefNewBookingEmail } from "../services/chef-new-booking-email.js";
@@ -18,6 +18,7 @@ const createInquirySchema = z.object({
   guestCount: z.number().int().min(1).optional().default(1),
   message: z.string().optional(),
   referralCode: z.string().optional(), // MAI-1778: referral code from referral link
+  formVariant: z.string().optional().default('standard'), // MAI-2329: booking form variant for A/B test tracking
 });
 
 const BOOKING_STATUS_TOKEN_EXPIRY_DAYS = 30;
@@ -60,6 +61,64 @@ export default async function inquiryRoutes(server: FastifyInstance) {
     const chef = db.select().from(users).where(eq(users.id, service.chefId)).get();
     if (!chef) {
       return reply.status(404).send({ error: "Chef not found" });
+    }
+
+    // MAI-2315: Booking conflict detection — check chef availability before creating lead
+    if (body.eventDate) {
+      const requestedDate = new Date(body.eventDate);
+      const dayOfWeek = requestedDate.getDay();
+
+      // 1. Check if chef has availability slots for this day of week
+      const availableSlots = db.select().from(chefAvailabilitySlots).where(
+        and(
+          eq(chefAvailabilitySlots.chefId, service.chefId),
+          eq(chefAvailabilitySlots.dayOfWeek, dayOfWeek),
+          eq(chefAvailabilitySlots.isActive, true)
+        )
+      ).all();
+
+      if (availableSlots.length === 0) {
+        return reply.status(409).send({
+          error: "Chef is not available on [date]. Please select a different date or time.",
+          conflictType: "NO_AVAILABILITY_SLOT",
+        });
+      }
+
+      // 2. Check if chef has blocked this specific date
+      const blockedDate = db.select().from(chefBlockedDates).where(
+        and(
+          eq(chefBlockedDates.chefId, service.chefId),
+          eq(chefBlockedDates.date, body.eventDate)
+        )
+      ).get();
+
+
+      if (blockedDate) {
+        return reply.status(409).send({
+          error: "Chef is not available on [date]. Please select a different date or time.",
+          conflictType: "DATE_BLOCKED",
+        });
+      }
+
+      // 3. Check for existing non-cancelled booking at the same date
+      const conflictingBooking = db.select({ id: bookings.id, status: bookings.status })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.chefId, service.chefId),
+            eq(bookings.eventDate, body.eventDate),
+            ne(bookings.status, 'cancelled')
+          )
+        )
+        .get();
+
+
+      if (conflictingBooking) {
+        return reply.status(409).send({
+          error: "Chef is not available on [date]. Please select a different date or time.",
+          conflictType: "DATE_ALREADY_BOOKED",
+        });
+      }
     }
 
     // MAI-805: Generate access token for booking status tracking

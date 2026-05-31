@@ -231,6 +231,19 @@ export default function buildChefDiscoveryPage(): string {
   .modal-success .timeline-step .step-icon { font-size: 1.2rem; flex-shrink: 0; }
   .modal-success .timeline-step .step-time { display: block; font-size: 0.8rem; color: #888; margin-top: 0.15rem; }
   .modal-success .timeline-step.done .step-time { color: #81c784; }
+  /* MAI-2344: Referral section in inquiry success modal */
+  .modal-referral-section { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 8px; padding: 1rem; margin: 1rem 0; text-align: left; }
+  .modal-referral-title { font-size: 0.95rem; font-weight: 600; color: #92400e; margin-bottom: 0.25rem; }
+  .modal-referral-subtitle { font-size: 0.8rem; color: #b45309; margin-bottom: 0.75rem; }
+  .modal-share-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .modal-share-btn { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.85rem; font-weight: 500; text-decoration: none; color: white; cursor: pointer; border: none; transition: background 0.2s; }
+  .modal-share-btn.copy-btn { background: #22c55e; }
+  .modal-share-btn.copy-btn:hover { background: #16a34a; }
+  .modal-share-btn.email-btn { background: #3b82f6; }
+  .modal-share-btn.email-btn:hover { background: #2563eb; }
+  .modal-share-btn.whatsapp-btn { background: #22c55e; }
+  .modal-share-btn.whatsapp-btn:hover { background: #16a34a; }
+  .modal-share-icon { font-size: 1rem; }
 
   @media (max-width: 1100px) { .chef-grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 768px) {
@@ -1114,6 +1127,16 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
         '<div class="timeline-step"><span class="step-icon">📩</span><span class="step-text">Chefs send you personalized quotes <em class="step-time">within 24-48 hours</em></span></div>' +
         '<div class="timeline-step"><span class="step-icon">💳</span><span class="step-text">You confirm & pay to lock in your date</span></div>' +
       '</div>' +
+      /* MAI-2344: Referral share section in inquiry success modal */
+      '<div class="modal-referral-section">' +
+        '<div class="modal-referral-title">🍽️ Know someone looking for a private chef?</div>' +
+        '<div class="modal-referral-subtitle">Share Maison des Chefs with friends planning their next gathering</div>' +
+        '<div class="modal-share-buttons">' +
+          '<button class="modal-share-btn copy-btn" onclick="copyInquiryShareLink(this)"><span class="modal-share-icon">📋</span> Copy Link</button>' +
+          '<a class="modal-share-btn email-btn" href="mailto:?subject=Check+out+Maison+des+Chefs&body=I+just+found+an+amazing+service+for+private+chef+experiences+in+Montreal.+You+should+check+it+out:+https://maisondeschefs.com%3Fref%3Dinquiry_shared" target="_blank" rel="noopener" onclick="trackInquiryReferralShare(\'email\');"><span class="modal-share-icon">✉️</span> Email</a>' +
+          '<a class="modal-share-btn whatsapp-btn" href="https://wa.me/?text=I+just+found+an+amazing+service+for+private+chef+experiences+in+Montreal.+Check+it+out:+https://maisondeschefs.com%3Fref%3Dinquiry_shared" target="_blank" rel="noopener" onclick="trackInquiryReferralShare(\'whatsapp\');"><span class="modal-share-icon">💬</span> WhatsApp</a>' +
+        '</div>' +
+      '</div>' +
       '<button class="modal-submit-btn" onclick="closeInquiryModal(); location.reload();" style="margin-top:1rem;">Back to Chefs<\/button>' +
     '<\/div>';
   } catch (err) {
@@ -1127,6 +1150,53 @@ document.getElementById('multiInquiryForm').addEventListener('submit', async fun
     submitBtn.textContent = 'Request Free Quotes';
   }
 });
+
+// MAI-2344: Referral share functions for inquiry success modal
+function copyInquiryShareLink(btn) {
+  var shareUrl = window.location.origin + '?ref=inquiry_shared';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(shareUrl).then(function() {
+      var originalText = btn.innerHTML;
+      btn.innerHTML = '<span class="modal-share-icon">✓</span> Copied!';
+      setTimeout(function() { btn.innerHTML = originalText; }, 2000);
+    }).catch(function() {
+      // Fallback: select and copy
+      var textArea = document.createElement('textarea');
+      textArea.value = shareUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      var originalText = btn.innerHTML;
+      btn.innerHTML = '<span class="modal-share-icon">✓</span> Copied!';
+      setTimeout(function() { btn.innerHTML = originalText; }, 2000);
+    });
+  } else {
+    // Fallback for older browsers
+    var textArea = document.createElement('textarea');
+    textArea.value = shareUrl;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    var originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="modal-share-icon">✓</span> Copied!';
+    setTimeout(function() { btn.innerHTML = originalText; }, 2000);
+  }
+  trackInquiryReferralShare('copy');
+}
+
+function trackInquiryReferralShare(channel) {
+  trackChefDiscoveryEvent({
+    event: 'inquiry_referral_share',
+    channel: channel,
+    ref: 'inquiry_shared'
+  });
+}
 <\/script>
 </body>
 </html>

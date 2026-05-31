@@ -213,6 +213,9 @@ export const leads = sqliteTable('leads', {
   requestReceivedSentAt: integer('request_received_sent_at', { mode: 'timestamp' }),
   // MAI-1822: Payment status for Stripe payment tracking
   paymentStatus: text('payment_status', { enum: ['unpaid', 'paid', 'failed', 'refunded'] }).notNull().default('unpaid'),
+  // MAI-2311: Checkout abandonment tracking
+  checkoutPageVisitedAt: integer('checkout_page_visited_at', { mode: 'timestamp' }), // When diner visited checkout page
+  checkoutAbandonmentEmailSentAt: integer('checkout_abandonment_email_sent_at', { mode: 'timestamp' }), // When abandonment recovery email was sent
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 

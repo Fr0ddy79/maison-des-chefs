@@ -73,6 +73,7 @@ export default async function checkoutRoutes(server: FastifyInstance) {
       quoteMessage: leads.quoteMessage,
       quoteSentAt: leads.quoteSentAt,
       selectedAddons: leads.selectedAddons,
+      checkoutPageVisitedAt: leads.checkoutPageVisitedAt, // MAI-2311
       serviceName: services.name,
       serviceDescription: services.description,
       chefId: leads.chefId,
@@ -88,6 +89,15 @@ export default async function checkoutRoutes(server: FastifyInstance) {
 
     if (!lead) {
       return buildErrorPage('Booking not found', 'No booking was found with this ID.');
+    }
+
+    // MAI-2311: Track checkout page visit for abandonment detection
+    // Only set if not already set (first visit counts)
+    if (!lead.checkoutPageVisitedAt) {
+      db.update(leads)
+        .set({ checkoutPageVisitedAt: new Date() })
+        .where(eq(leads.id, parseInt(leadId)))
+        .run();
     }
 
     // Check if lead has a quote (can proceed to checkout)

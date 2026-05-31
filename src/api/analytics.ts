@@ -43,6 +43,33 @@ const analyticsEventSchema = z.object({
   // MAI-2251: Exit intent capture analytics
   exit_intent_offer_type: z.string().optional(),
   exit_intent_email: z.string().optional(),
+  // MAI-2311: Checkout abandonment analytics
+  checkout_abandonment_email_sent: z.boolean().optional(),
+  checkout_abandonment_recovered: z.boolean().optional(),
+  addon_id: z.string().optional(),
+  addon_name: z.string().optional(),
+  addon_price: z.number().optional(),
+  total_selected: z.number().optional(),
+  sessionId: z.string().optional(),
+  exit_intent_shown: z.boolean().optional(),
+  exit_intent_accepted: z.boolean().optional(),
+  exit_intent_declined: z.boolean().optional(),
+  what_happens_after_payment_viewed: z.boolean().optional(),
+  what_happens_after_payment_collapsed: z.boolean().optional(),
+  // MAI-2329: Booking form A/B test tracking
+  form_variant: z.string().optional(),
+  card_variant: z.string().optional(),
+  cta_variant: z.string().optional(),
+  // MAI-2332: Booking form analytics events
+  referrer: z.string().optional(),
+  guest_count: z.number().optional(),
+  event_date: z.string().optional(),
+  // MAI-2333: UTM parameter capture for channel attribution
+  utm_source: z.string().optional(),
+  utm_medium: z.string().optional(),
+  utm_campaign: z.string().optional(),
+  utm_content: z.string().optional(),
+  utm_term: z.string().optional(),
 });
 
 function ensureDataDir() {

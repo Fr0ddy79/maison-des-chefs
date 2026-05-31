@@ -439,6 +439,27 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-2311: Add checkout abandonment tracking columns to leads
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN checkout_page_visited_at INTEGER`);
+    console.log('Migration: Added checkout_page_visited_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN checkout_abandonment_email_sent_at INTEGER`);
+    console.log('Migration: Added checkout_abandonment_email_sent_at column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  // Create index on checkout_page_visited_at for fast lookups
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS leads_checkout_page_visited_at_idx ON leads(checkout_page_visited_at)`);
+    console.log('Migration: Created leads_checkout_page_visited_at_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
   // MAI-2131/MAI-2135: Create chef_availability_slots table for weekly recurring availability template
   try {
     sqlite.exec(`

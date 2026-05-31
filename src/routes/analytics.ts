@@ -27,6 +27,23 @@ export function trackServicePageViewEvent(data: {
   const cookieVariant = getVariantFromCookie();
   const variant = cookieVariant || data.variant || 'unknown';
 
+// MAI-2333: UTM parameter capture for channel attribution
+  // Read UTM params from URL and persist for downstream attribution
+  let utmData = { utm_source: null as string | null, utm_medium: null as string | null, utm_campaign: null as string | null, utm_content: null as string | null, utm_term: null as string | null };
+  if (typeof (globalThis as any).window !== 'undefined') {
+    try {
+      const url = new URL((globalThis as any).window.location.href);
+      const params = new URLSearchParams(url.search);
+      utmData = {
+        utm_source: params.get('utm_source') || null,
+        utm_medium: params.get('utm_medium') || null,
+        utm_campaign: params.get('utm_campaign') || null,
+        utm_content: params.get('utm_content') || null,
+        utm_term: params.get('utm_term') || null,
+      };
+    } catch (e) { /* ignore URL parse errors */ }
+  }
+
   const eventData = {
     event: 'service_page_view',
     service_id: data.serviceId,
@@ -35,8 +52,22 @@ export function trackServicePageViewEvent(data: {
     cuisine_type: data.cuisineType,
     variant,
     auth_status: 'guest',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    // MAI-2333: Include UTM params for channel attribution
+    utm_source: utmData.utm_source,
+    utm_medium: utmData.utm_medium,
+    utm_campaign: utmData.utm_campaign,
+    utm_content: utmData.utm_content,
+    utm_term: utmData.utm_term,
   };
+
+  // MAI-2333: Persist UTM params in cookies for 30 days for downstream attribution
+  if (typeof (globalThis as any).document !== 'undefined') {
+    const maxAge = 30 * 24 * 60 * 60; // 30 days in seconds
+    if (utmData.utm_source) (globalThis as any).document.cookie = `utm_source=${utmData.utm_source}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+    if (utmData.utm_medium) (globalThis as any).document.cookie = `utm_medium=${utmData.utm_medium}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+    if (utmData.utm_campaign) (globalThis as any).document.cookie = `utm_campaign=${utmData.utm_campaign}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+  }
 
   // Send to analytics API (fire-and-forget)
   if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
@@ -44,10 +75,14 @@ export function trackServicePageViewEvent(data: {
   }
 
   // MAI-1075: Persist last_viewed_service_id cookie for booking attribution
-  // Cookie set here so booking_created event can attribute back to originating service page
+  // MAI-2333: Also read existing UTM cookies for this event
   if (typeof (globalThis as any).document !== 'undefined') {
     const maxAge = 30 * 24 * 60 * 60; // 30 days in seconds
     (globalThis as any).document.cookie = `last_viewed_service_id=${data.serviceId}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+    // MAI-2333: Also persist UTM params from this view if not already set
+    if (utmData.utm_source) (globalThis as any).document.cookie = `utm_source=${utmData.utm_source}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+    if (utmData.utm_medium) (globalThis as any).document.cookie = `utm_medium=${utmData.utm_medium}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+    if (utmData.utm_campaign) (globalThis as any).document.cookie = `utm_campaign=${utmData.utm_campaign}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
   }
 
   // Log analytics event to console in development
