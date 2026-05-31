@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
+import { trackBookingFormViewed, trackBookingFormSubmitted } from '@/lib/analytics'
 
 const steps = ['Select Chef', 'Choose Date & Time', 'Guest Details', 'Confirm']
 
@@ -18,10 +20,28 @@ export default function BookPage() {
     phone: '',
     specialRequests: '',
   })
+  const searchParams = useSearchParams()
+  const formVariant = searchParams.get('variant') === 'simplified' ? 'simplified' : 'standard'
+
+  // Track booking form viewed on mount (step 0)
+  useEffect(() => {
+    trackBookingFormViewed({
+      service_id: 'unknown', // TODO: extract from /book/:serviceId route param when available
+      form_variant: formVariant,
+      referrer: document.referrer,
+    })
+  }, [formVariant])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     // TODO: Submit to Supabase
+    trackBookingFormSubmitted({
+      service_id: 'unknown', // TODO: extract from /book/:serviceId route param when available
+      form_variant: formVariant,
+      lead_id: null, // TODO: set after lead creation
+      guest_count: formData.guestCount,
+      event_date: formData.date,
+    })
     alert('Booking request submitted! (Demo mode)')
   }
 
