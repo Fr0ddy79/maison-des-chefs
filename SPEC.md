@@ -301,9 +301,34 @@ POST   /api/chefs/apply        → submit chef application (public, no auth)
 - Simple review system
 
 ### Not in v1
-- Payment processing
+- Payment processing (Stripe integration not yet implemented — no Stripe code or dependencies in codebase)
 - Real calendar availability
 - Chef verification workflow
-- Email notifications (can be stubbed)
+- Email notifications (Resend API key not configured — basic waitlist email collection only)
 - Booking acceptance/decline flow
 - Mobile app
+
+## 8. Deployment Status
+
+### Current State
+Platform is built but **not yet deployed**.
+
+### Key Blockers
+| Integration | Status | Notes |
+|-------------|--------|-------|
+| **STRIPE** | Not configured | No Stripe code or dependencies in codebase. Payment processing is "Not in v1". |
+| **RESEND_API_KEY** | Not configured | No email sending implemented. `/api/subscribe` stores emails to database but does not send confirmation emails. |
+| **NEXT_PUBLIC_SUPABASE_URL/KEY** | ✅ Configured | Local development only. |
+
+### What's Implemented
+- Supabase database schema and authentication
+- Chef application flow (`/chef/apply`)
+- Booking request flow (no payment — chef confirmation via email is stubbed)
+- Email waitlist subscription (`/api/subscribe` — stores to DB only, no sending)
+- Chef dashboard with booking viewing
+
+### What's NOT Implemented
+- Any Stripe/payment processing code
+- Actual email delivery (Resend not integrated)
+- Real-time availability calendar
+- Booking accept/decline workflow for chefs
