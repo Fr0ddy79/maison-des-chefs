@@ -3,9 +3,16 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { service_id, form_variant, referrer } = body
+    const { chef_id, service_id, form_variant, referrer } = body
 
     // Validate required fields
+    if (!chef_id) {
+      return NextResponse.json(
+        { error: 'chef_id is required' },
+        { status: 400 }
+      )
+    }
+
     if (!service_id) {
       return NextResponse.json(
         { error: 'service_id is required' },
@@ -23,6 +30,7 @@ export async function POST(request: NextRequest) {
     // Log the analytics event (in production, this would send to an analytics service)
     const analyticsEvent = {
       event: 'booking_form_viewed',
+      chef_id,
       service_id,
       form_variant,
       referrer: referrer ?? null,

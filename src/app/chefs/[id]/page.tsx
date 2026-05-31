@@ -289,7 +289,7 @@ export default function ChefDetailPage() {
                     </div>
                   </div>
 
-                  <Link href="/book" className="block text-center px-6 py-3 rounded font-medium text-white transition-colors" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
+                  <Link href={`/book?chef_id=${chefData.id}`} className="block text-center px-6 py-3 rounded font-medium text-white transition-colors" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
                     Request Booking
                   </Link>
 

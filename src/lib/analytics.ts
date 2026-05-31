@@ -8,12 +8,14 @@ interface ServicePageViewEvent {
 }
 
 interface BookingFormViewedEvent {
+  chef_id: string
   service_id: string
   form_variant: 'standard' | 'simplified'
   referrer: string | null
 }
 
 interface BookingFormSubmittedEvent {
+  chef_id: string
   service_id: string
   form_variant: 'standard' | 'simplified'
   lead_id: string | null
@@ -51,6 +53,7 @@ export async function trackBookingFormViewed(event: BookingFormViewedEvent): Pro
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        chef_id: event.chef_id,
         service_id: event.service_id,
         form_variant: event.form_variant,
         referrer: event.referrer,
@@ -73,6 +76,7 @@ export async function trackBookingFormSubmitted(event: BookingFormSubmittedEvent
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        chef_id: event.chef_id,
         service_id: event.service_id,
         form_variant: event.form_variant,
         lead_id: event.lead_id,
