@@ -5,8 +5,10 @@ import { useSearchParams } from 'next/navigation'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { trackBookingFormViewed, trackBookingFormSubmitted } from '@/lib/analytics'
+import { useABVariant } from '@/lib/useABVariant'
 
-const steps = ['Select Chef', 'Choose Date & Time', 'Guest Details', 'Confirm']
+const STANDARD_STEPS = ['Select Chef', 'Choose Date & Time', 'Guest Details', 'Confirm']
+const SIMPLIFIED_STEPS = ['Select Chef & Schedule', 'Guest Details', 'Confirm']
 
 export function BookPageContent() {
   const [currentStep, setCurrentStep] = useState(0)
@@ -21,7 +23,15 @@ export function BookPageContent() {
     specialRequests: '',
   })
   const searchParams = useSearchParams()
-  const formVariant = searchParams.get('variant') === 'simplified' ? 'simplified' : 'standard'
+
+  // URL param override for forced variant testing (?variant=simplified)
+  const urlVariant = searchParams.get('variant') === 'simplified' ? 'simplified' : null
+
+  // Use A/B variant hook for traffic splitting
+  const formVariant = useABVariant(urlVariant)
+
+  // Determine which steps to show based on variant
+  const steps = formVariant === 'simplified' ? SIMPLIFIED_STEPS : STANDARD_STEPS
 
   // Track booking form viewed on mount (step 0)
   useEffect(() => {
@@ -48,12 +58,34 @@ export function BookPageContent() {
     alert('Booking request submitted! (Demo mode)')
   }
 
+  const chefs = [
+    { id: '1', name: 'Chef Laurent Mercier', cuisine: 'French', price: 350 },
+    { id: '2', name: 'Chef Sophie Tremblay', cuisine: 'Seafood', price: 400 },
+    { id: '3', name: 'Chef Marco Pelletier', cuisine: 'Italian', price: 300 },
+  ]
+
+  // Standard variant uses 4 steps, simplified combines first 2
+  const isSimplified = formVariant === 'simplified'
+  const stepOffset = isSimplified && currentStep >= 1 ? 1 : 0
+
+  // Step mapping for simplified variant
+  // Simplified: 0 = Chef+Schedule, 1 = Guest Details, 2 = Confirm
+  // Standard:   0 = Chef, 1 = Date/Time, 2 = Guest Details, 3 = Confirm
+  const standardStep = isSimplified
+    ? currentStep === 0 ? 0 : currentStep === 1 ? 1 : 2
+    : currentStep
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
 
       <div className="flex-1" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
         <div className="max-w-3xl mx-auto px-6 py-12">
+          {/* Variant badge (for testing visibility) */}
+          <div className="mb-4 text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>
+            Form Variant: <span className="font-mono">{formVariant}</span>
+          </div>
+
           {/* Progress Steps */}
           <div className="mb-12">
             <div className="flex items-center justify-between">
@@ -75,7 +107,7 @@ export function BookPageContent() {
                         index + 1
                       )}
                     </div>
-                    <span 
+                    <span
                       className="text-xs mt-2"
                       style={{ color: index <= currentStep ? 'var(--color-mdc-text)' : 'var(--color-mdc-text-muted)' }}
                     >
@@ -83,9 +115,9 @@ export function BookPageContent() {
                     </span>
                   </div>
                   {index < steps.length - 1 && (
-                    <div 
-                      className="w-16 h-0.5 mx-2 mt-[-20px]" 
-                      style={{ backgroundColor: index < currentStep ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)' }} 
+                    <div
+                      className="w-16 h-0.5 mx-2 mt-[-20px]"
+                      style={{ backgroundColor: index < currentStep ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)' }}
                     />
                   )}
                 </div>
@@ -95,24 +127,25 @@ export function BookPageContent() {
 
           {/* Form */}
           <div className="rounded-lg p-8 bg-white border shadow-sm">
+
+            {/* STEP 0: Chef Selection (or Chef + Schedule for simplified) */}
             {currentStep === 0 && (
               <div>
-                <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Select Your Chef</h2>
+                <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>
+                  {isSimplified ? 'Select Chef & Schedule' : 'Select Your Chef'}
+                </h2>
                 <p className="mb-6" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                  Choose from our verified Montreal private chefs. Each has been vetted for quality and professionalism.
+                  {isSimplified
+                    ? 'Choose your chef and preferred date/time in one step.'
+                    : 'Choose from our verified Montreal private chefs. Each has been vetted for quality and professionalism.'}
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[
-                    { id: '1', name: 'Chef Laurent Mercier', cuisine: 'French', price: 350 },
-                    { id: '2', name: 'Chef Sophie Tremblay', cuisine: 'Seafood', price: 400 },
-                    { id: '3', name: 'Chef Marco Pelletier', cuisine: 'Italian', price: 300 },
-                  ].map((chef) => (
+
+                {/* Chef selection grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                  {chefs.map((chef) => (
                     <button
                       key={chef.id}
-                      onClick={() => {
-                        setFormData({ ...formData, chefId: chef.id })
-                        setCurrentStep(1)
-                      }}
+                      onClick={() => setFormData({ ...formData, chefId: chef.id })}
                       className="p-4 rounded border text-left transition-colors"
                       style={{
                         borderColor: formData.chefId === chef.id ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
@@ -125,10 +158,75 @@ export function BookPageContent() {
                     </button>
                   ))}
                 </div>
+
+                {/* Date/Time/Guests only shown on simplified step 0 */}
+                {isSimplified && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-sm font-medium block mb-1.5">Preferred Date</label>
+                      <input
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                        className="w-full px-4 py-3 rounded border bg-white"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium block mb-1.5">Preferred Time</label>
+                      <select
+                        value={formData.time}
+                        onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                        className="w-full px-4 py-3 rounded border bg-white"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      >
+                        <option value="">Select a time</option>
+                        <option value="17:00">5:00 PM</option>
+                        <option value="17:30">5:30 PM</option>
+                        <option value="18:00">6:00 PM</option>
+                        <option value="18:30">6:30 PM</option>
+                        <option value="19:00">7:00 PM</option>
+                        <option value="19:30">7:30 PM</option>
+                        <option value="20:00">8:00 PM</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium block mb-1.5">Guests</label>
+                      <select
+                        value={formData.guestCount}
+                        onChange={(e) => setFormData({ ...formData, guestCount: Number(e.target.value) })}
+                        className="w-full px-4 py-3 rounded border bg-white"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      >
+                        {[2, 3, 4, 5, 6, 8, 10, 12, 15, 20].map((n) => (
+                          <option key={n} value={n}>{n} guests</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-8">
+                  <button
+                    onClick={() => setCurrentStep(isSimplified ? 1 : 1)}
+                    disabled={!formData.chefId || (isSimplified && (!formData.date || !formData.time))}
+                    className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                  >
+                    {isSimplified ? 'Continue to Guest Details' : 'Continue'}
+                  </button>
+                  {!isSimplified && (
+                    <span className="ml-4 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      Step {currentStep + 1} of {steps.length}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
-            {currentStep === 1 && (
+            {/* STEP 1: Date & Time (standard only) or Guest Details (simplified) */}
+            {currentStep === 1 && !isSimplified && (
               <div>
                 <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Choose Date & Time</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -189,7 +287,8 @@ export function BookPageContent() {
               </div>
             )}
 
-            {currentStep === 2 && (
+            {/* STEP 1 (simplified) / STEP 2 (standard): Guest Details */}
+            {((!isSimplified && currentStep === 2) || (isSimplified && currentStep === 1)) && (
               <div>
                 <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Your Details</h2>
                 <div className="space-y-4">
@@ -238,9 +337,9 @@ export function BookPageContent() {
                   </div>
                 </div>
                 <div className="mt-8 flex gap-4">
-                  <button onClick={() => setCurrentStep(1)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
+                  <button onClick={() => setCurrentStep(isSimplified ? 0 : 1)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
                   <button
-                    onClick={() => setCurrentStep(3)}
+                    onClick={() => setCurrentStep(isSimplified ? 2 : 3)}
                     disabled={!formData.name || !formData.email || !formData.phone}
                     className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
                     style={{ backgroundColor: 'var(--color-mdc-accent)' }}
@@ -251,7 +350,8 @@ export function BookPageContent() {
               </div>
             )}
 
-            {currentStep === 3 && (
+            {/* Confirm step - shared with offset logic */}
+            {(isSimplified ? currentStep === 2 : currentStep === 3) && (
               <div>
                 <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Confirm Your Booking</h2>
                 <div className="rounded-lg p-6" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
@@ -287,17 +387,18 @@ export function BookPageContent() {
                   </div>
                 </div>
                 <p className="mt-6 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                  This is a booking request. The chef will confirm availability within 24-48 hours. 
+                  This is a booking request. The chef will confirm availability within 24-48 hours.
                   No payment is required at this stage.
                 </p>
                 <div className="mt-8 flex gap-4">
-                  <button onClick={() => setCurrentStep(2)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
+                  <button onClick={() => setCurrentStep(isSimplified ? 1 : 2)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
                   <button onClick={handleSubmit} className="px-6 py-3 rounded font-medium text-white transition-colors" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
                     Submit Booking Request
                   </button>
                 </div>
               </div>
             )}
+
           </div>
         </div>
       </div>
