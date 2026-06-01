@@ -512,6 +512,37 @@ export function migrate() {
     // Index may already exist, which is fine
   }
 
+  // MAI-2369: Create availability table for chef date-specific availability slots
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS availability (
+        id TEXT PRIMARY KEY,
+        chef_id INTEGER NOT NULL REFERENCES users(id),
+        date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        is_booked INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created availability table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS availability_chef_id_idx ON availability(chef_id)`);
+    console.log('Migration: Created availability_chef_id_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS availability_date_idx ON availability(date)`);
+    console.log('Migration: Created availability_date_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

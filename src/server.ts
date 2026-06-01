@@ -31,6 +31,7 @@ import dinerPreferencesRoutes from './api/diner-preferences.js';
 import dinerReferralRoutes from './api/diner-referral.js';
 import searchRoutes from './api/search.js';
 import inquiryRoutes from './api/inquiry.js';
+import inquiriesRoutes from './api/inquiries.js';
 import multiInquiryRoutes from './api/multi-inquiry.js';
 import chefLeadsRoutes from './api/chef-leads.js';
 import chefPhotoRoutes from './api/chef-photo.js';
@@ -55,7 +56,9 @@ import reviewRoutes from './api/reviews.js';
 import notificationRoutes from './api/notifications.js';
 import outreachRoutes from './api/outreach.js';
 import leadsRoutes from './api/leads.js';
+import guestInfoRoutes from './api/guest-info.js';
 import quoteRoutes from './api/quotes.js';
+import availabilityCrudRoutes from './api/availability-crud.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
 declare module './routes/chef-availability-settings-page.js' {
@@ -120,6 +123,7 @@ server.register(dinerPreferencesRoutes, { prefix: '/api/v1/diner' });
 server.register(dinerReferralRoutes, { prefix: '/api/v1/diner' });
 server.register(searchRoutes, { prefix: '/api/v1/search' });
 server.register(inquiryRoutes, { prefix: '/api/inquiry' });
+server.register(inquiriesRoutes, { prefix: '/api/inquiries' });
 server.register(multiInquiryRoutes, { prefix: '/api/multi-inquiry' });
 server.register(chefLeadsRoutes, { prefix: '/api/chef' });
 server.register(chefPhotoRoutes, { prefix: '/api/chef' }); // MAI-921: Chef photo upload
@@ -135,7 +139,9 @@ server.register(reviewRoutes, { prefix: '/api' });
 server.register(notificationRoutes, { prefix: '/api/notifications' });
 server.register(outreachRoutes, { prefix: '/api/admin/outreach' });
 server.register(leadsRoutes, { prefix: '/api/leads' });
+server.register(guestInfoRoutes);
 server.register(quoteRoutes); // Public - no auth, handles /api/quotes/*
+server.register(availabilityCrudRoutes, { prefix: '/api' }); // MAI-2369: Chef availability CRUD API
 
 // Chef leads dashboard page (standalone route to avoid esbuild parsing issues with template literals)
 server.get('/chef/leads', async (request, reply) => {

@@ -361,6 +361,40 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     const serviceId = ${service.id};
     // MAI-2329: Booking form variant (standard vs simplified) for A/B test tracking
     const formVariant = '${leadFormFromUrl || 'standard'}';
+
+    // MAI-2361: Pre-fill from diner_email cookie via /api/guest/info
+    // This handles cases where server-side cookie pre-fill may be incomplete
+    (async function prefillFromGuestInfo() {
+      const emailField = document.getElementById('email');
+      const nameField = document.getElementById('clientName');
+      const phoneField = document.getElementById('phone');
+      if (!emailField || !nameField || !phoneField) return;
+
+      // Read diner_email cookie
+      const cookieMatch = document.cookie.match(/diner_email=([^;]+)/);
+      if (!cookieMatch) return;
+      const cookieEmail = decodeURIComponent(cookieMatch[1]);
+
+      // Don't overwrite if already has value (server-side pre-fill already populated)
+      if (nameField.value && phoneField.value) return;
+
+      try {
+        const res = await fetch('/api/guest/info?email=' + encodeURIComponent(cookieEmail));
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.name && !nameField.value) {
+          nameField.value = data.name;
+          nameField.classList.add('prefilled');
+        }
+        if (data.phone && !phoneField.value) {
+          phoneField.value = data.phone;
+          phoneField.classList.add('prefilled');
+        }
+      } catch (_) {
+        // Non-critical - silently fail, form remains as-is
+      }
+    })();
+
     document.querySelectorAll('input[value]').forEach(field => { if (field.value) field.classList.add('prefilled'); });
     const estimatedTotalEl = document.getElementById('estimatedTotal');
     const estimatedTotalInlineEl = document.getElementById('estimatedTotalInline');

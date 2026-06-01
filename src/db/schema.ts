@@ -250,6 +250,19 @@ export const chefAvailabilitySlots = sqliteTable('chef_availability_slots', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
+// Chef date-specific availability slots (MAI-2369)
+// Individual slots that chefs can add/remove for specific dates
+export const availability = sqliteTable('availability', {
+  id: text('id').primaryKey(), // ULID
+  chefId: integer('chef_id').notNull().references(() => users.id),
+  date: text('date').notNull(), // YYYY-MM-DD format
+  startTime: text('start_time').notNull(), // HH:MM format
+  endTime: text('end_time').notNull(), // HH:MM format
+  isBooked: integer('is_booked', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
 // chef_blocked_dates (MAI-2131) reuses the existing MAI-1251 table.
 // The existing chefBlockedDates model (above) is used for blocked-date operations.
 
