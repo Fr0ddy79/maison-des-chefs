@@ -1,5 +1,6 @@
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
+import { HeroCTA } from '@/components/HeroCTA'
 import { createClient } from '@/lib/supabase/client'
 
 const experiences = [
@@ -100,14 +101,7 @@ export default async function HomePage() {
               Montreal's premier marketplace connecting you with verified private chefs 
               for unforgettable at-home dining. From intimate dinners to grand celebrations.
             </p>
-            <div className="mt-10 flex flex-col sm:flex-row gap-4">
-              <a href="/chefs" className="px-6 py-3 rounded font-medium text-center text-white transition-colors" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
-                Find Your Chef
-              </a>
-              <a href="/chef/apply" className="px-6 py-3 rounded font-medium text-center transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>
-                Are You a Chef? Apply
-              </a>
-            </div>
+            <HeroCTA />
           </div>
         </div>
         
