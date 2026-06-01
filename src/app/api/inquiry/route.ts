@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sendInquiryConfirmationEmail } from '@/lib/email/resend'
 
 // POST /api/inquiry - Submit an inquiry with chef availability conflict detection
 export async function POST(request: NextRequest) {
@@ -147,6 +148,16 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Send confirmation email (non-blocking - failures don't affect inquiry success)
+    sendInquiryConfirmationEmail({
+      chefId: chef_id,
+      dinerEmail: email,
+      inquiryDate: inquiry_date,
+      inquiryId: newInquiry.id,
+    }).catch(err => {
+      console.error('[Inquiry] Failed to send confirmation email:', err)
+    })
 
     return NextResponse.json(
       {

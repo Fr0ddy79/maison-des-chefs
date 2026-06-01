@@ -197,7 +197,7 @@ export default async function HomePage() {
                 <div className="relative mb-6">
                   <img
                     src={chef.hero_image_url}
-                    alt={chef.display_name}
+                    alt={`Chef ${chef.display_name} - ${chef.cuisines?.join(', ')} private chef in ${chef.location}`}
                     className="w-24 h-24 rounded-full object-cover mx-auto"
                   />
                   {chef.is_verified && (
