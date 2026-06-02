@@ -502,12 +502,115 @@ export function BookPageContent() {
 
                 {/* Success state */}
                 {submitState === 'success' && (
-                  <div className="mt-6 p-4 rounded-lg border-2" style={{ borderColor: 'var(--color-mdc-accent)', backgroundColor: 'rgba(201, 168, 76, 0.05)' }}>
-                    <p className="font-medium" style={{ color: 'var(--color-mdc-accent)' }}>✓ Booking request submitted!</p>
-                    <p className="mt-2 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                      Your request has been received. The chef will confirm availability within 24-48 hours.
-                      A confirmation email has been sent to <strong>{formData.email}</strong>.
-                    </p>
+                  <div className="mt-6">
+                    {/* Confirmation header */}
+                    <div className="text-center p-6 rounded-lg border-2" style={{ borderColor: 'var(--color-mdc-accent)', backgroundColor: 'rgba(201, 168, 76, 0.05)' }}>
+                      <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
+                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Booking Request Sent!</h3>
+                      <p className="mt-2 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        Confirmation sent to <strong>{formData.email}</strong>
+                      </p>
+                    </div>
+
+                    {/* What happens next */}
+                    <div className="mt-6 p-4 rounded-lg" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
+                      <h4 className="font-medium mb-3 flex items-center gap-2">
+                        <svg className="w-5 h-5" style={{ color: 'var(--color-mdc-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        What Happens Next
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-start gap-3">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0" style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}>1</span>
+                          <div>
+                            <p className="font-medium">Chef reviews your request</p>
+                            <p style={{ color: 'var(--color-mdc-text-muted)' }}>Usually within 24 hours</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0" style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}>2</span>
+                          <div>
+                            <p className="font-medium">You'll receive a confirmation email</p>
+                            <p style={{ color: 'var(--color-mdc-text-muted)' }}>With all the details and next steps</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0" style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}>3</span>
+                          <div>
+                            <p className="font-medium">Your chef will coordinate the menu</p>
+                            <p style={{ color: 'var(--color-mdc-text-muted)' }}>They may reach out for dietary preferences</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Booking Summary Card */}
+                    <div className="mt-4 p-4 rounded-lg border" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                      <h4 className="font-medium mb-3" style={{ color: 'var(--color-mdc-text-muted)' }}>Booking Summary</h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p style={{ color: 'var(--color-mdc-text-muted)' }}>Chef</p>
+                          <p className="font-medium">{getChefName(formData.chefId)}</p>
+                        </div>
+                        <div>
+                          <p style={{ color: 'var(--color-mdc-text-muted)' }}>Date</p>
+                          <p className="font-medium">{formData.date}</p>
+                        </div>
+                        <div>
+                          <p style={{ color: 'var(--color-mdc-text-muted)' }}>Time</p>
+                          <p className="font-medium">{formData.time}</p>
+                        </div>
+                        <div>
+                          <p style={{ color: 'var(--color-mdc-text-muted)' }}>Guests</p>
+                          <p className="font-medium">{formData.guestCount}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trust signals */}
+                    <div className="mt-4 flex flex-wrap gap-4 text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      <div className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                        Verified chefs
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        No payment now
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        Email confirmation sent
+                      </div>
+                    </div>
+
+                    {/* Next steps */}
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      <a
+                        href="/chefs"
+                        className="px-5 py-2.5 rounded font-medium text-sm transition-colors hover:opacity-90"
+                        style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                      >
+                        Browse More Chefs
+                      </a>
+                      <a
+                        href="/dashboard/bookings"
+                        className="px-5 py-2.5 rounded font-medium text-sm border transition-colors hover:bg-gray-50"
+                        style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text)' }}
+                      >
+                        View My Bookings
+                      </a>
+                    </div>
                   </div>
                 )}
 
