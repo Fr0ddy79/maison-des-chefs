@@ -32,7 +32,7 @@ export default function DashboardPage() {
       } else if (userRole === 'chef') {
         router.push('/dashboard/chef')
       } else {
-        router.push('/chefs')
+        router.push('/dashboard/bookings')
       }
     }
     checkRole()

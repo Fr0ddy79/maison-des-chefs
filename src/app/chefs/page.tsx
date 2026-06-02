@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
+import { CompareBar } from '@/components/compare/CompareBar'
 import { createClient } from '@/lib/supabase/client'
 
 type Chef = {
@@ -46,6 +47,7 @@ export default function ChefsPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'rating' | 'price_low' | 'price_high'>('rating')
+  const [compareList, setCompareList] = useState<Chef[]>([])
 
   useEffect(() => {
     async function fetchChefs() {
@@ -88,11 +90,33 @@ export default function ChefsPage() {
       return b.price_per_event - a.price_per_event
     })
 
+  const toggleCompare = (chef: Chef) => {
+    setCompareList(prev => {
+      const isSelected = prev.some(c => c.id === chef.id)
+      if (isSelected) {
+        return prev.filter(c => c.id !== chef.id)
+      }
+      if (prev.length >= 4) {
+        alert('You can compare up to 4 chefs at a time')
+        return prev
+      }
+      return [...prev, chef]
+    })
+  }
+
+  const handleRemoveFromCompare = (chefId: string) => {
+    setCompareList(prev => prev.filter(c => c.id !== chefId))
+  }
+
+  const handleClearCompare = () => {
+    setCompareList([])
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
 
-      <div className="flex-1" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
+      <div className="flex-1 pb-24" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
         <div className="max-w-6xl mx-auto px-6 py-12">
           {/* Header */}
           <div className="mb-10">
@@ -182,48 +206,79 @@ export default function ChefsPage() {
                     {filteredChefs.length} chef{filteredChefs.length !== 1 ? 's' : ''} found
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {filteredChefs.map((chef) => (
-                      <Link
-                        key={chef.id}
-                        href={`/chefs/${chef.id}`}
-                        className="rounded-lg p-6 bg-white border flex gap-5 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
-                        style={{ borderColor: 'var(--color-mdc-border)' }}
-                      >
-                        <img
-                          src={chef.hero_image_url}
-                          alt={chef.display_name}
-                          className="w-24 h-24 rounded-full object-cover flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-lg truncate" style={{ fontFamily: 'var(--font-serif)' }}>{chef.display_name}</h3>
-                            {chef.is_verified && (
-                              <span className="text-white text-xs flex-shrink-0 px-3 py-1 rounded-full" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>Verified</span>
-                            )}
-                          </div>
-                          <p className="mt-0.5 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.location}</p>
-                          
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {chef.cuisines.slice(0, 3).map((cuisine) => (
-                              <span key={cuisine} className="text-xs px-3 py-1 rounded-full border" style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)', backgroundColor: 'var(--color-mdc-bg)' }}>{cuisine}</span>
-                            ))}
+                    {filteredChefs.map((chef) => {
+                      const isCompared = compareList.some(c => c.id === chef.id)
+                      return (
+                        <div
+                          key={chef.id}
+                          className="relative rounded-lg p-6 bg-white border flex gap-5 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
+                          style={{ borderColor: isCompared ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)', borderWidth: isCompared ? '2px' : '1px' }}
+                        >
+                          {/* Compare Checkbox */}
+                          <div className="absolute top-4 right-4">
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                toggleCompare(chef)
+                              }}
+                              className={`w-6 h-6 rounded flex items-center justify-center text-sm transition-colors ${
+                                isCompared ? 'text-white' : 'border-2'
+                              }`}
+                              style={{
+                                backgroundColor: isCompared ? 'var(--color-mdc-accent)' : 'transparent',
+                                borderColor: isCompared ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
+                              }}
+                            >
+                              {isCompared && (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </button>
                           </div>
 
-                          <div className="flex items-center justify-between mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
-                            <div className="flex items-center gap-2">
-                              <StarRating rating={Math.round(chef.avg_rating)} />
-                              <span className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                                {chef.avg_rating} ({chef.review_count})
-                              </span>
+                          <Link
+                            href={`/chefs/${chef.id}`}
+                            className="flex gap-5 flex-1 min-w-0"
+                          >
+                            <img
+                              src={chef.hero_image_url}
+                              alt={chef.display_name}
+                              className="w-24 h-24 rounded-full object-cover flex-shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <h3 className="text-lg truncate" style={{ fontFamily: 'var(--font-serif)' }}>{chef.display_name}</h3>
+                                {chef.is_verified && (
+                                  <span className="text-white text-xs flex-shrink-0 px-3 py-1 rounded-full" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>Verified</span>
+                                )}
+                              </div>
+                              <p className="mt-0.5 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.location}</p>
+
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {chef.cuisines.slice(0, 3).map((cuisine) => (
+                                  <span key={cuisine} className="text-xs px-3 py-1 rounded-full border" style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)', backgroundColor: 'var(--color-mdc-bg)' }}>{cuisine}</span>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center justify-between mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                                <div className="flex items-center gap-2">
+                                  <StarRating rating={Math.round(chef.avg_rating)} />
+                                  <span className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                                    {chef.avg_rating} ({chef.review_count})
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="font-semibold">${chef.price_per_event}</span>
+                                  <span className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}> / event</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <span className="font-semibold">${chef.price_per_event}</span>
-                              <span className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}> / event</span>
-                            </div>
-                          </div>
+                          </Link>
                         </div>
-                      </Link>
-                    ))}
+                      )
+                    })}
                   </div>
                 </>
               )}
@@ -231,6 +286,12 @@ export default function ChefsPage() {
           </div>
         </div>
       </div>
+
+      <CompareBar
+        selectedChefs={compareList}
+        onClear={handleClearCompare}
+        onRemove={handleRemoveFromCompare}
+      />
 
       <Footer />
     </div>

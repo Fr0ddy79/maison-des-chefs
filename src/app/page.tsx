@@ -1,6 +1,7 @@
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { HeroCTA } from '@/components/HeroCTA'
+import { WaitlistCapture } from '@/components/WaitlistCapture'
 import { createClient } from '@/lib/supabase/client'
 
 const experiences = [
@@ -114,6 +115,20 @@ export default async function HomePage() {
               className="w-full h-80 md:h-96 object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+          </div>
+        </div>
+
+        {/* Inline Waitlist Capture */}
+        <div className="max-w-6xl mx-auto px-6 pb-20">
+          <div className="rounded-lg p-8 text-center" style={{ backgroundColor: 'rgba(201, 168, 76, 0.08)' }}>
+            <h3 className="text-2xl mb-2" style={{ fontFamily: 'var(--font-serif)' }}>Stay in the Loop</h3>
+            <p className="text-sm mb-6" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              Get early access updates and chef announcements
+            </p>
+            <WaitlistCapture />
+            <p className="mt-4 text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              Join 47+ food lovers already waiting
+            </p>
           </div>
         </div>
       </section>

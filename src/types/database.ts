@@ -137,6 +137,10 @@ export interface Database {
           status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
           special_requests: string | null
           created_at: string
+          quote_amount: number | null
+          quote_message: string | null
+          quote_valid_until: string | null
+          quote_status: 'pending' | 'accepted' | 'declined' | 'expired' | null
         }
         Insert: {
           id?: string
@@ -151,6 +155,10 @@ export interface Database {
           status?: 'pending' | 'confirmed' | 'completed' | 'cancelled'
           special_requests?: string | null
           created_at?: string
+          quote_amount?: number | null
+          quote_message?: string | null
+          quote_valid_until?: string | null
+          quote_status?: 'pending' | 'accepted' | 'declined' | 'expired' | null
         }
         Update: {
           id?: string
@@ -165,6 +173,10 @@ export interface Database {
           status?: 'pending' | 'confirmed' | 'completed' | 'cancelled'
           special_requests?: string | null
           created_at?: string
+          quote_amount?: number | null
+          quote_message?: string | null
+          quote_valid_until?: string | null
+          quote_status?: 'pending' | 'accepted' | 'declined' | 'expired' | null
         }
       }
       reviews: {
