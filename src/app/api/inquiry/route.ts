@@ -13,6 +13,8 @@ export async function POST(request: NextRequest) {
       email,
       message,
       inquiry_date,
+      guest_count,
+      inquiry_time,
     } = body
 
     // Validate required fields
@@ -50,6 +52,16 @@ export async function POST(request: NextRequest) {
         { error: 'inquiry_date is required' },
         { status: 400 }
       )
+    }
+
+    // Validate guest_count if provided
+    if (guest_count !== undefined && guest_count !== null) {
+      if (typeof guest_count !== 'number' || guest_count < 1 || guest_count > 50) {
+        return NextResponse.json(
+          { error: 'guest_count must be between 1 and 50' },
+          { status: 400 }
+        )
+      }
     }
 
     const supabase = await createClient()
@@ -136,6 +148,8 @@ export async function POST(request: NextRequest) {
         email: email.toLowerCase().trim(),
         message,
         inquiry_date,
+        guest_count: guest_count || null,
+        inquiry_time: inquiry_time || null,
         status: 'pending',
       })
       .select()
@@ -168,6 +182,8 @@ export async function POST(request: NextRequest) {
           email: newInquiry.email,
           message: newInquiry.message,
           inquiry_date: newInquiry.inquiry_date,
+          guest_count: newInquiry.guest_count,
+          inquiry_time: newInquiry.inquiry_time,
           status: newInquiry.status,
         },
       },

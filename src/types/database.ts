@@ -249,6 +249,47 @@ export interface Database {
           created_at?: string
         }
       }
+      inquiries: {
+        Row: {
+          id: string
+          service_id: string | null
+          chef_id: string
+          diner_id: string | null
+          email: string
+          message: string
+          inquiry_date: string
+          guest_count: number | null
+          inquiry_time: string | null
+          status: 'pending' | 'contacted' | 'converted' | 'cancelled'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          service_id?: string | null
+          chef_id: string
+          diner_id?: string | null
+          email: string
+          message: string
+          inquiry_date: string
+          guest_count?: number | null
+          inquiry_time?: string | null
+          status?: 'pending' | 'contacted' | 'converted' | 'cancelled'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          service_id?: string | null
+          chef_id?: string
+          diner_id?: string | null
+          email?: string
+          message?: string
+          inquiry_date?: string
+          guest_count?: number | null
+          inquiry_time?: string | null
+          status?: 'pending' | 'contacted' | 'converted' | 'cancelled'
+          created_at?: string
+        }
+      }
     }
   }
 }

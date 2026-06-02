@@ -118,6 +118,8 @@ export function BookPageContent() {
       email: formData.email,
       message: formData.specialRequests || '',
       inquiry_date: formData.date, // YYYY-MM-DD from date picker
+      guest_count: formData.guestCount,
+      inquiry_time: formData.time, // HH:MM from time picker
     }
 
     try {

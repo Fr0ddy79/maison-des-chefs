@@ -5,6 +5,8 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 const FROM_EMAIL = 'Maison des Chefs <noreply@maison-des-chefs.com>'
 
+export { resend, FROM_EMAIL }
+
 interface SendInquiryConfirmationParams {
   chefId: string
   dinerEmail: string

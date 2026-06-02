@@ -128,8 +128,8 @@ export async function PATCH(request: NextRequest) {
           service_id: inquiry.service_id,
           diner_id: inquiry.diner_id,
           booking_date: inquiry.inquiry_date,
-          start_time: slot.start_time,
-          guest_count: 2, // placeholder - in real impl would come from inquiry
+          start_time: inquiry.inquiry_time || slot.start_time,
+          guest_count: inquiry.guest_count || 2,
           total_price: 0,  // placeholder - in real impl would come from service
           status: 'confirmed',
         })

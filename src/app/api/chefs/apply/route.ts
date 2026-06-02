@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sendChefApplicationConfirmationEmail } from '@/lib/email/sendChefApplicationConfirmation'
+import { sendChefApplicationNotificationEmail } from '@/lib/email/sendChefApplicationNotification'
 
 const CUISINE_OPTIONS = [
   'French',
@@ -120,6 +122,34 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Trigger email notifications (non-blocking - fire and forget)
+    const applicationData = {
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      phone: phone?.trim() || null,
+      location: location.trim(),
+      cuisine_types,
+      years_experience,
+      price_range: price_range?.trim() || null,
+      bio: bio?.trim() || null,
+      preferred_contact: preferred_contact || 'email',
+    }
+
+    // Send confirmation to applicant (non-blocking)
+    sendChefApplicationConfirmationEmail({
+      applicantName: applicationData.name,
+      applicantEmail: applicationData.email,
+    }).catch(err => {
+      console.error('[Email] Failed to send chef application confirmation:', err)
+    })
+
+    // Send notification to admin (non-blocking)
+    sendChefApplicationNotificationEmail({
+      application: applicationData,
+    }).catch(err => {
+      console.error('[Email] Failed to send chef application notification:', err)
+    })
 
     return NextResponse.json(
       { message: 'Application submitted successfully', application: data },
