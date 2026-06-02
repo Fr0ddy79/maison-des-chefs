@@ -6,9 +6,26 @@ import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { trackBookingFormViewed, trackBookingFormSubmitted } from '@/lib/analytics'
 import { useABVariant } from '@/lib/useABVariant'
+import { createClient } from '@/lib/supabase/client'
 
 const STANDARD_STEPS = ['Select Chef', 'Choose Date & Time', 'Guest Details', 'Confirm']
 const SIMPLIFIED_STEPS = ['Select Chef & Schedule', 'Guest Details', 'Confirm']
+
+type ChefProfile = {
+  id: string
+  display_name: string | null
+  bio: string | null
+  location: string | null
+  cuisines: string[]
+  years_experience: number | null
+  is_verified: boolean
+  avg_rating: number
+  review_count: number
+  price_per_hour: number | null
+  price_per_event: number | null
+  max_guests: number
+  hero_image_url: string | null
+}
 
 export function BookPageContent() {
   const [currentStep, setCurrentStep] = useState(0)
@@ -22,6 +39,10 @@ export function BookPageContent() {
     phone: '',
     specialRequests: '',
   })
+  const [submitState, setSubmitState] = useState<'idle' | 'loading' | 'success' | 'conflict' | 'error'>('idle')
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [chefs, setChefs] = useState<ChefProfile[]>([])
+  const [chefsLoading, setChefsLoading] = useState(true)
   const searchParams = useSearchParams()
 
   // URL param override for forced variant testing (?variant=simplified)
@@ -33,20 +54,55 @@ export function BookPageContent() {
   // Determine which steps to show based on variant
   const steps = formVariant === 'simplified' ? SIMPLIFIED_STEPS : STANDARD_STEPS
 
+  // Fetch real chefs from Supabase
+  useEffect(() => {
+    async function fetchChefs() {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('chef_profiles')
+        .select('*')
+        .eq('is_verified', true)
+        .order('avg_rating', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching chefs:', error)
+        setChefsLoading(false)
+        return
+      }
+
+      setChefs(data || [])
+      setChefsLoading(false)
+
+      // Pre-select chef if ?chef_id= URL param present
+      const urlChefId = searchParams.get('chef_id')
+      if (urlChefId && data?.some(c => c.id === urlChefId)) {
+        setFormData(prev => ({ ...prev, chefId: urlChefId }))
+      }
+    }
+    fetchChefs()
+  }, [searchParams])
+
   // Track booking form viewed on mount (step 0)
   useEffect(() => {
-    const chefId = searchParams.get('chef_id') || 'unknown'
+    const chefId = searchParams.get('chef_id') || formData.chefId || 'unknown'
     trackBookingFormViewed({
       chef_id: chefId,
       service_id: 'unknown', // TODO: extract service_id if needed
       form_variant: formVariant,
       referrer: document.referrer,
     })
-  }, [formVariant, searchParams])
+  }, [formVariant, searchParams, formData.chefId])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const chefId = searchParams.get('chef_id') || 'unknown'
+    if (submitState === 'loading') return
+
+    setSubmitState('loading')
+    setSubmitError(null)
+
+    const chefId = searchParams.get('chef_id') || formData.chefId || 'unknown'
+
+    // Track analytics
     trackBookingFormSubmitted({
       chef_id: chefId,
       service_id: 'unknown', // TODO: extract service_id if needed
@@ -55,14 +111,38 @@ export function BookPageContent() {
       guest_count: formData.guestCount,
       event_date: formData.date,
     })
-    alert('Booking request submitted! (Demo mode)')
-  }
 
-  const chefs = [
-    { id: '1', name: 'Chef Laurent Mercier', cuisine: 'French', price: 350 },
-    { id: '2', name: 'Chef Sophie Tremblay', cuisine: 'Seafood', price: 400 },
-    { id: '3', name: 'Chef Marco Pelletier', cuisine: 'Italian', price: 300 },
-  ]
+    // Build inquiry payload — combine date and time into inquiry_date (YYYY-MM-DD)
+    const inquiryPayload = {
+      chef_id: formData.chefId,
+      email: formData.email,
+      message: formData.specialRequests || '',
+      inquiry_date: formData.date, // YYYY-MM-DD from date picker
+    }
+
+    try {
+      const response = await fetch('/api/inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inquiryPayload),
+      })
+
+      if (response.ok) {
+        setSubmitState('success')
+      } else if (response.status === 409) {
+        const data = await response.json()
+        setSubmitState('conflict')
+        setSubmitError(data.error || 'Chef is not available on the selected date.')
+      } else {
+        const data = await response.json()
+        setSubmitState('error')
+        setSubmitError(data.error || 'Something went wrong. Please try again.')
+      }
+    } catch (err) {
+      setSubmitState('error')
+      setSubmitError('Network error. Please check your connection and try again.')
+    }
+  }
 
   // Standard variant uses 4 steps, simplified combines first 2
   const isSimplified = formVariant === 'simplified'
@@ -74,6 +154,12 @@ export function BookPageContent() {
   const standardStep = isSimplified
     ? currentStep === 0 ? 0 : currentStep === 1 ? 1 : 2
     : currentStep
+
+  // Helper to get chef display name from ID
+  const getChefName = (chefId: string) => {
+    const chef = chefs.find(c => c.id === chefId)
+    return chef?.display_name || 'Unknown Chef'
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -141,23 +227,33 @@ export function BookPageContent() {
                 </p>
 
                 {/* Chef selection grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                  {chefs.map((chef) => (
-                    <button
-                      key={chef.id}
-                      onClick={() => setFormData({ ...formData, chefId: chef.id })}
-                      className="p-4 rounded border text-left transition-colors"
-                      style={{
-                        borderColor: formData.chefId === chef.id ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
-                        backgroundColor: formData.chefId === chef.id ? 'rgba(201, 168, 76, 0.05)' : 'transparent',
-                      }}
-                    >
-                      <p className="font-medium">{chef.name}</p>
-                      <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.cuisine}</p>
-                      <p className="text-sm mt-2">From ${chef.price} / event</p>
-                    </button>
-                  ))}
-                </div>
+                {chefsLoading ? (
+                  <div className="text-center py-8" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    Loading chefs...
+                  </div>
+                ) : chefs.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    No verified chefs available at this time.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                    {chefs.map((chef) => (
+                      <button
+                        key={chef.id}
+                        onClick={() => setFormData({ ...formData, chefId: chef.id })}
+                        className="p-4 rounded border text-left transition-colors"
+                        style={{
+                          borderColor: formData.chefId === chef.id ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
+                          backgroundColor: formData.chefId === chef.id ? 'rgba(201, 168, 76, 0.05)' : 'transparent',
+                        }}
+                      >
+                        <p className="font-medium">{chef.display_name || 'Chef'}</p>
+                        <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.cuisines?.join(', ')}</p>
+                        <p className="text-sm mt-2">From ${chef.price_per_event || '—'} / event</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Date/Time/Guests only shown on simplified step 0 */}
                 {isSimplified && (
@@ -359,7 +455,7 @@ export function BookPageContent() {
                     <div className="flex justify-between">
                       <span style={{ color: 'var(--color-mdc-text-muted)' }}>Chef</span>
                       <span className="font-medium">
-                        {formData.chefId === '1' ? 'Chef Laurent Mercier' : formData.chefId === '2' ? 'Chef Sophie Tremblay' : 'Chef Marco Pelletier'}
+                        {getChefName(formData.chefId)}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -392,10 +488,43 @@ export function BookPageContent() {
                 </p>
                 <div className="mt-8 flex gap-4">
                   <button onClick={() => setCurrentStep(isSimplified ? 1 : 2)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
-                  <button onClick={handleSubmit} className="px-6 py-3 rounded font-medium text-white transition-colors" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
-                    Submit Booking Request
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitState === 'loading'}
+                    className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-60"
+                    style={{ backgroundColor: submitState === 'loading' ? 'var(--color-mdc-text-muted)' : 'var(--color-mdc-accent)' }}
+                  >
+                    {submitState === 'loading' ? 'Submitting...' : 'Submit Booking Request'}
                   </button>
                 </div>
+
+                {/* Success state */}
+                {submitState === 'success' && (
+                  <div className="mt-6 p-4 rounded-lg border-2" style={{ borderColor: 'var(--color-mdc-accent)', backgroundColor: 'rgba(201, 168, 76, 0.05)' }}>
+                    <p className="font-medium" style={{ color: 'var(--color-mdc-accent)' }}>✓ Booking request submitted!</p>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      Your request has been received. The chef will confirm availability within 24-48 hours.
+                      A confirmation email has been sent to <strong>{formData.email}</strong>.
+                    </p>
+                  </div>
+                )}
+
+                {/* Conflict / error state */}
+                {(submitState === 'conflict' || submitState === 'error') && (
+                  <div className="mt-6 p-4 rounded-lg border" style={{ borderColor: '#dc2626', backgroundColor: '#fef2f2' }}>
+                    <p className="font-medium" style={{ color: '#dc2626' }}>✗ {submitState === 'conflict' ? 'Availability conflict' : 'Submission failed'}</p>
+                    <p className="mt-2 text-sm" style={{ color: '#7f1d1d' }}>{submitError}</p>
+                    {submitState === 'conflict' && (
+                      <button
+                        onClick={() => { setSubmitState('idle'); setCurrentStep(isSimplified ? 0 : 1) }}
+                        className="mt-3 text-sm underline"
+                        style={{ color: '#dc2626' }}
+                      >
+                        Choose a different date or time
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
