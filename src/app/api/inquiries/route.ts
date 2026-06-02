@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sendBookingConfirmedEmail } from '@/lib/email/resend'
 
 // GET /api/inquiries - Get all inquiries for the authenticated chef
 export async function GET(request: NextRequest) {
@@ -121,7 +122,7 @@ export async function PATCH(request: NextRequest) {
       }
 
       // Create booking
-      const { error: bookingError } = await supabase
+      const { data: newBooking, error: bookingError } = await supabase
         .from('bookings')
         .insert({
           chef_id: authUser.id,
@@ -133,22 +134,44 @@ export async function PATCH(request: NextRequest) {
           total_price: 0,  // placeholder - in real impl would come from service
           status: 'confirmed',
         })
+        .select()
+        .single()
 
       if (bookingError) {
         console.error('Error creating booking:', bookingError)
         return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
       }
-    }
 
-    // Update inquiry status
-    const { error: updateError } = await supabase
-      .from('inquiries')
-      .update({ status })
-      .eq('id', inquiryId)
+      // Update inquiry status
+      const { error: updateError } = await supabase
+        .from('inquiries')
+        .update({ status })
+        .eq('id', inquiryId)
 
-    if (updateError) {
-      console.error('Error updating inquiry status:', updateError)
-      return NextResponse.json({ error: 'Failed to update inquiry status' }, { status: 500 })
+      if (updateError) {
+        console.error('Error updating inquiry status:', updateError)
+        return NextResponse.json({ error: 'Failed to update inquiry status' }, { status: 500 })
+      }
+
+      // Send booking confirmation email to diner (non-blocking)
+      sendBookingConfirmedEmail({
+        bookingId: newBooking.id,
+        chefId: authUser.id,
+        dinerEmail: inquiry.email,
+        dinerName: 'Guest', // inquiry doesn't store diner name
+        bookingDate: inquiry.inquiry_date,
+        guestCount: inquiry.guest_count,
+        serviceTitle: null, // would need additional query if needed
+        quoteAmount: newBooking.total_price || null,
+      }).catch(err => {
+        console.error('[Email] Failed to send booking confirmed email:', err)
+      })
+
+      return NextResponse.json({
+        message: `Inquiry ${status}`,
+        inquiryId,
+        status,
+      }, { status: 200 })
     }
 
     return NextResponse.json({

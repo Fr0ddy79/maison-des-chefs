@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendInquiryConfirmationEmail } from '@/lib/email/resend'
+import { sendInquiryConfirmationEmail, sendNewInquiryNotificationToChef } from '@/lib/email/resend'
 
 // POST /api/inquiry - Submit an inquiry with chef availability conflict detection
 export async function POST(request: NextRequest) {
@@ -171,6 +171,18 @@ export async function POST(request: NextRequest) {
       inquiryId: newInquiry.id,
     }).catch(err => {
       console.error('[Inquiry] Failed to send confirmation email:', err)
+    })
+
+    // Notify chef of new inquiry (non-blocking)
+    sendNewInquiryNotificationToChef({
+      chefId: chef_id,
+      dinerEmail: email,
+      message,
+      inquiryDate: inquiry_date,
+      inquiryTime: inquiry_time,
+      inquiryId: newInquiry.id,
+    }).catch(err => {
+      console.error('[Inquiry] Failed to send chef notification email:', err)
     })
 
     return NextResponse.json(

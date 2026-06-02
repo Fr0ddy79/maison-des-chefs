@@ -2,11 +2,35 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { trackBookingFormViewed, trackBookingFormSubmitted } from '@/lib/analytics'
 import { useABVariant } from '@/lib/useABVariant'
 import { createClient } from '@/lib/supabase/client'
+
+// Cookie helpers
+const GUEST_SESSION_COOKIE = 'mdc_guest_session'
+const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 days in seconds
+
+function getGuestSessionId(): string | null {
+  if (typeof document === 'undefined') return null
+  const cookies = document.cookie.split(';')
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split('=')
+    if (name === GUEST_SESSION_COOKIE) return value
+  }
+  return null
+}
+
+function setGuestSessionCookie(sessionId: string): void {
+  if (typeof document === 'undefined') return
+  document.cookie = `${GUEST_SESSION_COOKIE}=${sessionId}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`
+}
+
+function generateGuestSessionId(): string {
+  return 'guest_' + Math.random().toString(36).substring(2) + Date.now().toString(36)
+}
 
 const STANDARD_STEPS = ['Select Chef', 'Choose Date & Time', 'Guest Details', 'Confirm']
 const SIMPLIFIED_STEPS = ['Select Chef & Schedule', 'Guest Details', 'Confirm']
@@ -43,7 +67,31 @@ export function BookPageContent() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [chefs, setChefs] = useState<ChefProfile[]>([])
   const [chefsLoading, setChefsLoading] = useState(true)
+  const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
   const searchParams = useSearchParams()
+
+  // Load guest session and pre-fill form on mount
+  useEffect(() => {
+    const existingSession = getGuestSessionId()
+    if (existingSession) {
+      setGuestSessionId(existingSession)
+      // Pre-fill from stored form data (set on previous submission)
+      try {
+        const stored = localStorage.getItem(`guest_form_${existingSession}`)
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          setFormData(prev => ({
+            ...prev,
+            name: parsed.name || prev.name,
+            email: parsed.email || prev.email,
+            phone: parsed.phone || prev.phone,
+          }))
+        }
+      } catch {
+        // Ignore localStorage errors
+      }
+    }
+  }, [])
 
   // URL param override for forced variant testing (?variant=simplified)
   const urlVariant = searchParams.get('variant') === 'simplified' ? 'simplified' : null
@@ -112,6 +160,25 @@ export function BookPageContent() {
       event_date: formData.date,
     })
 
+    // Handle guest session — get or create cookie
+    let sessionId = getGuestSessionId()
+    if (!sessionId) {
+      sessionId = generateGuestSessionId()
+      setGuestSessionId(sessionId)
+      setGuestSessionCookie(sessionId)
+    }
+
+    // Persist form data for returning guests
+    try {
+      localStorage.setItem(`guest_form_${sessionId}`, JSON.stringify({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+      }))
+    } catch {
+      // Ignore localStorage errors
+    }
+
     // Build inquiry payload — combine date and time into inquiry_date (YYYY-MM-DD)
     const inquiryPayload = {
       chef_id: formData.chefId,
@@ -172,6 +239,13 @@ export function BookPageContent() {
           {/* Variant badge (for testing visibility) */}
           <div className="mb-4 text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>
             Form Variant: <span className="font-mono">{formVariant}</span>
+          </div>
+
+          {/* Guest login prompt — optional, not blocking */}
+          <div className="mb-6 p-4 rounded-lg border flex items-center justify-between" style={{ borderColor: 'var(--color-mdc-border)', backgroundColor: 'var(--color-mdc-bg)' }}>
+            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              Already have an account? <Link href="/login" className="underline hover:opacity-80" style={{ color: 'var(--color-mdc-accent)' }}>Sign in</Link> for a faster booking experience.
+            </p>
           </div>
 
           {/* Progress Steps */}
