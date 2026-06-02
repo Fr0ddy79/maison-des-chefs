@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,6 +39,21 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[Analytics] booking_form_viewed:', analyticsEvent)
+
+    // Insert to Supabase
+    const supabase = await createClient()
+    const { error: dbError } = await supabase.from('booking_form_events').insert({
+      chef_id,
+      service_id,
+      variant: form_variant,
+      event_type: 'viewed',
+      referrer: referrer ?? null,
+    })
+
+    if (dbError) {
+      console.error('[Analytics] Error storing booking_form_viewed event:', dbError)
+      // Non-blocking - don't fail the request for analytics failures
+    }
 
     // TODO: In production, integrate with analytics service (e.g., Mixpanel, Amplitude, PostHog)
     // Example: await mixpanel.track('booking_form_viewed', analyticsEvent)

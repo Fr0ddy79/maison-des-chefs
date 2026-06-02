@@ -55,6 +55,8 @@ export default function ChefDashboard() {
   const [inquiries, setInquiries] = useState<any[]>([])
   const [loadingInquiries, setLoadingInquiries] = useState(false)
   const [processingInquiry, setProcessingInquiry] = useState<string | null>(null)
+  const [selectedInquiry, setSelectedInquiry] = useState<any>(null)
+  const [showInquiryModal, setShowInquiryModal] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -244,6 +246,7 @@ export default function ChefDashboard() {
       await fetchAvailabilitySlots()
     }
     setProcessingInquiry(null)
+    setShowInquiryModal(false)
   }
 
   function formatTime(time: string) {
@@ -600,7 +603,16 @@ export default function ChefDashboard() {
 
             {/* Inquiries */}
             <div className="rounded-lg p-6 bg-white border shadow-sm">
-              <h2 className="text-xl mb-4" style={{ fontFamily: 'var(--font-serif)' }}>Booking Inquiries</h2>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Booking Inquiries</h2>
+                  {inquiries.length > 0 && (
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}>
+                      {inquiries.length}
+                    </span>
+                  )}
+                </div>
+              </div>
               {loadingInquiries ? (
                 <p style={{ color: 'var(--color-mdc-text-muted)' }}>Loading...</p>
               ) : inquiries.length === 0 ? (
@@ -610,8 +622,9 @@ export default function ChefDashboard() {
                   {inquiries.map((inquiry) => (
                     <div
                       key={inquiry.id}
-                      className="p-4 rounded-lg"
+                      className="p-4 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                       style={{ backgroundColor: 'var(--color-mdc-bg)' }}
+                      onClick={() => { setSelectedInquiry(inquiry); setShowInquiryModal(true) }}
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -632,29 +645,68 @@ export default function ChefDashboard() {
                           Pending
                         </span>
                       </div>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => handleInquiryAction(inquiry.id, 'accepted')}
-                          disabled={processingInquiry === inquiry.id}
-                          className="text-xs px-3 py-1 rounded font-medium transition-colors disabled:opacity-50"
-                          style={{ backgroundColor: '#15803d', color: 'white' }}
-                        >
-                          {processingInquiry === inquiry.id ? 'Processing...' : 'Accept'}
-                        </button>
-                        <button
-                          onClick={() => handleInquiryAction(inquiry.id, 'rejected')}
-                          disabled={processingInquiry === inquiry.id}
-                          className="text-xs px-3 py-1 rounded font-medium transition-colors disabled:opacity-50"
-                          style={{ backgroundColor: 'var(--color-mdc-error)', color: 'white' }}
-                        >
-                          Reject
-                        </button>
-                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
+
+            {/* Inquiry Detail Modal */}
+            {showInquiryModal && selectedInquiry && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setShowInquiryModal(false)}>
+                <div className="bg-white rounded-lg p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Inquiry Details</h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        Received {new Date(selectedInquiry.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    </div>
+                    <button onClick={() => setShowInquiryModal(false)} className="text-2xl" style={{ color: 'var(--color-mdc-text-muted)' }}>×</button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Diner Email</p>
+                      <p className="font-medium">{selectedInquiry.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Requested Date</p>
+                      <p className="font-medium">
+                        {new Date(selectedInquiry.inquiry_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                    {selectedInquiry.services && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Service</p>
+                        <p className="font-medium" style={{ color: 'var(--color-mdc-accent)' }}>{(selectedInquiry.services as any)?.title}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Message</p>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>{selectedInquiry.message}</p>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      onClick={() => handleInquiryAction(selectedInquiry.id, 'accepted')}
+                      disabled={processingInquiry === selectedInquiry.id}
+                      className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: '#15803d', color: 'white' }}
+                    >
+                      {processingInquiry === selectedInquiry.id ? 'Processing...' : 'Accept Inquiry'}
+                    </button>
+                    <button
+                      onClick={() => handleInquiryAction(selectedInquiry.id, 'rejected')}
+                      disabled={processingInquiry === selectedInquiry.id}
+                      className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--color-mdc-error)', color: 'white' }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Sidebar */}
             <aside className="space-y-6">
