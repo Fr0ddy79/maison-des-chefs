@@ -186,13 +186,19 @@ function buildQuotePage(data: QuotePageData): string {
       <div class="accepted-card">
         <div class="accepted-icon">✓</div>
         <div class="accepted-title">Quote Accepted!</div>
-        <div class="accepted-message">Hi <strong>${escapeHtml(dinerName)}</strong>, your quote from <strong>${escapeHtml(chefName)}</strong> has been accepted. You'll receive a confirmation email at <strong>${escapeHtml(email)}</strong> shortly.</div>
+        <div class="accepted-message">Hi <strong>${escapeHtml(dinerName)}</strong>, your quote from <strong>${escapeHtml(chefName)}</strong> has been accepted.</div>
         <div class="booking-summary">
           <div class="summary-row"><span>Service</span><span>${escapeHtml(serviceName)}</span></div>
           <div class="summary-row"><span>Total</span><span>${formatPrice(quoteAmount)}</span></div>
           ${eventDate ? `<div class="summary-row"><span>Date</span><span>${formatDate(eventDate)}</span></div>` : ''}
           ${guestCount ? `<div class="summary-row"><span>Guests</span><span>${guestCount}</span></div>` : ''}
         </div>
+        ${quoteAmount != null && quoteAmount > 0 ? `
+        <a href="/checkout/${leadId}?token=${encodeURIComponent(token)}" class="pay-btn">Proceed to Payment</a>
+        <div class="pay-note">Your card will be charged after the event</div>
+        ` : `
+        <div class="pay-note">No payment required — the chef will be in touch to finalize details.</div>
+        `}
       </div>`;
   } else if (state === 'expired') {
     mainContent = `
@@ -239,11 +245,14 @@ function buildQuotePage(data: QuotePageData): string {
     .accepted-icon { width: 64px; height: 64px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #15803d; margin: 0 auto 1rem; }
     .accepted-title { font-size: 1.5rem; font-weight: 700; color: #15803d; margin-bottom: 1rem; }
     .accepted-message { font-size: 0.95rem; color: #555; line-height: 1.5; margin-bottom: 1.5rem; }
-    .booking-summary { background: #f8f9fa; border-radius: 8px; padding: 1rem; text-align: left; }
+    .booking-summary { background: #f8f9fa; border-radius: 8px; padding: 1rem; text-align: left; margin-bottom: 1.25rem; }
     .summary-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
     .summary-row:last-child { border-bottom: none; }
     .summary-row span:first-child { color: #888; font-size: 0.9rem; }
     .summary-row span:last-child { font-weight: 600; color: #2c3e50; }
+    .pay-btn { display: block; width: 100%; background: #c9a227; color: white; border: none; padding: 1rem; border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; text-align: center; text-decoration: none; margin-bottom: 0.75rem; }
+    .pay-btn:hover { background: #b8922a; }
+    .pay-note { font-size: 0.85rem; color: #888; text-align: center; }
     .expired-icon { font-size: 3rem; margin-bottom: 1rem; }
     .expired-title { font-size: 1.5rem; font-weight: 700; color: #6b7280; margin-bottom: 1rem; }
     .expired-message { font-size: 0.95rem; color: #666; line-height: 1.5; margin-bottom: 1.5rem; }
