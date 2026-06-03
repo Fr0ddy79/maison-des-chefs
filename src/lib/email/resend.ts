@@ -364,3 +364,117 @@ export async function sendInquiryConfirmationEmail({
     return { success: false, error: 'Unexpected error' }
   }
 }
+interface SendQuoteNotificationParams {
+  bookingId: string
+  chefId: string
+  dinerId: string
+  quoteAmount: number
+  quoteMessage: string | null
+  quoteValidUntil: string
+}
+
+export async function sendQuoteNotificationEmail({
+  bookingId,
+  chefId,
+  dinerId,
+  quoteAmount,
+  quoteMessage,
+  quoteValidUntil,
+}: SendQuoteNotificationParams): Promise<{ success: boolean; error?: string }> {
+  // Graceful degradation: if no API key, skip email but don't fail the operation
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Email] RESEND_API_KEY not set - skipping quote notification email')
+    return { success: true }
+  }
+
+  try {
+    const supabase = await createClient()
+
+    // Fetch booking, chef, and diner details
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('booking_date, start_time, guest_count')
+      .eq('id', bookingId)
+      .single()
+
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', chefId)
+      .single()
+
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+    const dinerEmail = dinerProfile?.email
+    const dinerName = dinerProfile?.full_name || 'Dear guest'
+
+    if (!dinerEmail) {
+      return { success: false, error: 'Diner email not found' }
+    }
+
+    const formattedDate = booking
+      ? new Date(booking.booking_date).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : 'your date'
+
+    const validUntilDate = new Date(quoteValidUntil).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    })
+
+    const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/booking/${bookingId}`
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">You've Received a Quote!</h1>
+        <p>Dear ${dinerName},</p>
+        <p><strong>${chefName}</strong> has sent you a quote for your upcoming dining experience.</p>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <p><strong>Chef:</strong> ${chefName}</p>
+          <p><strong>Date:</strong> ${formattedDate}</p>
+          ${booking?.guest_count ? `<p><strong>Party Size:</strong> ${booking.guest_count} guests</p>` : ''}
+          <p><strong>Quote Amount:</strong> $${quoteAmount}</p>
+          ${quoteMessage ? `<p><strong>Message from Chef:</strong></p><p style="font-style: italic; color: #555;">"${quoteMessage}"</p>` : ''}
+          <p style="color: #888; font-size: 13px; margin-top: 12px;">⏰ This quote is valid until <strong>${validUntilDate}</strong></p>
+        </div>
+        
+        <p>Please review the quote and let the chef know if you'd like to proceed.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${bookingUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 8px;">Accept Quote</a>
+          <a href="${bookingUrl}" style="display: inline-block; background: #dc2626; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 8px;">Decline</a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: dinerEmail,
+      subject: `Quote from ${chefName} — Review Now`,
+      html,
+    })
+
+    if (error) {
+      console.error('[Email] Failed to send quote notification email:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending quote notification email:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}

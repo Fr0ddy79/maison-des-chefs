@@ -1,6 +1,7 @@
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { HeroCTA } from '@/components/HeroCTA'
+import { StatsBar } from '@/components/StatsBar'
 import { WaitlistCapture } from '@/components/WaitlistCapture'
 import { createClient } from '@/lib/supabase/client'
 
@@ -103,6 +104,9 @@ export default async function HomePage() {
               for unforgettable at-home dining. From intimate dinners to grand celebrations.
             </p>
             <HeroCTA />
+            <div className="mt-6">
+              <StatsBar />
+            </div>
           </div>
         </div>
         
@@ -258,18 +262,35 @@ export default async function HomePage() {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {experiences.map((exp, index) => (
-              <div key={index} className="rounded-lg p-6 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md bg-white border" style={{ borderColor: 'var(--color-mdc-border)' }}>
-                <span className="text-4xl">{exp.icon}</span>
-                <h3 className="text-xl mt-4" style={{ fontFamily: 'var(--font-serif)' }}>{exp.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                  {exp.description}
-                </p>
-                <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
-                  <span className="font-semibold" style={{ color: 'var(--color-mdc-accent)' }}>{exp.price}</span>
-                </div>
-              </div>
-            ))}
+            {experiences.map((exp, index) => {
+              // Map each experience type to a relevant cuisine filter for the chef listing
+              const cuisineMap: Record<string, string> = {
+                'Intimate Prix Fixe Dinner': 'French',
+                "Cocktail & Hors d'oeuvres": 'French',
+                'Cooking Class Experience': 'Italian',
+                'Celebration & Events': 'Italian',
+              }
+              const cuisineParam = cuisineMap[exp.title] || ''
+              const href = `/chefs${cuisineParam ? `?cuisine=${encodeURIComponent(cuisineParam)}` : ''}`
+              return (
+                <a
+                  key={index}
+                  href={href}
+                  className="rounded-lg p-6 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md bg-white border"
+                  style={{ borderColor: 'var(--color-mdc-border)' }}
+                >
+                  <span className="text-4xl">{exp.icon}</span>
+                  <h3 className="text-xl mt-4" style={{ fontFamily: 'var(--font-serif)' }}>{exp.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    {exp.description}
+                  </p>
+                  <div className="mt-4 pt-4 border-t flex items-center justify-between" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                    <span className="font-semibold" style={{ color: 'var(--color-mdc-accent)' }}>{exp.price}</span>
+                    <span className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Browse chefs →</span>
+                  </div>
+                </a>
+              )
+            })}
           </div>
         </div>
       </section>

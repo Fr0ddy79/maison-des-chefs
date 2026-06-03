@@ -66,6 +66,14 @@ export default function ChefDashboard() {
     trend: string
   } | null>(null)
   const [loadingAnalytics, setLoadingAnalytics] = useState(false)
+  const [awaitingQuotesBookings, setAwaitingQuotesBookings] = useState<Booking[]>([])
+  const [showQuoteModal, setShowQuoteModal] = useState(false)
+  const [selectedQuoteBooking, setSelectedQuoteBooking] = useState<any>(null)
+  const [quoteAmount, setQuoteAmount] = useState('')
+  const [quoteMessage, setQuoteMessage] = useState('')
+  const [quoteValidDays, setQuoteValidDays] = useState(7)
+  const [sendingQuote, setSendingQuote] = useState(false)
+  const [quoteSuccess, setQuoteSuccess] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -153,7 +161,7 @@ export default function ChefDashboard() {
       const { data: upcomingData } = await supabase
         .from('bookings')
         .select(`
-          id, booking_date, start_time, guest_count, total_price, status,
+          id, booking_date, start_time, guest_count, total_price, status, quote_status,
           services:service_id (title),
           profiles:diner_id (full_name)
         `)
@@ -162,6 +170,21 @@ export default function ChefDashboard() {
         .order('booking_date', { ascending: true })
 
       setUpcomingBookings((upcomingData as any[]) || [])
+
+      // Fetch bookings awaiting quotes (pending, no quote sent yet)
+      const { data: awaitingQuotesData } = await supabase
+        .from('bookings')
+        .select(`
+          id, booking_date, start_time, guest_count, total_price, status, quote_status,
+          services:service_id (title),
+          profiles:diner_id (full_name)
+        `)
+        .eq('chef_id', authUser.id)
+        .eq('status', 'pending')
+        .is('quote_status', null)
+        .order('booking_date', { ascending: true })
+
+      setAwaitingQuotesBookings((awaitingQuotesData as any[]) || [])
       setStats(prev => ({
         ...prev,
         upcomingCount: upcomingData?.length || 0,
@@ -176,6 +199,87 @@ export default function ChefDashboard() {
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  function openQuoteModal(booking: any) {
+    setSelectedQuoteBooking(booking)
+    setQuoteAmount(booking.total_price?.toString() || '')
+    setQuoteMessage('')
+    setQuoteValidDays(7)
+    setShowQuoteModal(true)
+    setQuoteSuccess(null)
+  }
+
+  function closeQuoteModal() {
+    setShowQuoteModal(false)
+    setSelectedQuoteBooking(null)
+    setQuoteAmount('')
+    setQuoteMessage('')
+    setQuoteValidDays(7)
+    setQuoteSuccess(null)
+  }
+
+  async function handleSendQuote(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedQuoteBooking || sendingQuote) return
+
+    const amount = parseFloat(quoteAmount)
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount')
+      return
+    }
+
+    setSendingQuote(true)
+    try {
+      const res = await fetch(`/api/bookings/${selectedQuoteBooking.id}/quote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quote_amount: amount,
+          quote_message: quoteMessage.trim() || null,
+          quote_valid_days: quoteValidDays,
+        }),
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        setQuoteSuccess('Quote sent successfully!')
+        // Refresh awaiting quotes list and upcoming bookings
+        const { data: updatedUpcomingData } = await supabase
+          .from('bookings')
+          .select(`
+            id, booking_date, start_time, guest_count, total_price, status, quote_status,
+            services:service_id (title),
+            profiles:diner_id (full_name)
+          `)
+          .eq('chef_id', user.id)
+          .in('status', ['pending', 'confirmed'])
+          .order('booking_date', { ascending: true })
+        setUpcomingBookings((updatedUpcomingData as any[]) || [])
+
+        const { data: updatedAwaitingData } = await supabase
+          .from('bookings')
+          .select(`
+            id, booking_date, start_time, guest_count, total_price, status, quote_status,
+            services:service_id (title),
+            profiles:diner_id (full_name)
+          `)
+          .eq('chef_id', user.id)
+          .eq('status', 'confirmed')
+          .is('quote_status', null)
+          .order('booking_date', { ascending: true })
+        setAwaitingQuotesBookings((updatedAwaitingData as any[]) || [])
+
+        setTimeout(() => {
+          closeQuoteModal()
+        }, 1500)
+      } else {
+        alert(data.error || 'Failed to send quote')
+      }
+    } catch (err) {
+      alert('Something went wrong. Please try again.')
+    }
+    setSendingQuote(false)
   }
 
   async function fetchAvailabilitySlots() {
@@ -541,6 +645,55 @@ export default function ChefDashboard() {
                 )}
               </div>
 
+              {/* Awaiting Quotes - Bookings that need a quote sent */}
+              {awaitingQuotesBookings.length > 0 && (
+                <div className="rounded-lg p-6 bg-white border shadow-sm" style={{ borderColor: 'rgba(201, 168, 76, 0.3)', backgroundColor: 'rgba(201, 168, 76, 0.02)' }}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Awaiting Your Quote</h2>
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold" style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}>
+                        {awaitingQuotesBookings.length}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    These accepted bookings are waiting for you to send a quote.
+                  </p>
+                  <div className="space-y-4">
+                    {awaitingQuotesBookings.map((booking) => (
+                      <div
+                        key={booking.id}
+                        className="flex items-center justify-between p-4 rounded-lg"
+                        style={{ backgroundColor: 'white', border: '1px solid rgba(201, 168, 76, 0.2)' }}
+                      >
+                        <div>
+                          <p className="font-medium">{(booking.profiles as any)?.full_name || 'Client'}</p>
+                          <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            {(booking.services as any)?.title || 'Service'}
+                          </p>
+                          <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            {booking.booking_date} at {booking.start_time} • {booking.guest_count} guests
+                          </p>
+                        </div>
+                        <div className="text-right flex items-center gap-3">
+                          <div>
+                            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>Est. Price</p>
+                            <p className="font-semibold">${booking.total_price}</p>
+                          </div>
+                          <button
+                            onClick={() => openQuoteModal(booking)}
+                            className="px-4 py-2 rounded font-medium text-sm transition-colors"
+                            style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                          >
+                            Send Quote
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Availability Slots */}
               <div className="rounded-lg p-6 bg-white border shadow-sm">
                 <div className="flex items-center justify-between mb-4">
@@ -766,6 +919,98 @@ export default function ChefDashboard() {
                       Reject
                     </button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Send Quote Modal */}
+            {showQuoteModal && selectedQuoteBooking && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={closeQuoteModal}>
+                <div className="bg-white rounded-lg p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Send Quote</h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        {new Date(selectedQuoteBooking.booking_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                    <button onClick={closeQuoteModal} className="text-2xl" style={{ color: 'var(--color-mdc-text-muted)' }}>×</button>
+                  </div>
+
+                  {quoteSuccess ? (
+                    <div className="py-8 text-center">
+                      <div className="text-4xl mb-3">✓</div>
+                      <p className="font-medium" style={{ color: '#15803d' }}>{quoteSuccess}</p>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSendQuote}>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Quote Amount *</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-mdc-text-muted)' }}>$</span>
+                            <input
+                              type="number"
+                              value={quoteAmount}
+                              onChange={(e) => setQuoteAmount(e.target.value)}
+                              placeholder="0.00"
+                              min="0"
+                              step="0.01"
+                              required
+                              className="w-full pl-7 pr-3 py-2 rounded border text-sm"
+                              style={{ borderColor: 'var(--color-mdc-border)' }}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Message (optional)</label>
+                          <textarea
+                            value={quoteMessage}
+                            onChange={(e) => setQuoteMessage(e.target.value)}
+                            placeholder="Add a personal note to your quote..."
+                            rows={3}
+                            className="w-full px-3 py-2 rounded border text-sm resize-none"
+                            style={{ borderColor: 'var(--color-mdc-border)' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Valid For</label>
+                          <select
+                            value={quoteValidDays}
+                            onChange={(e) => setQuoteValidDays(parseInt(e.target.value))}
+                            className="w-full px-3 py-2 rounded border text-sm"
+                            style={{ borderColor: 'var(--color-mdc-border)' }}
+                          >
+                            <option value={3}>3 days</option>
+                            <option value={7}>7 days</option>
+                            <option value={14}>14 days</option>
+                            <option value={30}>30 days</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex gap-3">
+                        <button
+                          type="submit"
+                          disabled={sendingQuote}
+                          className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors disabled:opacity-50"
+                          style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                        >
+                          {sendingQuote ? 'Sending...' : 'Send Quote'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeQuoteModal}
+                          className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors border"
+                          style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
             )}

@@ -7,6 +7,12 @@ import { Footer } from '@/components/Footer'
 import { CompareBar } from '@/components/compare/CompareBar'
 import { createClient } from '@/lib/supabase/client'
 
+type Service = {
+  id?: string
+  title: string
+  cuisine_type?: string
+}
+
 type Chef = {
   id: string
   display_name: string
@@ -19,11 +25,54 @@ type Chef = {
   is_verified: boolean
   hero_image_url: string
   bio: string
+  services?: Service[]
 }
 
 type ChefAvailability = Record<string, { total: number; available: number }>
 
 const cuisineOptions = ['French', 'Italian', 'Japanese', 'Mediterranean', 'Seafood', 'Vegetarian', 'Asian Fusion']
+
+type ServiceBadgeType = 'prix_fixe' | 'cocktail' | 'cooking_class' | 'celebration'
+
+const SERVICE_BADGE_CONFIG: Record<ServiceBadgeType, { bg: string; text: string; label: string }> = {
+  prix_fixe: { bg: '#C9A84C20', text: '#A68A3A', label: 'Prix Fixe' },
+  cocktail: { bg: '#7C3AED20', text: '#6D28D9', label: 'Cocktail' },
+  cooking_class: { bg: '#0D948820', text: '#0F766E', label: 'Cooking Class' },
+  celebration: { bg: '#2563EB20', text: '#1D4ED8', label: 'Celebration' },
+}
+
+function mapServiceToBadgeType(title: string): ServiceBadgeType | null {
+  const lower = title.toLowerCase()
+  if (lower.includes('prix fixe') || lower.includes('dinner') || lower.includes('menu')) return 'prix_fixe'
+  if (lower.includes('cocktail') || lower.includes('canap') || lower.includes('hors d') || lower.includes('appetizer')) return 'cocktail'
+  if (lower.includes('cooking class') || lower.includes('class') || lower.includes('workshop')) return 'cooking_class'
+  if (lower.includes('celebration') || lower.includes('event') || lower.includes('catering') || lower.includes('party')) return 'celebration'
+  return null
+}
+
+function ServiceTypeBadge({ type }: { type: ServiceBadgeType }) {
+  const { bg, text, label } = SERVICE_BADGE_CONFIG[type]
+  return (
+    <span
+      className="text-xs px-3 py-1 rounded-full font-medium"
+      style={{ backgroundColor: bg, color: text }}
+    >
+      {label}
+    </span>
+  )
+}
+
+function getServiceBadges(services: Service[]): { badges: ServiceBadgeType[]; extraCount: number } {
+  const badgeTypes = services
+    .map(s => mapServiceToBadgeType(s.title))
+    .filter((t): t is ServiceBadgeType => t !== null)
+  // Deduplicate
+  const unique = Array.from(new Set(badgeTypes))
+  return {
+    badges: unique.slice(0, 2),
+    extraCount: Math.max(0, unique.length - 2),
+  }
+}
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -68,6 +117,16 @@ export default function ChefsPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'rating' | 'price_low' | 'price_high'>('rating')
+
+  // Support URL param ?cuisine=French,Italian for landing page links
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const cuisineParam = params.get('cuisine')
+    if (cuisineParam) {
+      const cuisines = cuisineParam.split(',').map(c => c.trim()).filter(Boolean)
+      setSelectedCuisines(cuisines)
+    }
+  }, [])
   const [compareList, setCompareList] = useState<Chef[]>([])
   const [availability, setAvailability] = useState<ChefAvailability>({})
 
@@ -76,7 +135,7 @@ export default function ChefsPage() {
       const supabase = createClient()
       const { data, error: supabaseError } = await supabase
         .from('chef_profiles')
-        .select('id, display_name, location, cuisines, avg_rating, review_count, price_per_event, max_guests, is_verified, hero_image_url, bio')
+        .select('id, display_name, location, cuisines, avg_rating, review_count, price_per_event, max_guests, is_verified, hero_image_url, bio, services(title, cuisine_type)')
         .order('avg_rating', { ascending: false })
 
       if (supabaseError) {
@@ -302,6 +361,21 @@ export default function ChefsPage() {
 
                               <div className="flex flex-wrap gap-1.5 mt-2">
                                 <AvailabilityBadge status={badgeStatus} />
+                                {chef.services && chef.services.length > 0 && (() => {
+                                  const { badges, extraCount } = getServiceBadges(chef.services)
+                                  return (
+                                    <>
+                                      {badges.map((badge) => (
+                                        <ServiceTypeBadge key={badge} type={badge} />
+                                      ))}
+                                      {extraCount > 0 && (
+                                        <span className="text-xs px-3 py-1 rounded-full font-medium" style={{ backgroundColor: 'var(--color-mdc-bg)', color: 'var(--color-mdc-text-muted)', border: '1px solid var(--color-mdc-border)' }}>
+                                          +{extraCount} more
+                                        </span>
+                                      )}
+                                    </>
+                                  )
+                                })()}
                                 {chef.cuisines.slice(0, 3).map((cuisine) => (
                                   <span key={cuisine} className="text-xs px-3 py-1 rounded-full border" style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)', backgroundColor: 'var(--color-mdc-bg)' }}>{cuisine}</span>
                                 ))}

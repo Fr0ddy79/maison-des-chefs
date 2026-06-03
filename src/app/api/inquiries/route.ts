@@ -138,7 +138,7 @@ export async function PATCH(request: NextRequest) {
           start_time: inquiry.inquiry_time || slot.start_time,
           guest_count: inquiry.guest_count || 2,
           total_price: service?.price || 0,
-          status: 'confirmed',
+          status: inquiry.service_id ? 'pending' : 'confirmed',
         })
         .select()
         .single()
