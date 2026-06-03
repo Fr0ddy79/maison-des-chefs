@@ -21,6 +21,8 @@ type Chef = {
   bio: string
 }
 
+type ChefAvailability = Record<string, { total: number; available: number }>
+
 const cuisineOptions = ['French', 'Italian', 'Japanese', 'Mediterranean', 'Seafood', 'Vegetarian', 'Asian Fusion']
 
 function StarRating({ rating }: { rating: number }) {
@@ -41,6 +43,25 @@ function StarRating({ rating }: { rating: number }) {
   )
 }
 
+type BadgeType = 'available' | 'fully_booked' | 'inquire'
+
+function AvailabilityBadge({ status }: { status: BadgeType }) {
+  const styles: Record<BadgeType, { bg: string; text: string; label: string }> = {
+    available: { bg: '#22c55e1a', text: '#16a34a', label: 'Available' },
+    fully_booked: { bg: '#6b72801a', text: '#4b5563', label: 'Fully Booked' },
+    inquire: { bg: '#eab3081a', text: '#a16207', label: 'Inquire for Dates' },
+  }
+  const { bg, text, label } = styles[status]
+  return (
+    <span
+      className="text-xs px-3 py-1 rounded-full font-medium"
+      style={{ backgroundColor: bg, color: text }}
+    >
+      {label}
+    </span>
+  )
+}
+
 export default function ChefsPage() {
   const [chefs, setChefs] = useState<Chef[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,6 +69,7 @@ export default function ChefsPage() {
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'rating' | 'price_low' | 'price_high'>('rating')
   const [compareList, setCompareList] = useState<Chef[]>([])
+  const [availability, setAvailability] = useState<ChefAvailability>({})
 
   useEffect(() => {
     async function fetchChefs() {
@@ -66,6 +88,20 @@ export default function ChefsPage() {
 
       setChefs(data || [])
       setLoading(false)
+
+      // Batch-fetch availability for all chefs
+      if (data && data.length > 0) {
+        const chefIds = data.map(c => c.id).join(',')
+        try {
+          const res = await fetch(`/api/availability?chef_ids=${encodeURIComponent(chefIds)}`)
+          if (res.ok) {
+            const json = await res.json()
+            setAvailability(json.availability || {})
+          }
+        } catch (e) {
+          console.error('Failed to fetch availability:', e)
+        }
+      }
     }
 
     fetchChefs()
@@ -110,6 +146,13 @@ export default function ChefsPage() {
 
   const handleClearCompare = () => {
     setCompareList([])
+  }
+
+  function getBadgeStatus(chefId: string): BadgeType {
+    const slot = availability[chefId]
+    if (!slot || slot.total === 0) return 'inquire'
+    if (slot.available > 0) return 'available'
+    return 'fully_booked'
   }
 
   return (
@@ -208,6 +251,7 @@ export default function ChefsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {filteredChefs.map((chef) => {
                       const isCompared = compareList.some(c => c.id === chef.id)
+                      const badgeStatus = getBadgeStatus(chef.id)
                       return (
                         <div
                           key={chef.id}
@@ -257,6 +301,7 @@ export default function ChefsPage() {
                               <p className="mt-0.5 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.location}</p>
 
                               <div className="flex flex-wrap gap-1.5 mt-2">
+                                <AvailabilityBadge status={badgeStatus} />
                                 {chef.cuisines.slice(0, 3).map((cuisine) => (
                                   <span key={cuisine} className="text-xs px-3 py-1 rounded-full border" style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)', backgroundColor: 'var(--color-mdc-bg)' }}>{cuisine}</span>
                                 ))}

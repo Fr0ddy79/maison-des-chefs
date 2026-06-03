@@ -57,6 +57,15 @@ export default function ChefDashboard() {
   const [processingInquiry, setProcessingInquiry] = useState<string | null>(null)
   const [selectedInquiry, setSelectedInquiry] = useState<any>(null)
   const [showInquiryModal, setShowInquiryModal] = useState(false)
+  const [analytics, setAnalytics] = useState<{
+    monthlyBookings: number
+    inquiryToBookingRate: string
+    avgResponseHours: number
+    pendingRevenue: number
+    pendingBookings: number
+    trend: string
+  } | null>(null)
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -127,7 +136,21 @@ export default function ChefDashboard() {
       setProfileCompleteness({ score, elements, isFirstLogin })
       setShowSetupPrompt(isFirstLogin && score < 100)
 
-      const { data: bookings } = await supabase
+      // Fetch analytics
+      setLoadingAnalytics(true)
+      try {
+        const res = await fetch('/api/analytics/bookings-summary')
+        if (res.ok) {
+          const data = await res.json()
+          setAnalytics(data)
+        }
+      } catch (e) {
+        console.error('Failed to load analytics', e)
+      }
+      setLoadingAnalytics(false)
+
+      // Also fetch upcoming bookings for the list
+      const { data: upcomingData } = await supabase
         .from('bookings')
         .select(`
           id, booking_date, start_time, guest_count, total_price, status,
@@ -138,26 +161,12 @@ export default function ChefDashboard() {
         .in('status', ['pending', 'confirmed'])
         .order('booking_date', { ascending: true })
 
-      const { data: completedBookings } = await supabase
-        .from('bookings')
-        .select('total_price, booking_date')
-        .eq('chef_id', authUser.id)
-        .eq('status', 'completed')
-
-      const now = new Date()
-      const thisMonth = completedBookings?.filter(b => {
-        const d = new Date(b.booking_date)
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-      }) || []
-
-      const monthRevenue = thisMonth.reduce((sum, b) => sum + (b.total_price || 0), 0)
-
-      setUpcomingBookings((bookings as any[]) || [])
-      setStats({
-        upcomingCount: bookings?.length || 0,
-        monthRevenue,
+      setUpcomingBookings((upcomingData as any[]) || [])
+      setStats(prev => ({
+        ...prev,
+        upcomingCount: upcomingData?.length || 0,
         avgRating: chef?.avg_rating || 0,
-      })
+      }))
 
       setLoading(false)
     }
@@ -419,6 +428,59 @@ export default function ChefDashboard() {
               )}
             </div>
           )}
+
+          {/* Analytics KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
+            <div className="rounded-lg p-4 bg-white border shadow-sm">
+              <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>This Month</p>
+              {loadingAnalytics ? (
+                <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>...</p>
+              ) : (
+                <>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{analytics?.monthlyBookings || 0}</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Bookings</p>
+                  {analytics?.trend && analytics.trend !== 'flat' && (
+                    <span className={`inline-block mt-1 text-xs ${analytics.trend === 'up' ? 'text-green-600' : 'text-red-500'}`}>
+                      {analytics.trend === 'up' ? '↑' : '↓'} vs last month
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="rounded-lg p-4 bg-white border shadow-sm">
+              <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Conversion</p>
+              {loadingAnalytics ? (
+                <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>...</p>
+              ) : (
+                <>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{analytics?.inquiryToBookingRate || '0%'}</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Inquiry→Booking</p>
+                </>
+              )}
+            </div>
+            <div className="rounded-lg p-4 bg-white border shadow-sm">
+              <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Avg Response</p>
+              {loadingAnalytics ? (
+                <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>...</p>
+              ) : (
+                <>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{analytics?.avgResponseHours || 0}h</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Response Time</p>
+                </>
+              )}
+            </div>
+            <div className="rounded-lg p-4 bg-white border shadow-sm">
+              <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Pending</p>
+              {loadingAnalytics ? (
+                <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>...</p>
+              ) : (
+                <>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>${(analytics?.pendingRevenue || 0).toLocaleString()}</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>{analytics?.pendingBookings || 0} bookings</p>
+                </>
+              )}
+            </div>
+          </div>
 
           {/* Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-8">

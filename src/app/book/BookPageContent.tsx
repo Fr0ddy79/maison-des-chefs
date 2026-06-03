@@ -313,21 +313,88 @@ export function BookPageContent() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                    {chefs.map((chef) => (
-                      <button
-                        key={chef.id}
-                        onClick={() => setFormData({ ...formData, chefId: chef.id })}
-                        className="p-4 rounded border text-left transition-colors"
-                        style={{
-                          borderColor: formData.chefId === chef.id ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
-                          backgroundColor: formData.chefId === chef.id ? 'rgba(201, 168, 76, 0.05)' : 'transparent',
-                        }}
-                      >
-                        <p className="font-medium">{chef.display_name || 'Chef'}</p>
-                        <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.cuisines?.join(', ')}</p>
-                        <p className="text-sm mt-2">From ${chef.price_per_event || '—'} / event</p>
-                      </button>
-                    ))}
+                    {chefs.map((chef) => {
+                      const isSelected = formData.chefId === chef.id
+                      return (
+                        <button
+                          key={chef.id}
+                          onClick={() => setFormData({ ...formData, chefId: chef.id })}
+                          className="p-4 rounded border text-left transition-all duration-150 flex items-center gap-4"
+                          style={{
+                            borderColor: isSelected ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
+                            borderWidth: isSelected ? '2px' : '1px',
+                            backgroundColor: isSelected ? 'rgba(201, 168, 76, 0.05)' : 'transparent',
+                          }}
+                        >
+                          {/* Chef photo */}
+                          <div className="relative flex-shrink-0">
+                            <img
+                              src={chef.hero_image_url || `https://api.dicebear.com/7.x/initials/svg?seed=${chef.display_name || 'Chef'}`}
+                              alt={chef.display_name || 'Chef'}
+                              className="w-16 h-16 rounded-full object-cover"
+                            />
+                            {chef.is_verified && (
+                              <div
+                                className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center"
+                                style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                              >
+                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Chef info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-base" style={{ fontFamily: 'var(--font-serif)' }}>{chef.display_name || 'Chef'}</p>
+                            </div>
+                            <p className="text-sm mt-0.5" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {chef.cuisines?.slice(0, 2).join(', ')}
+                            </p>
+                            {/* Star rating row */}
+                            <div className="flex items-center gap-2 mt-2">
+                              <div className="flex items-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <svg
+                                    key={star}
+                                    className="w-3.5 h-3.5"
+                                    style={{ color: star <= Math.round(chef.avg_rating) ? 'var(--color-mdc-accent)' : '#d1d5db' }}
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                  >
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                  </svg>
+                                ))}
+                              </div>
+                              <span className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                                {chef.avg_rating > 0 ? chef.avg_rating : 'New'}
+                                {chef.review_count > 0 && ` (${chef.review_count})`}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Price */}
+                          <div className="text-right flex-shrink-0 hidden sm:block">
+                            <p className="font-semibold">${chef.price_per_event || '—'}</p>
+                            <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>/ event</p>
+                          </div>
+
+                          {/* Selected indicator */}
+                          {isSelected && (
+                            <div
+                              className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                            >
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
 

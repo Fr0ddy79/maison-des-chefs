@@ -122,6 +122,12 @@ export async function PATCH(request: NextRequest) {
       }
 
       // Create booking
+      const { data: service } = await supabase
+        .from('services')
+        .select('price')
+        .eq('id', inquiry.service_id)
+        .single()
+
       const { data: newBooking, error: bookingError } = await supabase
         .from('bookings')
         .insert({
@@ -131,7 +137,7 @@ export async function PATCH(request: NextRequest) {
           booking_date: inquiry.inquiry_date,
           start_time: inquiry.inquiry_time || slot.start_time,
           guest_count: inquiry.guest_count || 2,
-          total_price: 0,  // placeholder - in real impl would come from service
+          total_price: service?.price || 0,
           status: 'confirmed',
         })
         .select()

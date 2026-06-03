@@ -1,20 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// GET /api/availability?chef_id=xxx - Get availability slots for a chef
+// GET /api/availability?chef_ids=uuid1,uuid2 - Batch get availability slot counts per chef
+// GET /api/availability?chef_id=xxx - Get availability slots for a single chef (legacy)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const chefIdsParam = searchParams.get('chef_ids')
     const chefId = searchParams.get('chef_id')
 
-    if (!chefId) {
+    const supabase = await createClient()
+
+    // Batch mode: chef_ids=uuid1,uuid2 returns per-chef slot counts
+    if (chefIdsParam) {
+      const chefIds = chefIdsParam.split(',').map(id => id.trim()).filter(Boolean)
+      if (chefIds.length === 0) {
+        return NextResponse.json(
+          { error: 'chef_ids must contain at least one ID' },
+          { status: 400 }
+        )
+      }
+
+      const { data: slots, error } = await supabase
+        .from('availability')
+        .select('chef_id')
+        .in('chef_id', chefIds)
+
+      if (error) {
+        console.error('Error fetching batch availability:', error)
+        return NextResponse.json(
+          { error: 'Failed to fetch availability' },
+          { status: 500 }
+        )
+      }
+
+      // Count total slots and available (unbooked) slots per chef
+      const slotCounts: Record<string, { total: number; available: number }> = {}
+      for (const id of chefIds) {
+        slotCounts[id] = { total: 0, available: 0 }
+      }
+      for (const slot of slots || []) {
+        if (slot.chef_id && slotCounts[slot.chef_id]) {
+          slotCounts[slot.chef_id].total++
+        }
+      }
+
+      const { data: availableSlots, error: availError } = await supabase
+        .from('availability')
+        .select('chef_id')
+        .in('chef_id', chefIds)
+        .eq('is_booked', false)
+
+      if (availError) {
+        console.error('Error fetching available slots:', availError)
+        return NextResponse.json(
+          { error: 'Failed to fetch availability' },
+          { status: 500 }
+        )
+      }
+
+      const availableSet = new Set((availableSlots || []).map(s => s.chef_id))
+      for (const id of chefIds) {
+        slotCounts[id].available = availableSet.has(id) ? 1 : 0
+      }
+
       return NextResponse.json(
-        { error: 'chef_id is required' },
-        { status: 400 }
+        { availability: slotCounts },
+        { status: 200 }
       )
     }
 
-    const supabase = await createClient()
+    // Legacy single-chef mode
+    if (!chefId) {
+      return NextResponse.json(
+        { error: 'chef_id or chef_ids is required' },
+        { status: 400 }
+      )
+    }
 
     const { data: slots, error } = await supabase
       .from('availability')
@@ -50,7 +112,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { chef_id, date, start_time, end_time } = body
 
-    // Validation
     if (!chef_id || typeof chef_id !== 'string') {
       return NextResponse.json(
         { error: 'chef_id is required' },
@@ -65,7 +126,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate date format
     const dateObj = new Date(date)
     if (isNaN(dateObj.getTime())) {
       return NextResponse.json(
@@ -90,7 +150,6 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Verify the requesting user is the chef or an admin
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) {
       return NextResponse.json(
@@ -99,7 +158,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify this chef_id matches the authenticated user or user is admin
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
