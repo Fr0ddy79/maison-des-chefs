@@ -79,8 +79,20 @@ export const bookings = sqliteTable('bookings', {
   paymentRetryCount: integer('payment_retry_count').notNull().default(0), // number of retry attempts made
   nextRetryAt: integer('next_retry_at', { mode: 'timestamp' }), // when to attempt next retry
   paymentExternalId: text('payment_external_id'), // stripe payment intent id
+  // MAI-2458: Stripe Payment Intents — quote amount and payment status
+  quoteAmount: real('quote_amount'), // chef-set quote amount for payment (CAD)
+  quoteStatus: text('quote_status', { enum: ['pending', 'accepted', 'paid', 'failed', 'refunded'] }).notNull().default('pending'), // payment state machine
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+export const bookingRefunds = sqliteTable('booking_refunds', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  bookingId: integer('booking_id').notNull().references(() => bookings.id),
+  amount: integer('amount').notNull(), // amount in cents
+  stripeRefundId: text('stripe_refund_id'), // Stripe Refund object ID
+  reason: text('reason'), // admin-provided reason for refund
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 export const refreshTokens = sqliteTable('refresh_tokens', {

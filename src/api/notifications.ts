@@ -6,11 +6,11 @@ import { eq, and, desc } from 'drizzle-orm';
 
 // MAI-1212: Notification types
 // MAI-1809: Added lead_received for chef in-app notifications on lead creation
-export type NotificationType = 'booking_confirmed' | 'booking_declined' | 'booking_completed' | 'review_request' | 'lead_expired' | 'lead_received' | 'lead_stagnant' | 'lead_stagnant_escalated';
+export type NotificationType = 'booking_confirmed' | 'booking_declined' | 'booking_completed' | 'booking_cancelled' | 'review_request' | 'lead_expired' | 'lead_received' | 'lead_stagnant' | 'lead_stagnant_escalated';
 
 // MAI-1212: Create a notification for a user
 // MAI-1809: Added metadata support for lead details (leadId, dinerEmail, serviceName, guestCount, eventDate)
-export function createNotification(params: {
+export async function createNotification(params: {
   userId: number;
   type: NotificationType;
   title: string;
@@ -21,15 +21,21 @@ export function createNotification(params: {
     serviceName?: string;
     guestCount?: number;
     eventDate?: string | null;
+    bookingId?: number;
+    reason?: string | null;
   };
 }) {
-  db.insert(notifications).values({
-    userId: params.userId,
-    type: params.type,
-    title: params.title,
-    body: params.body,
-    metadata: params.metadata ? JSON.stringify(params.metadata) : null,
-  }).run();
+  try {
+    await db.insert(notifications).values({
+      userId: params.userId,
+      type: params.type,
+      title: params.title,
+      body: params.body,
+      metadata: params.metadata ? JSON.stringify(params.metadata) : null,
+    }).run();
+  } catch (err: any) {
+    console.warn(`[Notifications] Failed to create notification for user ${params.userId}: ${err.message}`);
+  }
 }
 
 export default async function notificationRoutes(server: FastifyInstance) {

@@ -1,8 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import Stripe from 'stripe';
 import { db } from '../db/index.js';
-import { bookings, services, users, leads, referralCodes, chefAvailabilitySlots, chefBlockedDates } from '../db/schema.js';
+import { bookings, services, users, leads, referralCodes, chefAvailabilitySlots, chefBlockedDates, bookingRefunds } from '../db/schema.js';
 import { eq, and, or, isNull, ne } from 'drizzle-orm';
+import { getStripeClient } from '../config/stripe.js';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
 import { sendBookingAcceptedEmail } from '../services/diner-booking-accepted-email.js';
 import { sendBookingDeclinedEmail } from '../services/diner-booking-declined-email.js';
@@ -341,27 +343,27 @@ export default async function bookingRoutes(server: FastifyInstance) {
 
 
       if (body.status === 'accepted' || body.status === 'confirmed') {
-        createNotification({
+        void createNotification({
           userId: booking.dinerId,
           type: 'booking_confirmed',
           title: 'Booking Confirmed! 🎉',
           body: `Great news! ${chefName} has accepted your booking.${declineNote}`,
         });
       } else if (body.status === 'declined' || body.status === 'rejected') {
-        createNotification({
+        void createNotification({
           userId: booking.dinerId,
           type: 'booking_declined',
           title: 'Booking Declined',
           body: `Unfortunately, ${chefName} cannot host your booking.${declineNote}`,
         });
       } else if (body.status === 'completed') {
-        createNotification({
+        void createNotification({
           userId: booking.dinerId,
           type: 'booking_completed',
           title: 'Booking Completed ✅',
           body: `Your experience with ${chefName} is complete. Share your review!`,
         });
-        createNotification({
+        void createNotification({
           userId: booking.dinerId,
           type: 'review_request',
           title: 'How was your experience? 🌟',
@@ -416,4 +418,316 @@ export default async function bookingRoutes(server: FastifyInstance) {
       currentStatus: body.status,
     });
   });
+
+  // ============================================
+  // POST /api/bookings/:id/payment-intent
+  // MAI-2458: Create Stripe PaymentIntent for booking quote amount
+  // ============================================
+  server.post<{ Params: { id: string }; Body: { clientSecret?: string } }>(
+    '/:id/payment-intent',
+    { preHandler: [server.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { userId, role } = request.user as { userId: number; role: string };
+      const bookingId = parseInt(id);
+
+      if (isNaN(bookingId)) {
+        return reply.status(400).send({ error: 'Invalid booking ID' });
+      }
+
+      // Fetch booking with service and chef info
+      const booking = db
+        .select({
+          id: bookings.id,
+          dinerId: bookings.dinerId,
+          chefId: bookings.chefId,
+          quoteAmount: bookings.quoteAmount,
+          quoteStatus: bookings.quoteStatus,
+          paymentExternalId: bookings.paymentExternalId,
+          eventDate: bookings.eventDate,
+          guestCount: bookings.guestCount,
+          serviceName: services.name,
+          chefName: users.name,
+          guestEmail: bookings.guestEmail,
+        })
+        .from(bookings)
+        .innerJoin(services, eq(bookings.serviceId, services.id))
+        .innerJoin(users, eq(bookings.chefId, users.id))
+        .where(eq(bookings.id, bookingId))
+        .get();
+
+      if (!booking) {
+        return reply.status(404).send({ error: 'Booking not found' });
+      }
+
+      // Verify diner owns the booking (or guest email matches)
+      if (role === 'diner' && booking.dinerId !== userId) {
+        // Allow guest access via guestEmail
+        if (booking.guestEmail) {
+          const diner = db.select({ id: users.id, email: users.email }).from(users).where(eq(users.id, userId)).get();
+          if (!diner || diner.email !== booking.guestEmail) {
+            return reply.status(403).send({ error: 'Access denied' });
+          }
+        } else {
+          return reply.status(403).send({ error: 'Access denied' });
+        }
+      }
+
+      // Require quoteStatus === 'pending' or 'accepted' (not yet paid)
+      if (!['pending', 'accepted'].includes(booking.quoteStatus)) {
+        return reply.status(400).send({
+          error: 'Payment not available',
+          quoteStatus: booking.quoteStatus,
+        });
+      }
+
+      // Require quote_amount > 0
+      if (!booking.quoteAmount || booking.quoteAmount <= 0) {
+        return reply.status(400).send({
+          error: 'Invalid quote amount',
+          message: 'Quote amount is not set or is zero',
+        });
+      }
+
+      // MAI-2458: Idempotent — if PaymentIntent already exists and not succeeded, return it
+      if (booking.paymentExternalId) {
+        try {
+          const stripe = getStripeClient();
+          const existingIntent = await stripe.paymentIntents.retrieve(booking.paymentExternalId);
+          if (existingIntent.status !== 'succeeded') {
+            return { clientSecret: existingIntent.client_secret };
+          }
+          // PaymentIntent succeeded but booking wasn't updated — return error
+          return reply.status(400).send({
+            error: 'Payment already completed',
+            quoteStatus: 'paid',
+          });
+        } catch (err: any) {
+          // PaymentIntent not found in Stripe or error — clear and recreate
+          console.warn(`[PaymentIntent] Existing paymentExternalId ${booking.paymentExternalId} invalid: ${err.message}`);
+        }
+      }
+
+      // Create new Stripe PaymentIntent
+      const stripe = getStripeClient();
+      const amountCents = Math.round(booking.quoteAmount * 100);
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountCents,
+        currency: 'eur',
+        metadata: {
+          bookingId: booking.id.toString(),
+          chefId: booking.chefId.toString(),
+          serviceName: booking.serviceName || '',
+          eventDate: booking.eventDate || '',
+        },
+      });
+
+      // Store PaymentIntent ID on booking
+      db.update(bookings)
+        .set({
+          paymentExternalId: paymentIntent.id,
+          quoteStatus: 'accepted',
+          updatedAt: new Date(),
+        })
+        .where(eq(bookings.id, bookingId))
+        .run();
+
+      return {
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        amount: amountCents,
+        currency: 'eur',
+      };
+    }
+  );
+
+  // ============================================
+  // GET /api/bookings/:id/payment-status
+  // MAI-2458: Return payment status from Stripe PaymentIntent
+  // ============================================
+  server.get<{ Params: { id: string } }>(
+    '/:id/payment-status',
+    { preHandler: [server.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { userId, role } = request.user as { userId: number; role: string };
+      const bookingId = parseInt(id);
+
+      if (isNaN(bookingId)) {
+        return reply.status(400).send({ error: 'Invalid booking ID' });
+      }
+
+      const booking = db.select({
+        id: bookings.id,
+        dinerId: bookings.dinerId,
+        quoteAmount: bookings.quoteAmount,
+        quoteStatus: bookings.quoteStatus,
+        paymentExternalId: bookings.paymentExternalId,
+        guestEmail: bookings.guestEmail,
+      }).from(bookings).where(eq(bookings.id, bookingId)).get();
+
+      if (!booking) {
+        return reply.status(404).send({ error: 'Booking not found' });
+      }
+
+      // Verify access
+      if (role === 'diner' && booking.dinerId !== userId) {
+        if (booking.guestEmail) {
+          const diner = db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get();
+          if (!diner || diner.email !== booking.guestEmail) {
+            return reply.status(403).send({ error: 'Access denied' });
+          }
+        } else {
+          return reply.status(403).send({ error: 'Access denied' });
+        }
+      }
+
+      // If no PaymentIntent yet, return local quoteStatus
+      if (!booking.paymentExternalId) {
+        return { status: booking.quoteStatus };
+      }
+
+      // Fetch live status from Stripe
+      try {
+        const stripe = getStripeClient();
+        const intent = await stripe.paymentIntents.retrieve(booking.paymentExternalId);
+        return {
+          status: intent.status, // 'requires_payment_method' | 'requires_confirmation' | 'requires_action' | 'processing' | 'succeeded' | 'canceled'
+          amount: intent.amount,
+          currency: intent.currency,
+          quoteStatus: booking.quoteStatus,
+        };
+      } catch (err: any) {
+        console.error(`[PaymentStatus] Failed to retrieve PaymentIntent ${booking.paymentExternalId}: ${err.message}`);
+        return reply.status(500).send({ error: 'Failed to retrieve payment status' });
+      }
+    }
+  );
+
+  // ============================================
+  // PATCH /api/bookings/:id/cancel
+  // MAI-2458: Cancel booking — handle refund if eligible (>48h before event)
+  // ============================================
+  server.patch<{ Params: { id: string }; Body: { reason?: string } }>(
+    '/:id/cancel',
+    { preHandler: [server.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { userId, role } = request.user as { userId: number; role: string };
+      const { reason } = request.body || {};
+      const bookingId = parseInt(id);
+
+      if (isNaN(bookingId)) {
+        return reply.status(400).send({ error: 'Invalid booking ID' });
+      }
+
+      const booking = db.select({
+        id: bookings.id,
+        serviceId: bookings.serviceId,
+        dinerId: bookings.dinerId,
+        chefId: bookings.chefId,
+        quoteAmount: bookings.quoteAmount,
+        quoteStatus: bookings.quoteStatus,
+        paymentExternalId: bookings.paymentExternalId,
+        eventDate: bookings.eventDate,
+        status: bookings.status,
+        guestEmail: bookings.guestEmail,
+      }).from(bookings).where(eq(bookings.id, bookingId)).get();
+
+      if (!booking) {
+        return reply.status(404).send({ error: 'Booking not found' });
+      }
+
+      // Access: diner who owns the booking, chef who owns the booking, or admin
+      if (role === 'diner' && booking.dinerId !== userId) {
+        if (booking.guestEmail) {
+          const diner = db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get();
+          if (!diner || diner.email !== booking.guestEmail) {
+            return reply.status(403).send({ error: 'Access denied' });
+          }
+        } else {
+          return reply.status(403).send({ error: 'Access denied' });
+        }
+      }
+
+      // Only allow cancel if booking is not already cancelled
+      if (booking.status === 'cancelled') {
+        return reply.status(400).send({ error: 'Booking is already cancelled' });
+      }
+
+      // Handle refund if payment was made (quote_status = 'paid')
+      let refundResult: { refunded: boolean; amount?: number; reason?: string } = { refunded: false };
+
+      if (booking.paymentExternalId && booking.quoteStatus === 'paid') {
+        // Check 48h refund eligibility
+        const eventTime = new Date(booking.eventDate).getTime();
+        const now = Date.now();
+        const hoursUntilEvent = (eventTime - now) / (1000 * 60 * 60);
+
+        if (hoursUntilEvent > 48) {
+          // Eligible for refund — process via Stripe
+          try {
+            const stripe = getStripeClient();
+            const refund = await stripe.refunds.create({
+              payment_intent: booking.paymentExternalId,
+            });
+
+            // Record refund in booking_refunds table
+            const amountCents = typeof refund.amount === 'number' ? refund.amount : 0;
+            db.insert(bookingRefunds).values({
+              bookingId,
+              amount: amountCents,
+              stripeRefundId: refund.id,
+              reason: reason || null,
+            }).run();
+
+            refundResult = { refunded: true, amount: amountCents / 100, reason: 'Eligible refund — cancelled >48h before event' };
+
+            // Update booking quote_status to refunded
+            db.update(bookings)
+              .set({ quoteStatus: 'refunded', updatedAt: new Date() })
+              .where(eq(bookings.id, bookingId))
+              .run();
+          } catch (err: any) {
+            console.error(`[CancelBooking] Refund failed for booking ${bookingId}: ${err.message}`);
+            return reply.status(500).send({
+              error: 'Refund failed',
+              message: err.message,
+              hoursUntilEvent,
+            });
+          }
+        } else {
+          // Not eligible for refund (<48h)
+          refundResult = { refunded: false, reason: 'Not eligible — cancelled within 48h of event' };
+        }
+      }
+
+      // Update booking status to cancelled
+      db.update(bookings)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(bookings.id, bookingId))
+        .run();
+
+      // If diner owns this booking, notify chef
+      if (booking.dinerId && role === 'diner') {
+        const chef = db.select({ name: users.name }).from(users).where(eq(users.id, booking.chefId)).get();
+        const service = db.select({ name: services.name }).from(services).where(eq(services.id, booking.serviceId)).get();
+        void createNotification({
+          userId: booking.chefId,
+          type: 'booking_cancelled',
+          title: 'Booking Cancelled',
+          body: `A booking for ${service?.name || 'your service'} has been cancelled by the diner.`,
+          metadata: { bookingId, reason: reason || null },
+        });
+      }
+
+      return {
+        success: true,
+        bookingId,
+        status: 'cancelled',
+        refund: refundResult,
+      };
+    }
+  );
 }
