@@ -24,7 +24,7 @@ export interface StaleBooking {
   accessToken: string | null;
   createdAt: Date;
   stagnationAlertSentAt: Date | null;
-  status: 'pending' | 'accepted' | 'declined' | 'pending_payment' | 'pending_payment_failed' | 'confirmed' | 'rejected' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'declined' | 'pending_payment' | 'pending_payment_failed' | 'confirmed' | 'rejected' | 'completed' | 'cancelled' | 'payment_failed';
 }
 
 /**

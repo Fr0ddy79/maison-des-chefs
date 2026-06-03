@@ -51,9 +51,16 @@ const analyticsEventSchema = z.object({
   addon_price: z.number().optional(),
   total_selected: z.number().optional(),
   sessionId: z.string().optional(),
+  // MAI-2311: Checkout abandonment/exit intent analytics
   exit_intent_shown: z.boolean().optional(),
   exit_intent_accepted: z.boolean().optional(),
   exit_intent_declined: z.boolean().optional(),
+  // MAI-2421: Booking page exit intent
+  booking_page_exit_intent_shown: z.boolean().optional(),
+  booking_page_exit_intent_accepted: z.boolean().optional(),
+  booking_page_exit_intent_declined: z.boolean().optional(),
+  booking_page_exit_intent_email: z.string().optional(),
+  has_email: z.boolean().optional(),
   what_happens_after_payment_viewed: z.boolean().optional(),
   what_happens_after_payment_collapsed: z.boolean().optional(),
   // MAI-2329: Booking form A/B test tracking

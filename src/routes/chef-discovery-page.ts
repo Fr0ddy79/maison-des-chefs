@@ -454,11 +454,16 @@ var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null
     for (var i = 0; i < chefIds.length; i++) {
       (function(cid) {
         setTimeout(function() {
-          fetch('/api/chefs/' + cid + '/availability?start=' + today + '&end=' + endStr)
+          fetch('/api/chefs/' + cid + '/availability?from=' + today + '&to=' + endStr)
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(data) {
-              if (!data || !data.slots) return;
-              var hasSlots = data.slots.some(function(s) { return !s.is_blocked && s.time_windows && s.time_windows.length > 0; });
+              // MAI-2135: supports both new {days[]} and legacy {slots[]} response shapes
+              var hasSlots = false;
+              if (data && data.days && data.days.length > 0) {
+                hasSlots = data.days.some(function(d) { return d.isAvailable && d.slots && d.slots.length > 0; });
+              } else if (data && data.slots) {
+                hasSlots = data.slots.some(function(s) { return !s.is_blocked && s.time_windows && s.time_windows.length > 0; });
+              }
               var badge = document.getElementById('availBadge' + cid);
               if (badge) {
                 if (hasSlots) {

@@ -64,7 +64,7 @@ export const bookings = sqliteTable('bookings', {
   eventDate: text('event_date').notNull(), // ISO date string
   guestCount: integer('guest_count').notNull(),
   totalPrice: real('total_price').notNull(),
-  status: text('status', { enum: ['pending', 'accepted', 'declined', 'pending_payment', 'pending_payment_failed', 'confirmed', 'rejected', 'completed', 'cancelled'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'accepted', 'declined', 'pending_payment', 'pending_payment_failed', 'confirmed', 'rejected', 'completed', 'cancelled', 'payment_failed'] }).notNull().default('pending'),
   notes: text('notes').notNull().default(''),
   // Guest checkout fields (MAI-205)
   guestEmail: text('guest_email'), // guest's email address
@@ -75,6 +75,10 @@ export const bookings = sqliteTable('bookings', {
   accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }), // token expiration (30 days from creation)
   // MAI-1548: Stagnation alert tracking (idempotency for diner-facing proactive alert)
   stagnationAlertSentAt: integer('stagnation_alert_sent_at', { mode: 'timestamp' }), // when stagnation alert was sent, NULL if not sent yet
+  // MAI-2453: Payment retry tracking
+  paymentRetryCount: integer('payment_retry_count').notNull().default(0), // number of retry attempts made
+  nextRetryAt: integer('next_retry_at', { mode: 'timestamp' }), // when to attempt next retry
+  paymentExternalId: text('payment_external_id'), // stripe payment intent id
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });

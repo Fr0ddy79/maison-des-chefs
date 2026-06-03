@@ -197,6 +197,19 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     .review-comment { color: #555; font-size: 0.9rem; line-height: 1.5; margin: 0; }
     .show-all-reviews { display: block; text-align: center; color: #c9a227; font-size: 0.9rem; font-weight: 500; margin-top: 0.75rem; cursor: pointer; }
     .show-all-reviews:hover { color: #b8922a; text-decoration: underline; }
+    /* MAI-2421: Exit intent modal */
+    .exit-intent-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .exit-intent-modal .modal-content { background: white; border-radius: 16px; padding: 2rem; max-width: 420px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+    .exit-intent-modal h3 { font-size: 1.5rem; color: #2c3e50; margin-bottom: 0.75rem; }
+    .exit-intent-modal p { color: #555; font-size: 1rem; margin-bottom: 1.25rem; line-height: 1.5; }
+    .exit-intent-modal input[type="email"] { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; margin-bottom: 1rem; box-sizing: border-box; }
+    .exit-intent-modal .modal-buttons { display: flex; gap: 0.75rem; }
+    .exit-intent-modal .modal-buttons button { flex: 1; padding: 0.75rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; border: none; }
+    .exit-intent-modal .modal-buttons button:hover { opacity: 0.85; }
+    #exitIntentAccept { background: #c9a227; color: white; }
+    #exitIntentDecline { background: #f0f0f0; color: #555; }
+    .exit-intent-code { background: #f8f9f0; border: 1px solid #e8e4c8; border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.9rem; color: #5a6a3a; }
+    .exit-intent-code strong { font-size: 1.1rem; color: #3d4a28; }
     @media (max-width: 768px) { .content-grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -332,6 +345,18 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           </div>
           <button type="submit" class="submit-btn" id="submitBtn">${ctaButtonText}</button>
           <p class="privacy-note">Your information is only used to send your quote request to the chef.</p>
+          <div id="exitIntentModal" class="exit-intent-modal">
+            <div class="modal-content">
+              <h3>Wait! Before you go...</h3>
+              <p>Get <strong>€10 off your first booking</strong> when you're ready to proceed. Enter your email and we'll send you a reminder code.</p>
+              <input type="email" id="exitIntentEmail" placeholder="your@email.com">
+              <div class="exit-intent-code"><strong>MAISON10</strong> — valid for 30 days</div>
+              <div class="modal-buttons">
+                <button type="button" id="exitIntentAccept">Send Me the Code</button>
+                <button type="button" id="exitIntentDecline">No Thanks</button>
+              </div>
+            </div>
+          </div>
         </form>
       </div>
       <div class="reviews-section" id="reviewsSection">
@@ -462,18 +487,26 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
           preferredTimeSelect.innerHTML = '<option value="">Loading...</option>';
         }
         try {
-          const res = await fetch('/api/chefs/' + chefId + '/availability?start=' + selectedDate + '&end=' + selectedDate);
+          const res = await fetch('/api/chefs/' + chefId + '/availability?from=' + selectedDate + '&to=' + selectedDate);
           if (res.ok) {
             const data = await res.json();
-            // Supports both legacy {slots[]} and new {days[]} response shapes
+            // Supports both new {days[]} and legacy {slots[]} response shapes
             var dayData = null;
-            if (data.slots && data.slots.length > 0) {
-              // Actual API returns: { slots: [{ date, dayOfWeek, dayName, time_windows: [{start, end}], is_blocked, reason }] }
+            if (data.days && data.days.length > 0) {
+              // MAI-2135 contract: { days: [{ date, dayOfWeek, dayName, isAvailable, reason, slots: [{startTime, endTime}] }] }
+              var dayEntry = data.days[0];
+              dayData = {
+                isAvailable: dayEntry.isAvailable,
+                reason: dayEntry.reason || null,
+                slots: dayEntry.slots || [],
+              };
+            } else if (data.slots && data.slots.length > 0) {
+              // Legacy: { slots: [{ date, dayOfWeek, dayName, time_windows: [{start, end}], is_blocked, reason }] }
               var slotData = data.slots[0];
               dayData = {
                 isAvailable: !slotData.is_blocked && (slotData.time_windows && slotData.time_windows.length > 0),
                 reason: slotData.reason || (slotData.is_blocked ? 'Date is blocked' : null),
-                slots: slotData.time_windows || [],
+                slots: slotData.time_windows ? slotData.time_windows.map(function(tw) { return { startTime: tw.start, endTime: tw.end }; }) : [],
               };
             }
             if (dayData) {
@@ -842,6 +875,71 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
       // Auth is optional - submit immediately (MAI-1744)
       submitInquiryWithData(formData);
     });
+
+    // MAI-2421: Exit intent capture for booking page
+    (function initExitIntent() {
+      // Check suppression cookie
+      const suppressionMatch = document.cookie.match(/booking_exit_intent_shown=1/);
+      if (suppressionMatch) return;
+
+      const form = document.getElementById('inquiryForm');
+      const hasPartialData = form && (form.clientName?.value || form.email?.value);
+      if (!hasPartialData) return;
+
+
+      let modalShown = false;
+
+      function showExitIntentModal() {
+        if (modalShown) return;
+        const modal = document.getElementById('exitIntentModal');
+        if (modal) {
+          modal.style.display = 'flex';
+          modalShown = true;
+          trackAnalytics('booking_page_exit_intent_shown', {
+            service_id: serviceId,
+            form_variant: formVariant,
+            has_email: !!(form && form.email && form.email.value),
+          });
+        }
+      }
+
+      function hideExitIntentModal() {
+        const modal = document.getElementById('exitIntentModal');
+        if (modal) modal.style.display = 'none';
+      }
+
+      document.addEventListener('mouseleave', (e) => {
+        if (e.clientY <= 0) showExitIntentModal();
+      });
+
+      document.getElementById('exitIntentDecline')?.addEventListener('click', () => {
+        trackAnalytics('booking_page_exit_intent_declined', { service_id: serviceId, form_variant: formVariant, booking_page_exit_intent_declined: true });
+        document.cookie = 'booking_exit_intent_shown=1; path=/; max-age=604800; SameSite=Lax';
+        hideExitIntentModal();
+      });
+
+      document.getElementById('exitIntentAccept')?.addEventListener('click', async () => {
+        const emailEl = document.getElementById('exitIntentEmail');
+        const email = emailEl?.value?.trim();
+        if (email) {
+          trackAnalytics('booking_page_exit_intent_accepted', { service_id: serviceId, booking_page_exit_intent_email: email, form_variant: formVariant, booking_page_exit_intent_accepted: true });
+          try {
+            await fetch('/api/guest/info', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'save_exit_intent_email',
+                email: email,
+                service_id: serviceId,
+                source: 'booking_page_exit_intent',
+              }),
+            });
+          } catch (_) { /* non-critical */ }
+        }
+        document.cookie = 'booking_exit_intent_shown=1; path=/; max-age=604800; SameSite=Lax';
+        hideExitIntentModal();
+      });
+    })();
   </script>
 </body>
 </html>`;

@@ -2,15 +2,30 @@ import { FastifyInstance } from 'fastify';
 import Stripe from 'stripe';
 import { db } from '../db/index.js';
 import { leads, bookings, services, referralCodes, dinerCredits, users } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { sendBookingConfirmation } from '../services/chef-notification.js';
 import { sendBookingConfirmationEmail } from '../services/booking-confirmation-email.js';
+import { sendPaymentFailedEmail } from '../services/payment-failed-email.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
   apiVersion: '2026-04-22.dahlia',
 });
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+// MAI-2453: Payment retry configuration
+const MAX_PAYMENT_RETRIES = 3;
+// Retry intervals in milliseconds: 1 hour, 4 hours, 24 hours
+const RETRY_INTERVALS_MS = [60 * 60 * 1000, 4 * 60 * 60 * 1000, 24 * 60 * 60 * 1000];
+
+/**
+ * Get the retry time for a given attempt number (0-indexed).
+ */
+function getNextRetryTime(retryCount: number): Date | null {
+  if (retryCount >= MAX_PAYMENT_RETRIES) return null;
+  const delayMs = RETRY_INTERVALS_MS[Math.min(retryCount, RETRY_INTERVALS_MS.length - 1)];
+  return new Date(Date.now() + delayMs);
+}
 
 /**
  * Generate a referral code (8 chars).
@@ -238,8 +253,113 @@ export default async function webhookRoutes(server: FastifyInstance) {
 
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        console.log(`Payment intent ${paymentIntent.id} failed`);
-        // Could update lead status to indicate payment failure
+        const leadId = paymentIntent.metadata?.leadId;
+
+        if (!leadId) {
+          // No leadId in metadata — cannot route to a booking for retry
+          console.warn(`[PaymentRetry] payment_intent ${paymentIntent.id} has no leadId in metadata — skipping`);
+          break;
+        }
+
+        const parsedLeadId = parseInt(leadId);
+        if (isNaN(parsedLeadId)) {
+          console.warn(`[PaymentRetry] Invalid leadId "${leadId}" in payment_intent ${paymentIntent.id}`);
+          break;
+        }
+
+        // Find the booking associated with this lead
+        const lead = db.select({ id: leads.id, email: leads.email, clientName: leads.clientName, chefId: leads.chefId, serviceId: leads.serviceId, guestCount: leads.guestCount, quoteAmount: leads.quoteAmount, eventDate: leads.eventDate })
+          .from(leads)
+          .where(eq(leads.id, parsedLeadId))
+          .get();
+
+        if (!lead) {
+          console.warn(`[PaymentRetry] Lead ${parsedLeadId} not found for payment_intent ${paymentIntent.id}`);
+          break;
+        }
+
+        // Find existing booking for this lead via shared fields
+        const booking = db.select({
+          id: bookings.id,
+          dinerId: bookings.dinerId,
+          guestEmail: bookings.guestEmail,
+          status: bookings.status,
+          totalPrice: bookings.totalPrice,
+          guestCount: bookings.guestCount,
+          paymentRetryCount: bookings.paymentRetryCount,
+          paymentExternalId: bookings.paymentExternalId,
+        })
+          .from(bookings)
+          .where(
+            and(
+              eq(bookings.serviceId, lead.serviceId),
+              eq(bookings.chefId, lead.chefId),
+              eq(bookings.eventDate, lead.eventDate || ''),
+              lead.email ? eq(bookings.guestEmail, lead.email) : undefined,
+              lead.guestCount ? eq(bookings.guestCount, lead.guestCount) : undefined,
+            )
+          )
+          .get();
+
+        if (!booking) {
+          console.warn(`[PaymentRetry] No booking found for lead ${parsedLeadId}`);
+          break;
+        }
+
+        // Ignore if already in a terminal state
+        if (['confirmed', 'completed', 'cancelled', 'payment_failed'].includes(booking.status)) {
+          console.log(`[PaymentRetry] Booking ${booking.id} is already "${booking.status}" — ignoring payment failure`);
+          break;
+        }
+
+        const currentRetry = booking.paymentRetryCount ?? 0;
+        const nextRetry = getNextRetryTime(currentRetry);
+
+        if (!nextRetry) {
+          // Max retries reached — mark as permanently failed and notify diner
+          console.log(`[PaymentRetry] Booking ${booking.id} failed permanently after ${currentRetry} retries`);
+
+          db.update(bookings)
+            .set({
+              status: 'payment_failed',
+              nextRetryAt: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(bookings.id, booking.id))
+            .run();
+
+          // Send final failure email to diner
+          const dinerEmail = booking.guestEmail || lead.email;
+          if (dinerEmail) {
+            const service = db.select({ name: services.name }).from(services).where(eq(services.id, lead.serviceId)).get();
+            const chef = db.select({ name: users.name }).from(users).where(eq(users.id, lead.chefId)).get();
+
+            sendPaymentFailedEmail({
+              dinerEmail,
+              dinerName: lead.clientName || 'Guest',
+              chefName: chef?.name || 'your chef',
+              serviceName: service?.name || 'your booking',
+              eventDate: lead.eventDate || '',
+              guestCount: lead.guestCount || booking.guestCount,
+              totalPrice: lead.quoteAmount || booking.totalPrice,
+              bookingId: booking.id,
+            }).catch(err => console.error(`[PaymentRetry] Failed to send payment_failed email for booking ${booking.id}:`, err));
+          }
+        } else {
+          // Schedule retry
+          console.log(`[PaymentRetry] Scheduling retry ${currentRetry + 1}/${MAX_PAYMENT_RETRIES} for booking ${booking.id} at ${nextRetry.toISOString()}`);
+
+          db.update(bookings)
+            .set({
+              status: 'pending_payment_failed',
+              paymentRetryCount: currentRetry + 1,
+              nextRetryAt: nextRetry,
+              paymentExternalId: paymentIntent.id,
+              updatedAt: new Date(),
+            })
+            .where(eq(bookings.id, booking.id))
+            .run();
+        }
         break;
       }
 
