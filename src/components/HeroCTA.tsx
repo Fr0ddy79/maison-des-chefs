@@ -5,11 +5,12 @@ import { useEffect, useState } from 'react'
 
 const COOKIE_NAME = 'ab_hero_cta_variant'
 
-type Variant = 'find_your_chef' | 'browse_available'
+type Variant = 'find_your_chef' | 'book_private_chef' | 'exclusive_dining'
 
 const CTA_TEXT: Record<Variant, { primary: string; secondary: string }> = {
   find_your_chef: { primary: 'Find Your Chef', secondary: 'Are You a Chef? Apply' },
-  browse_available: { primary: 'Browse Available Chefs', secondary: 'Are You a Chef? Apply' },
+  book_private_chef: { primary: 'Book a Private Chef — Limited Availability', secondary: 'Are You a Chef? Apply' },
+  exclusive_dining: { primary: 'Exclusive Dining Experiences — Reserve Now', secondary: 'Are You a Chef? Apply' },
 }
 
 function getCookie(name: string): string | null {
@@ -49,7 +50,7 @@ export function HeroCTA() {
     const urlParams = new URLSearchParams(window.location.search)
     const urlOverride = urlParams.get('hero_cta_variant') as Variant | null
 
-    if (urlOverride && (urlOverride === 'find_your_chef' || urlOverride === 'browse_available')) {
+    if (urlOverride && (urlOverride === 'find_your_chef' || urlOverride === 'book_private_chef' || urlOverride === 'exclusive_dining')) {
       setVariant(urlOverride)
       setReady(true)
       return
@@ -57,11 +58,12 @@ export function HeroCTA() {
 
     // Check existing cookie
     const existing = getCookie(COOKIE_NAME)
-    if (existing === 'find_your_chef' || existing === 'browse_available') {
+    if (existing === 'find_your_chef' || existing === 'book_private_chef' || existing === 'exclusive_dining') {
       setVariant(existing)
     } else {
-      // Assign randomly if no cookie
-      const assigned: Variant = Math.random() < 0.5 ? 'find_your_chef' : 'browse_available'
+      // Assign randomly if no cookie (equal 1/3 probability for each variant)
+      const rand = Math.random()
+      const assigned: Variant = rand < 1/3 ? 'find_your_chef' : rand < 2/3 ? 'book_private_chef' : 'exclusive_dining'
       setVariant(assigned)
       setCookie(COOKIE_NAME, assigned)
     }

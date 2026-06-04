@@ -131,7 +131,7 @@ export default async function HomePage() {
             </p>
             <WaitlistCapture />
             <p className="mt-4 text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
-              Join 47+ food lovers already waiting
+              Join our community of food lovers for exclusive updates
             </p>
           </div>
         </div>
@@ -263,15 +263,15 @@ export default async function HomePage() {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {experiences.map((exp, index) => {
-              // Map each experience type to a relevant cuisine filter for the chef listing
-              const cuisineMap: Record<string, string> = {
-                'Intimate Prix Fixe Dinner': 'French',
-                "Cocktail & Hors d'oeuvres": 'French',
-                'Cooking Class Experience': 'Italian',
-                'Celebration & Events': 'Italian',
-              }
-              const cuisineParam = cuisineMap[exp.title] || ''
-              const href = `/chefs${cuisineParam ? `?cuisine=${encodeURIComponent(cuisineParam)}` : ''}`
+              // Map experience type to service_type filter for chef listing links
+  const serviceTypeMap: Record<string, string> = {
+    'Intimate Prix Fixe Dinner':    'prix-fixe',
+    "Cocktail & Hors d'oeuvres":     'cocktail',
+    'Cooking Class Experience':      'cooking-class',
+    'Celebration & Events':          'celebration',
+  }
+  const serviceType = serviceTypeMap[exp.title] || ''
+  const href = `/chefs${serviceType ? `?service_type=${encodeURIComponent(serviceType)}` : ''}`
               return (
                 <a
                   key={index}

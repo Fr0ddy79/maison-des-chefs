@@ -118,17 +118,34 @@ export default function ChefsPage() {
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<'rating' | 'price_low' | 'price_high'>('rating')
 
-  // Support URL param ?cuisine=French,Italian for landing page links
+  // Support URL params: ?cuisine=French,Italian (landing page links) and ?service_type=prix-fixe (experience section links)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const cuisineParam = params.get('cuisine')
+    const serviceTypeParam = params.get('service_type')
     if (cuisineParam) {
       const cuisines = cuisineParam.split(',').map(c => c.trim()).filter(Boolean)
       setSelectedCuisines(cuisines)
     }
+    if (serviceTypeParam) {
+      // Map service_type to service title keywords for client-side filtering
+      // Each service_type maps to keywords that appear in the chef's service titles
+      const serviceTypeKeywords: Record<string, string[]> = {
+        'prix-fixe':    ['dinner', 'prix fixe', 'menu', 'intimate'],
+        'cocktail':     ['cocktail', 'canap', 'hors d', 'appetizer', 'reception'],
+        'cooking-class': ['cooking class', 'class', 'workshop', 'learn'],
+        'celebration':  ['celebration', 'event', 'catering', 'party', 'anniversary'],
+      }
+      const keywords = serviceTypeKeywords[serviceTypeParam]
+      if (keywords) {
+        // Store keywords for use in filteredChefs
+        setServiceTypeKeywords(keywords)
+      }
+    }
   }, [])
   const [compareList, setCompareList] = useState<Chef[]>([])
   const [availability, setAvailability] = useState<ChefAvailability>({})
+  const [serviceTypeKeywords, setServiceTypeKeywords] = useState<string[]>([])
 
   useEffect(() => {
     async function fetchChefs() {
@@ -175,10 +192,19 @@ export default function ChefsPage() {
   }
 
   const filteredChefs = chefs
-    .filter(chef =>
-      selectedCuisines.length === 0 ||
-      selectedCuisines.some(c => chef.cuisines.includes(c))
-    )
+    .filter(chef => {
+      // Cuisine filter
+      const matchesCuisine = selectedCuisines.length === 0 ||
+        selectedCuisines.some(c => chef.cuisines.includes(c))
+      // Service type filter: match if any service title contains one of the keywords
+      const matchesServiceType = serviceTypeKeywords.length === 0 ||
+        (chef.services && chef.services.some(s =>
+          serviceTypeKeywords.some(kw =>
+            s.title.toLowerCase().includes(kw.toLowerCase())
+          )
+        ))
+      return matchesCuisine && matchesServiceType
+    })
     .sort((a, b) => {
       if (sortBy === 'rating') return b.avg_rating - a.avg_rating
       if (sortBy === 'price_low') return a.price_per_event - b.price_per_event

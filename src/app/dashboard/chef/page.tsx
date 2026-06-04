@@ -74,6 +74,11 @@ export default function ChefDashboard() {
   const [quoteValidDays, setQuoteValidDays] = useState(7)
   const [sendingQuote, setSendingQuote] = useState(false)
   const [quoteSuccess, setQuoteSuccess] = useState<string | null>(null)
+  const [quotePerformance, setQuotePerformance] = useState<{
+    metrics: { quotesSent: number; pendingResponse: number; accepted: number; declined: number; expired: number; conversionRate: number }
+    bookings: any[]
+  } | null>(null)
+  const [loadingQuotePerformance, setLoadingQuotePerformance] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -156,6 +161,19 @@ export default function ChefDashboard() {
         console.error('Failed to load analytics', e)
       }
       setLoadingAnalytics(false)
+
+      // Fetch quote performance analytics
+      setLoadingQuotePerformance(true)
+      try {
+        const quoteRes = await fetch('/api/analytics/quote-performance')
+        if (quoteRes.ok) {
+          const quoteData = await quoteRes.json()
+          setQuotePerformance(quoteData)
+        }
+      } catch (e) {
+        console.error('Failed to load quote performance', e)
+      }
+      setLoadingQuotePerformance(false)
 
       // Also fetch upcoming bookings for the list
       const { data: upcomingData } = await supabase
@@ -265,7 +283,7 @@ export default function ChefDashboard() {
             profiles:diner_id (full_name)
           `)
           .eq('chef_id', user.id)
-          .eq('status', 'confirmed')
+          .eq('status', 'pending')
           .is('quote_status', null)
           .order('booking_date', { ascending: true })
         setAwaitingQuotesBookings((updatedAwaitingData as any[]) || [])
@@ -601,6 +619,74 @@ export default function ChefDashboard() {
               <p className="text-3xl mt-2" style={{ fontFamily: 'var(--font-serif)' }}>{stats.avgRating.toFixed(1)}</p>
             </div>
           </div>
+
+          {/* Quote Performance Section */}
+          {quotePerformance && (
+            <div className="mt-8">
+              <h2 className="text-xl mb-4" style={{ fontFamily: 'var(--font-serif)' }}>Quote Performance</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div className="rounded-lg p-4 bg-white border shadow-sm">
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Quotes Sent</p>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{quotePerformance.metrics.quotesSent}</p>
+                </div>
+                <div className="rounded-lg p-4 bg-white border shadow-sm">
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Pending</p>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{quotePerformance.metrics.pendingResponse}</p>
+                </div>
+                <div className="rounded-lg p-4 bg-white border shadow-sm">
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Accepted</p>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)', color: '#15803d' }}>{quotePerformance.metrics.accepted}</p>
+                </div>
+                <div className="rounded-lg p-4 bg-white border shadow-sm">
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Declined</p>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)', color: 'var(--color-mdc-error)' }}>{quotePerformance.metrics.declined}</p>
+                </div>
+                <div className="rounded-lg p-4 bg-white border shadow-sm">
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Conversion</p>
+                  <p className="text-2xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{quotePerformance.metrics.conversionRate}%</p>
+                </div>
+              </div>
+
+              {/* Quote List */}
+              {quotePerformance.bookings.length > 0 && (
+                <div className="mt-6 rounded-lg p-6 bg-white border shadow-sm">
+                  <h3 className="text-lg mb-4" style={{ fontFamily: 'var(--font-serif)' }}>Quote History</h3>
+                  <div className="space-y-3">
+                    {quotePerformance.bookings.map((booking) => (
+                      <div
+                        key={booking.id}
+                        className="flex items-center justify-between p-4 rounded-lg"
+                        style={{ backgroundColor: 'var(--color-mdc-bg)' }}
+                      >
+                        <div>
+                          <p className="font-medium">{booking.diner_name}</p>
+                          <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            {booking.service_title} • {booking.booking_date} at {booking.start_time}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span
+                            className="inline-block px-3 py-1 rounded-full text-xs font-medium"
+                            style={{
+                              backgroundColor: booking.quote_status === 'accepted' ? '#dcfce7' :
+                                booking.quote_status === 'declined' ? '#fee2e2' :
+                                booking.quote_status === 'expired' ? '#fef3c7' : '#dbeafe',
+                              color: booking.quote_status === 'accepted' ? '#15803d' :
+                                booking.quote_status === 'declined' ? '#dc2626' :
+                                booking.quote_status === 'expired' ? '#d97706' : '#2563eb',
+                            }}
+                          >
+                            {booking.quote_status}
+                          </span>
+                          <p className="mt-2 font-semibold">${booking.quote_amount}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
             {/* Main Content */}
@@ -1044,7 +1130,7 @@ export default function ChefDashboard() {
                   <a href="#" className="block w-full text-left px-4 py-2 text-sm transition-colors hover:bg-gray-50" style={{ color: 'var(--color-mdc-text-muted)' }}>
                     Update Availability
                   </a>
-                  <a href="#" className="block w-full text-left px-4 py-2 text-sm transition-colors hover:bg-gray-50" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                  <a href="/dashboard/chef/services" className="block w-full text-left px-4 py-2 text-sm transition-colors hover:bg-gray-50" style={{ color: 'var(--color-mdc-text-muted)' }}>
                     Manage Services
                   </a>
                   <a href="/admin" className="block w-full text-left px-4 py-2 text-sm transition-colors hover:bg-gray-50" style={{ color: 'var(--color-mdc-text-muted)' }}>

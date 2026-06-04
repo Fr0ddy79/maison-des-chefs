@@ -122,11 +122,15 @@ export async function PATCH(request: NextRequest) {
       }
 
       // Create booking
-      const { data: service } = await supabase
-        .from('services')
-        .select('price')
-        .eq('id', inquiry.service_id)
-        .single()
+      let totalPrice = 0
+      if (inquiry.service_id) {
+        const { data: service } = await supabase
+          .from('services')
+          .select('price_per_person')
+          .eq('id', inquiry.service_id)
+          .single()
+        totalPrice = (service?.price_per_person || 0) * (inquiry.guest_count || 2)
+      }
 
       const { data: newBooking, error: bookingError } = await supabase
         .from('bookings')
@@ -137,7 +141,7 @@ export async function PATCH(request: NextRequest) {
           booking_date: inquiry.inquiry_date,
           start_time: inquiry.inquiry_time || slot.start_time,
           guest_count: inquiry.guest_count || 2,
-          total_price: service?.price || 0,
+          total_price: totalPrice,
           status: inquiry.service_id ? 'pending' : 'confirmed',
         })
         .select()

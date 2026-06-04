@@ -24,8 +24,18 @@ export async function GET() {
     console.error('Error fetching booking count:', bookingError)
   }
 
+  // Count email waitlist signups
+  const { count: waitlistCount, error: waitlistError } = await supabase
+    .from('emails')
+    .select('*', { count: 'exact', head: true })
+
+  if (waitlistError) {
+    console.error('Error fetching waitlist count:', waitlistError)
+  }
+
   return NextResponse.json({
     chefs_available: chefCount || 0,
     dinners_booked: bookingCount || 0,
+    waitlist_count: waitlistCount || 0,
   })
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ReviewForm } from '@/components/ReviewForm'
 
 interface Booking {
   id: string
@@ -33,6 +34,8 @@ export default function BookingStatusPage() {
   const [processingBooking, setProcessingBooking] = useState<string | null>(null)
   const [showDeclineConfirm, setShowDeclineConfirm] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<{ bookingId: string; type: 'accepted' | 'declined'; message: string } | null>(null)
+  const [showReviewForm, setShowReviewForm] = useState<string | null>(null)
+  const [reviewStatuses, setReviewStatuses] = useState<Record<string, boolean>>({})
   const router = useRouter()
   const supabase = createClient()
 
@@ -66,6 +69,22 @@ export default function BookingStatusPage() {
         .order('created_at', { ascending: false })
 
       setBookings((bookingsData as any[]) || [])
+
+      // Check which bookings have reviews
+      if (bookingsData && bookingsData.length > 0) {
+        const bookingIds = bookingsData.map((b: any) => b.id)
+        const { data: reviews } = await supabase
+          .from('reviews')
+          .select('booking_id')
+          .in('booking_id', bookingIds)
+        
+        const statuses: Record<string, boolean> = {}
+        reviews?.forEach((r: any) => {
+          statuses[r.booking_id] = true
+        })
+        setReviewStatuses(statuses)
+      }
+
       setLoading(false)
     }
     checkUser()
@@ -404,7 +423,7 @@ export default function BookingStatusPage() {
 
                   {/* Book Again Button - Show for completed bookings */}
                   {(booking.status === 'completed' || booking.status === 'confirmed') && (
-                    <div className="p-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                    <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: 'var(--color-mdc-border)' }}>
                       <a
                         href={`/book?chef_id=${booking.chef_id}&date=${encodeURIComponent(booking.booking_date)}&time=${encodeURIComponent(booking.start_time)}&guests=${booking.guest_count}`}
                         className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors"
@@ -415,6 +434,41 @@ export default function BookingStatusPage() {
                         </svg>
                         Book Again
                       </a>
+
+                      {/* Leave a Review Button - Show only if no review exists */}
+                      {booking.status === 'completed' && !reviewStatuses[booking.id] && (
+                        <button
+                          onClick={() => setShowReviewForm(booking.id)}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors border"
+                          style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                          </svg>
+                          Leave a Review
+                        </button>
+                      )}
+
+                      {booking.status === 'completed' && reviewStatuses[booking.id] && (
+                        <span className="text-sm" style={{ color: '#15803d' }}>
+                          ✓ Reviewed
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Review Form */}
+                  {showReviewForm === booking.id && (
+                    <div className="p-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                      <ReviewForm
+                        bookingId={booking.id}
+                        chefId={booking.chef_id}
+                        chefName={booking.chef_profiles?.display_name || 'Chef'}
+                        onReviewSubmitted={() => {
+                          setShowReviewForm(null)
+                          setReviewStatuses(prev => ({ ...prev, [booking.id]: true }))
+                        }}
+                      />
                     </div>
                   )}
                 </div>

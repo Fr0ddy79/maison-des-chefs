@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 
 const HERO_CTA_COOKIE = 'ab_hero_cta_variant'
-const VARIANTS = ['find_your_chef', 'browse_available'] as const
+const VARIANTS = ['find_your_chef', 'book_private_chef', 'exclusive_dining'] as const
 type Variant = (typeof VARIANTS)[number]
 
 /**
@@ -57,8 +57,9 @@ export function useHeroCTAVariant(urlParamOverride: Variant | null): Variant {
       return
     }
 
-    // Assign new variant randomly (50/50)
-    const assigned: Variant = Math.random() < 0.5 ? 'find_your_chef' : 'browse_available'
+    // Assign new variant randomly (equal 1/3 probability for each variant)
+    const rand = Math.random()
+    const assigned: Variant = rand < 1/3 ? 'find_your_chef' : rand < 2/3 ? 'book_private_chef' : 'exclusive_dining'
     setHeroCTAVariantCookie(assigned)
     setVariant(assigned)
     setIsAssigned(true)
@@ -72,9 +73,14 @@ export function useHeroCTAVariant(urlParamOverride: Variant | null): Variant {
  */
 export function getHeroCTAText(variant: Variant): { primary: string; secondary: string } {
   switch (variant) {
-    case 'browse_available':
+    case 'book_private_chef':
       return {
-        primary: 'Browse Available Chefs',
+        primary: 'Book a Private Chef — Limited Availability',
+        secondary: 'Are You a Chef? Apply',
+      }
+    case 'exclusive_dining':
+      return {
+        primary: 'Exclusive Dining Experiences — Reserve Now',
         secondary: 'Are You a Chef? Apply',
       }
     case 'find_your_chef':

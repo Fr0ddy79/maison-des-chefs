@@ -220,6 +220,9 @@ export interface Database {
           price_range: string | null
           bio: string | null
           preferred_contact: 'email' | 'phone' | 'either'
+          status: 'pending' | 'approved' | 'rejected'
+          reviewed_at: string | null
+          reviewed_by: string | null
           created_at: string
         }
         Insert: {
@@ -233,6 +236,9 @@ export interface Database {
           price_range?: string | null
           bio?: string | null
           preferred_contact?: 'email' | 'phone' | 'either'
+          status?: 'pending' | 'approved' | 'rejected'
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           created_at?: string
         }
         Update: {
@@ -246,6 +252,9 @@ export interface Database {
           price_range?: string | null
           bio?: string | null
           preferred_contact?: 'email' | 'phone' | 'either'
+          status?: 'pending' | 'approved' | 'rejected'
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           created_at?: string
         }
       }

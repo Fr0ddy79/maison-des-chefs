@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 type Stats = {
   chefs_available: number
   dinners_booked: number
+  waitlist_count: number
 }
 
 export function StatsBar() {
@@ -47,6 +48,16 @@ export function StatsBar() {
           </span>
           <span>
             Dinner{stats.dinners_booked !== 1 ? 's' : ''} Booked
+          </span>
+        </div>
+      )}
+      {stats.waitlist_count > 0 && (
+        <div className="hidden md:flex items-center gap-2">
+          <span className="font-semibold" style={{ color: 'var(--color-mdc-accent)' }}>
+            {stats.waitlist_count}+
+          </span>
+          <span>
+            Food Lover{stats.waitlist_count !== 1 ? 's' : ''} Waiting
           </span>
         </div>
       )}

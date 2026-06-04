@@ -115,11 +115,13 @@ export default function AdminDashboard() {
       .order('created_at', { ascending: false })
       .limit(10)
 
-    // Calculate revenue from completed bookings
+    // MAI-2521: Revenue = SUM of bookings where quote has been accepted (not completed events).
+    // In the quote-based workflow, revenue is recognized when the diner accepts the quote,
+    // not when the event is later completed. This reflects actual bookings pipeline value.
     const { data: revenueData } = await supabase
       .from('bookings')
       .select('total_price')
-      .eq('status', 'completed')
+      .eq('quote_status', 'accepted')
 
     const totalRevenue = revenueData?.reduce((sum, b) => sum + (b.total_price || 0), 0) || 0
 
@@ -129,13 +131,19 @@ export default function AdminDashboard() {
       .select('*')
       .order('created_at', { ascending: false })
 
+    // Fetch pending applications count
+    const { count: pendingApplications } = await supabase
+      .from('chef_applications')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+
     setStats({
       totalUsers: totalUsers || 0,
       totalChefs: totalChefs || 0,
       totalDiners: totalDiners || 0,
       totalBookings: totalBookings || 0,
       totalRevenue,
-      pendingApplications: 0,
+      pendingApplications: pendingApplications || 0,
     })
     setRecentBookings((bookingsData as any[]) || [])
     setChefs((chefsData as any[]) || [])
@@ -316,13 +324,13 @@ export default function AdminDashboard() {
             <p className="font-medium">Chef Dashboard</p>
             <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Switch to chef view</p>
           </Link>
-          <a
-            href="#"
+          <Link
+            href="/admin/chef-applications"
             className="rounded-lg p-5 bg-white border shadow-sm text-center transition-colors hover:shadow-md"
           >
-            <p className="font-medium">Platform Settings</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Manage platform configuration</p>
-          </a>
+            <p className="font-medium">Review Applications</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Approve or reject pending chefs</p>
+          </Link>
         </div>
       </main>
     </div>
