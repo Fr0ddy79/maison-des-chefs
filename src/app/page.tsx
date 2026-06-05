@@ -1,3 +1,4 @@
+import { Metadata } from 'next'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { HeroCTA } from '@/components/HeroCTA'
@@ -83,12 +84,73 @@ async function getFeaturedChefs() {
   return data || []
 }
 
+export const metadata: Metadata = {
+  title: 'Private Chefs for Hire in Montreal | Maison des Chefs',
+  description: 'Book verified private chefs in Montreal for unforgettable at-home dining experiences. From intimate dinners to grand celebrations.',
+  keywords: [
+    'private chef',
+    'montreal',
+    'at-home dining',
+    'private chef hire',
+    'personal chef montreal',
+    'private chef booking',
+    'in-home chef',
+    'private chef for hire',
+    'chef service montreal',
+    'fine dining at home',
+  ],
+  openGraph: {
+    title: 'Private Chefs for Hire in Montreal | Maison des Chefs',
+    description: 'Book verified private chefs in Montreal for unforgettable at-home dining experiences. From intimate dinners to grand celebrations.',
+    type: 'website',
+    images: [
+      {
+        url: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1200&h=600&fit=crop',
+        width: 1200,
+        height: 600,
+        alt: 'Elegant dinner table setting with fine wine and cuisine',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Private Chefs for Hire in Montreal | Maison des Chefs',
+    description: 'Book verified private chefs in Montreal for unforgettable at-home dining experiences. From intimate dinners to grand celebrations.',
+    images: ['https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1200&h=600&fit=crop'],
+  },
+}
+
+// Schema.org Organization JSON-LD
+const organizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'Maison des Chefs',
+  url: 'https://maisondeschefs.com',
+  logo: 'https://maisondeschefs.com/logo.png',
+  sameAs: [
+    'https://www.instagram.com/maisondeschefs',
+    'https://www.facebook.com/maisondeschefs',
+    'https://www.linkedin.com/company/maisondeschefs',
+  ],
+  contactPoint: {
+    '@type': 'ContactPoint',
+    contactType: 'customer service',
+    email: 'hello@maisondeschefs.com',
+    availableLanguage: ['English', 'French'],
+  },
+}
+
 export default async function HomePage() {
   const featuredChefs = await getFeaturedChefs()
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <Navigation />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+      />
+      <div className="flex flex-col min-h-screen">
+        <Navigation />
 
       {/* Hero Section */}
       <section className="relative" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
@@ -339,6 +401,7 @@ export default async function HomePage() {
       </section>
 
       <Footer />
-    </div>
+      </div>
+    </>
   )
 }

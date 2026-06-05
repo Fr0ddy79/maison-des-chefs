@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       inquiry_date,
       guest_count,
       inquiry_time,
+      inquiry_time_end,
     } = body
 
     // Validate required fields
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
     // c) Check for conflicting bookings on the same date
     const { data: conflictingBooking } = await supabase
       .from('bookings')
-      .select('id, booking_date, start_time, status')
+      .select('id, booking_date, start_time, end_time, status')
       .eq('chef_id', chef_id)
       .eq('booking_date', inquiry_date)
       .neq('status', 'cancelled')
@@ -133,6 +134,51 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 }
       )
+    }
+
+    // d) Check for time overlap with existing bookings on the same date
+    if (inquiry_time) {
+      // Compute inquiryTimeEnd: explicit end time, or default to inquiry_time + 2 hours
+      let inquiryTimeEnd: string
+      if (inquiry_time_end) {
+        inquiryTimeEnd = inquiry_time_end
+      } else {
+        // Default to inquiry_time + 2 hours
+        const [hours, minutes] = inquiry_time.split(':').map(Number)
+        const startDate = new Date(2000, 0, 1, hours, minutes)
+        startDate.setHours(startDate.getHours() + 2)
+        inquiryTimeEnd = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`
+      }
+
+      // Fetch all non-cancelled bookings for this chef + date to check time overlap
+      const { data: existingBookings } = await supabase
+        .from('bookings')
+        .select('id, start_time, end_time')
+        .eq('chef_id', chef_id)
+        .eq('booking_date', inquiry_date)
+        .neq('status', 'cancelled')
+
+      if (existingBookings && existingBookings.length > 0) {
+        for (const booking of existingBookings) {
+          // Skip if booking has no end_time (shouldn't happen but be safe)
+          if (!booking.end_time) continue
+
+          // Time overlap: (inquiry_time < booking.end_time) AND (inquiryTimeEnd > booking.start_time)
+          if (inquiry_time < booking.end_time && inquiryTimeEnd > booking.start_time) {
+            return NextResponse.json(
+              {
+                error: `Chef is already booked on ${inquiry_date} from ${booking.start_time} to ${booking.end_time}. Please select a different time.`,
+                conflictType: 'TIME_OVERLAP',
+                conflictingBooking: {
+                  start_time: booking.start_time,
+                  end_time: booking.end_time,
+                },
+              },
+              { status: 409 }
+            )
+          }
+        }
+      }
     }
 
     // ========================================
@@ -173,6 +219,17 @@ export async function POST(request: NextRequest) {
       console.error('[Inquiry] Failed to send confirmation email:', err)
     })
 
+    // Fetch service title for chef notification email
+    let serviceTitle: string | null = null
+    if (service_id) {
+      const { data: service } = await supabase
+        .from('services')
+        .select('title')
+        .eq('id', service_id)
+        .single()
+      serviceTitle = service?.title || null
+    }
+
     // Notify chef of new inquiry (non-blocking)
     sendNewInquiryNotificationToChef({
       chefId: chef_id,
@@ -181,6 +238,7 @@ export async function POST(request: NextRequest) {
       inquiryDate: inquiry_date,
       inquiryTime: inquiry_time,
       inquiryId: newInquiry.id,
+      serviceType: serviceTitle,
     }).catch(err => {
       console.error('[Inquiry] Failed to send chef notification email:', err)
     })

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useProfileCompletionVariant } from '@/lib/useProfileCompletionVariant'
+import { trackProfileCompletenessViewed, trackProfileCompletenessCompleted } from '@/lib/analytics'
 
 interface Booking {
   id: string
@@ -57,6 +59,8 @@ export default function ChefDashboard() {
   const [processingInquiry, setProcessingInquiry] = useState<string | null>(null)
   const [selectedInquiry, setSelectedInquiry] = useState<any>(null)
   const [showInquiryModal, setShowInquiryModal] = useState(false)
+  const [showAvailabilityPrompt, setShowAvailabilityPrompt] = useState(false)
+  const [pendingInquiryAction, setPendingInquiryAction] = useState<{ inquiryId: string; status: 'accepted' | 'rejected' } | null>(null)
   const [analytics, setAnalytics] = useState<{
     monthlyBookings: number
     inquiryToBookingRate: string
@@ -81,6 +85,38 @@ export default function ChefDashboard() {
   const [loadingQuotePerformance, setLoadingQuotePerformance] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // A/B test variant for profile completion incentives
+  const completionVariant = useProfileCompletionVariant(null)
+
+  // Track profile completeness viewed on mount
+  useEffect(() => {
+    if (user?.id && profileCompleteness) {
+      trackProfileCompletenessViewed({
+        chef_id: user.id,
+        completion_score: profileCompleteness.score,
+        variant: completionVariant,
+      })
+    }
+  }, [user?.id, profileCompleteness, completionVariant])
+
+
+  // Track profile completeness completed when score reaches 100
+  useEffect(() => {
+    if (user?.id && profileCompleteness && profileCompleteness.score === 100) {
+      // Calculate days since first login (approximation using localStorage)
+      const createdAt = localStorage.getItem('chef_created_at')
+      const daysToComplete = createdAt 
+        ? Math.floor((Date.now() - parseInt(createdAt, 10)) / (1000 * 60 * 60 * 24))
+        : null
+      trackProfileCompletenessCompleted({
+        chef_id: user.id,
+        completion_score: 100,
+        variant: completionVariant,
+        days_to_complete: daysToComplete,
+      })
+    }
+  }, [user?.id, profileCompleteness, completionVariant])
 
   useEffect(() => {
     async function checkChef() {
@@ -145,6 +181,15 @@ export default function ChefDashboard() {
         .limit(1)
 
       const isFirstLogin = !existingBookings || existingBookings.length === 0
+
+      // Store chef creation timestamp for analytics
+      if (isFirstLogin) {
+        try {
+          localStorage.setItem('chef_created_at', Date.now().toString())
+        } catch (e) {
+          // Ignore localStorage errors
+        }
+      }
 
       setProfileCompleteness({ score, elements, isFirstLogin })
       setShowSetupPrompt(isFirstLogin && score < 100)
@@ -366,6 +411,14 @@ export default function ChefDashboard() {
   }
 
   async function handleInquiryAction(inquiryId: string, status: 'accepted' | 'rejected') {
+    // If accepting and no availability slots exist, prompt to add availability first
+    if (status === 'accepted' && availabilitySlots.length === 0) {
+      setPendingInquiryAction({ inquiryId, status })
+      setShowAvailabilityPrompt(true)
+      setShowInquiryModal(false)
+      return
+    }
+
     setProcessingInquiry(inquiryId)
     const res = await fetch('/api/inquiries', {
       method: 'PATCH',
@@ -375,9 +428,51 @@ export default function ChefDashboard() {
     if (res.ok) {
       await fetchInquiries()
       await fetchAvailabilitySlots()
+      // Refresh upcoming bookings since accepted inquiry creates a booking
+      const { data: updatedUpcomingData } = await supabase
+        .from('bookings')
+        .select(`
+          id, booking_date, start_time, guest_count, total_price, status, quote_status,
+          services:service_id (title),
+          profiles:diner_id (full_name)
+        `)
+        .eq('chef_id', user.id)
+        .in('status', ['pending', 'confirmed'])
+        .order('booking_date', { ascending: true })
+      setUpcomingBookings((updatedUpcomingData as any[]) || [])
     }
     setProcessingInquiry(null)
     setShowInquiryModal(false)
+  }
+
+  async function handleAddAvailabilityFromPrompt(e: React.FormEvent) {
+    e.preventDefault()
+    if (!user?.id || !newSlotDate || !newSlotStart || !newSlotEnd) return
+    setAddingSlot(true)
+
+    const { error } = await supabase
+      .from('availability')
+      .insert({
+        chef_id: user.id,
+        date: newSlotDate,
+        start_time: newSlotStart,
+        end_time: newSlotEnd,
+        is_booked: false,
+      })
+
+    if (!error) {
+      setNewSlotDate('')
+      setNewSlotStart('')
+      setNewSlotEnd('')
+      await fetchAvailabilitySlots()
+      // Now proceed with the pending inquiry action
+      if (pendingInquiryAction) {
+        await handleInquiryAction(pendingInquiryAction.inquiryId, pendingInquiryAction.status)
+        setPendingInquiryAction(null)
+      }
+    }
+    setAddingSlot(false)
+    setShowAvailabilityPrompt(false)
   }
 
   function formatTime(time: string) {
@@ -425,46 +520,79 @@ export default function ChefDashboard() {
           <h1 className="text-3xl mb-2" style={{ fontFamily: 'var(--font-serif)' }}>Chef Dashboard</h1>
           <p style={{ color: 'var(--color-mdc-text-muted)' }}>Welcome back, {user?.full_name || 'Chef'}</p>
 
-          {/* First-Time Setup Prompt */}
+          {/* First-Time Setup Prompt - A/B tested variants */}
           {showSetupPrompt && (
             <div className="mt-6 rounded-lg p-6 border" style={{ 
               backgroundColor: 'rgba(201, 168, 76, 0.08)',
               borderColor: 'rgba(201, 168, 76, 0.3)'
             }}>
               <div className="flex items-start gap-4">
-                <div className="text-3xl">👨‍🍳</div>
+                <div className="text-3xl">
+                  {completionVariant === 'gamification' ? '🏆' : completionVariant === 'urgency' ? '⚡' : '👨‍🍳'}
+                </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
-                    Complete your chef profile to get booked
-                  </h3>
-                  <p className="mt-1 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                    Chefs with complete profiles get <strong>3x more booking requests</strong>. 
-                    Take a few minutes to add the essentials below.
-                  </p>
+                  {completionVariant === 'social_proof' && (
+                    <>
+                      <h3 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
+                        Complete your chef profile to get booked
+                      </h3>
+                      <p className="mt-1 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        Chefs with complete profiles get <strong>3x more booking requests</strong>. 
+                        Take a few minutes to add the essentials below.
+                      </p>
+                    </>
+                  )}
+                  {completionVariant === 'gamification' && (
+                    <>
+                      <h3 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
+                        Level up your chef profile!
+                      </h3>
+                      <p className="mt-1 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        Complete each section to unlock badges and stand out to diners. 
+                        <strong>5/5 badges</strong> = Featured Chef status.
+                      </p>
+                    </>
+                  )}
+                  {completionVariant === 'urgency' && (
+                    <>
+                      <h3 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
+                        Add availability to start receiving bookings
+                      </h3>
+                      <p className="mt-1 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        Diners can only book when you have slots available. <strong>Add your first availability slot now</strong> 
+                        to appear in search results and receive booking requests.
+                      </p>
+                    </>
+                  )}
                   <div className="mt-4 flex flex-wrap gap-2">
                     {!profileCompleteness?.elements.photo && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs" style={{ backgroundColor: 'white', color: 'var(--color-mdc-text-muted)' }}>
-                        📷 Add profile photo
+                        {completionVariant === 'gamification' ? '🥇 ' : '📷 '}
+                        Add profile photo
                       </span>
                     )}
                     {!profileCompleteness?.elements.bio && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs" style={{ backgroundColor: 'white', color: 'var(--color-mdc-text-muted)' }}>
-                        ✍️ Write your bio
+                        {completionVariant === 'gamification' ? '🥈 ' : '✍️ '}
+                        Write your bio
                       </span>
                     )}
                     {!profileCompleteness?.elements.cuisine && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs" style={{ backgroundColor: 'white', color: 'var(--color-mdc-text-muted)' }}>
-                        🍽️ Add cuisine types
+                        {completionVariant === 'gamification' ? '🥉 ' : '🍽️ '}
+                        Add cuisine types
                       </span>
                     )}
                     {!profileCompleteness?.elements.service && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs" style={{ backgroundColor: 'white', color: 'var(--color-mdc-text-muted)' }}>
-                        📋 Create a service
+                        {completionVariant === 'gamification' ? '📋 ' : '📋 '}
+                        Create a service
                       </span>
                     )}
                     {!profileCompleteness?.elements.availability && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs" style={{ backgroundColor: 'white', color: 'var(--color-mdc-text-muted)' }}>
-                        📅 Set availability
+                        {completionVariant === 'gamification' ? '⏰ ' : '📅 '}
+                        Set availability
                       </span>
                     )}
                   </div>
@@ -1009,6 +1137,77 @@ export default function ChefDashboard() {
               </div>
             )}
 
+            {/* Availability Prompt Modal - shown before accepting first inquiry if no slots exist */}
+            {showAvailabilityPrompt && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => { setShowAvailabilityPrompt(false); setPendingInquiryAction(null) }}>
+                <div className="bg-white rounded-lg p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Add Availability to Accept</h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        You need at least one availability slot to accept booking requests.
+                      </p>
+                    </div>
+                    <button onClick={() => { setShowAvailabilityPrompt(false); setPendingInquiryAction(null) }} className="text-2xl" style={{ color: 'var(--color-mdc-text-muted)' }}>×</button>
+                  </div>
+                  <form onSubmit={handleAddAvailabilityFromPrompt} className="space-y-4">
+                    <div>
+                      <label className="block text-sm mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Date</label>
+                      <input
+                        type="date"
+                        value={newSlotDate}
+                        onChange={(e) => setNewSlotDate(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        required
+                        className="w-full px-3 py-2 rounded border text-sm"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>Start Time</label>
+                      <input
+                        type="time"
+                        value={newSlotStart}
+                        onChange={(e) => setNewSlotStart(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 rounded border text-sm"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>End Time</label>
+                      <input
+                        type="time"
+                        value={newSlotEnd}
+                        onChange={(e) => setNewSlotEnd(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 rounded border text-sm"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      />
+                    </div>
+                    <div className="mt-6 flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={addingSlot}
+                        className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                      >
+                        {addingSlot ? 'Adding...' : 'Add Slot & Accept Inquiry'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowAvailabilityPrompt(false); setPendingInquiryAction(null) }}
+                        className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors border"
+                        style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
             {/* Send Quote Modal */}
             {showQuoteModal && selectedQuoteBooking && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={closeQuoteModal}>
@@ -1117,7 +1316,7 @@ export default function ChefDashboard() {
                   </div>
                 </div>
                 <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
-                  <a href="#" className="block w-full text-center px-4 py-2 rounded font-medium text-sm transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>
+                  <a href="/dashboard/chef/profile" className="block w-full text-center px-4 py-2 rounded font-medium text-sm transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>
                     Edit Profile
                   </a>
                 </div>

@@ -216,6 +216,7 @@ interface SendNewInquiryNotificationParams {
   inquiryDate: string
   inquiryTime: string | null
   inquiryId: string
+  serviceType: string | null
 }
 
 export async function sendNewInquiryNotificationToChef({
@@ -225,6 +226,7 @@ export async function sendNewInquiryNotificationToChef({
   inquiryDate,
   inquiryTime,
   inquiryId,
+  serviceType,
 }: SendNewInquiryNotificationParams): Promise<{ success: boolean; error?: string }> {
   // Graceful degradation: if no API key, skip email but don't fail the inquiry
   if (!process.env.RESEND_API_KEY) {
@@ -262,6 +264,7 @@ export async function sendNewInquiryNotificationToChef({
 
     const timeText = inquiryTime ? `at ${inquiryTime}` : ''
     const messagePreview = message.length > 100 ? message.substring(0, 100) + '...' : message
+    const serviceText = serviceType ? `<p><strong>Service:</strong> ${serviceType}</p>` : ''
 
     const { error } = await resend.emails.send({
       from: FROM_EMAIL,
@@ -275,12 +278,13 @@ export async function sendNewInquiryNotificationToChef({
           
           <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
             <p><strong>Date Requested:</strong> ${formattedDate}${timeText ? ` ${timeText}` : ''}</p>
+            ${serviceText}
             <p><strong>Diner's Email:</strong> ${dinerEmail}</p>
             <p><strong>Message:</strong></p>
             <p style="font-style: italic; color: #555;">"${messagePreview}"</p>
           </div>
           
-          <p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/chef/inquiries" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">View & Respond to Inquiry</a></p>
+          <p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/chef" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">View & Respond to Inquiry</a></p>
           
           <p style="color: #666; font-size: 14px; margin-top: 30px;">— Maison des Chefs</p>
         </div>

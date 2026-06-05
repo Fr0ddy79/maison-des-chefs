@@ -184,10 +184,21 @@ export async function PATCH(request: NextRequest) {
       }, { status: 200 })
     }
 
+    // For rejected inquiries, just update the status and return
+    const { error: rejectError } = await supabase
+      .from('inquiries')
+      .update({ status: 'cancelled' })
+      .eq('id', inquiryId)
+
+    if (rejectError) {
+      console.error('Error rejecting inquiry:', rejectError)
+      return NextResponse.json({ error: 'Failed to reject inquiry' }, { status: 500 })
+    }
+
     return NextResponse.json({
-      message: `Inquiry ${status}`,
+      message: `Inquiry rejected`,
       inquiryId,
-      status,
+      status: 'rejected',
     }, { status: 200 })
 
   } catch (err) {

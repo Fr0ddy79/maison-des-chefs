@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
@@ -77,6 +77,19 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
   const displayName = chef.display_name || 'Chef'
   const heroImageUrl = chef.hero_image_url || 'https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=800&h=800&fit=crop'
 
+  // Sidebar form state — passed to booking form via URL params
+  const [selectedServiceId, setSelectedServiceId] = useState(services[0]?.id || '')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedGuests, setSelectedGuests] = useState(2)
+
+  const selectedService = services.find(s => s.id === selectedServiceId)
+  const estimatedTotal = selectedService?.price_per_person
+    ? selectedService.price_per_person * selectedGuests
+    : null
+
+  // Build booking URL with pre-filled sidebar selections
+  const bookingUrl = `/book?chef_id=${chef.id}${selectedServiceId ? `&service_id=${selectedServiceId}` : ''}${selectedDate ? `&date=${selectedDate}` : ''}&guests=${selectedGuests}`
+
   // Track service page views on mount
   useEffect(() => {
     services.forEach((service) => {
@@ -89,9 +102,41 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
     })
   }, [services, chef.id])
 
+  // Build Schema.org Person markup for SEO
+  const chefSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: displayName,
+    description: chef.bio || `Private chef in ${chef.location || 'Montreal'}`,
+    image: heroImageUrl,
+    address: {
+      '@type': 'PostalAddress',
+      addressLocality: chef.location || 'Montreal',
+      addressCountry: 'CA',
+    },
+    aggregateRating: chef.avg_rating
+      ? {
+          '@type': 'AggregateRating',
+          ratingValue: chef.avg_rating.toFixed(1),
+          reviewCount: chef.review_count || 0,
+        }
+      : undefined,
+    priceRange: chef.price_per_hour
+      ? `$${chef.price_per_hour}/hour`
+      : chef.price_per_event
+        ? `$${chef.price_per_event}/event`
+        : '$$$',
+    knowsAbout: chef.cuisines || [],
+  }
+
   return (
-    <div className="flex flex-col min-h-screen">
-      <Navigation />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(chefSchema) }}
+      />
+      <div className="flex flex-col min-h-screen">
+        <Navigation />
 
       <div className="flex-1" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
         {/* Hero Banner */}
@@ -239,7 +284,12 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
                 <div className="space-y-4">
                   <div>
                     <label className="text-sm font-medium block mb-1.5">Select Service</label>
-                    <select className="w-full px-4 py-3 rounded border bg-white" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                    <select
+                      className="w-full px-4 py-3 rounded border bg-white"
+                      style={{ borderColor: 'var(--color-mdc-border)' }}
+                      value={selectedServiceId}
+                      onChange={e => setSelectedServiceId(e.target.value)}
+                    >
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>{s.title}</option>
                       ))}
@@ -248,13 +298,25 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
 
                   <div>
                     <label className="text-sm font-medium block mb-1.5">Preferred Date</label>
-                    <input type="date" className="w-full px-4 py-3 rounded border bg-white" style={{ borderColor: 'var(--color-mdc-border)' }} />
+                    <input
+                      type="date"
+                      className="w-full px-4 py-3 rounded border bg-white"
+                      style={{ borderColor: 'var(--color-mdc-border)' }}
+                      value={selectedDate}
+                      onChange={e => setSelectedDate(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium block mb-1.5">Guests</label>
-                      <select className="w-full px-4 py-3 rounded border bg-white" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                      <select
+                        className="w-full px-4 py-3 rounded border bg-white"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                        value={selectedGuests}
+                        onChange={e => setSelectedGuests(Number(e.target.value))}
+                      >
                         {[...Array(chef.max_guests || 8)].map((_, i) => (
                           <option key={i + 1} value={i + 1}>{i + 1} guest{i > 0 ? 's' : ''}</option>
                         ))}
@@ -273,11 +335,24 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
                   <div className="pt-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
                     <div className="flex justify-between text-sm mb-2">
                       <span style={{ color: 'var(--color-mdc-text-muted)' }}>Estimated total</span>
-                      <span className="font-semibold">Contact for quote</span>
+                      <span className="font-semibold">
+                        {estimatedTotal
+                          ? `$${estimatedTotal.toLocaleString()}`
+                          : 'Contact for quote'}
+                      </span>
                     </div>
+                    {estimatedTotal && (
+                      <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        ${selectedService?.price_per_person}/person × {selectedGuests} guests
+                      </p>
+                    )}
                   </div>
 
-                  <Link href={`/book?chef_id=${chef.id}`} className="block text-center px-6 py-3 rounded font-medium text-white transition-colors" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
+                  <Link
+                    href={bookingUrl}
+                    className="block text-center px-6 py-3 rounded font-medium text-white transition-colors"
+                    style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                  >
                     Request Booking
                   </Link>
 
@@ -292,6 +367,7 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
       </div>
 
       <Footer />
-    </div>
+      </div>
+    </>
   )
 }

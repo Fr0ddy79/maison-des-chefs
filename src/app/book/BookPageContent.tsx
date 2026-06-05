@@ -55,6 +55,7 @@ export function BookPageContent() {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState({
     chefId: '',
+    serviceId: '',
     date: '',
     time: '',
     guestCount: 2,
@@ -126,6 +127,19 @@ export function BookPageContent() {
       if (urlChefId && data?.some(c => c.id === urlChefId)) {
         setFormData(prev => ({ ...prev, chefId: urlChefId }))
       }
+
+      // Pre-fill from chef profile sidebar (service_id, date, guests)
+      const urlServiceId = searchParams.get('service_id')
+      const urlDate = searchParams.get('date')
+      const urlGuests = searchParams.get('guests')
+      if (urlServiceId || urlDate || urlGuests) {
+        setFormData(prev => ({
+          ...prev,
+          serviceId: urlServiceId || prev.serviceId,
+          date: urlDate || prev.date,
+          guestCount: urlGuests ? parseInt(urlGuests, 10) : prev.guestCount,
+        }))
+      }
     }
     fetchChefs()
   }, [searchParams])
@@ -133,9 +147,10 @@ export function BookPageContent() {
   // Track booking form viewed on mount (step 0)
   useEffect(() => {
     const chefId = searchParams.get('chef_id') || formData.chefId || 'unknown'
+    const serviceId = searchParams.get('service_id') || 'unknown'
     trackBookingFormViewed({
       chef_id: chefId,
-      service_id: 'unknown', // TODO: extract service_id if needed
+      service_id: serviceId,
       form_variant: formVariant,
       referrer: document.referrer,
     })
@@ -149,11 +164,12 @@ export function BookPageContent() {
     setSubmitError(null)
 
     const chefId = searchParams.get('chef_id') || formData.chefId || 'unknown'
+    const serviceId = searchParams.get('service_id') || 'unknown'
 
     // Track analytics
     trackBookingFormSubmitted({
       chef_id: chefId,
-      service_id: 'unknown', // TODO: extract service_id if needed
+      service_id: serviceId,
       form_variant: formVariant,
       lead_id: null, // TODO: set after lead creation
       guest_count: formData.guestCount,
@@ -182,6 +198,7 @@ export function BookPageContent() {
     // Build inquiry payload — combine date and time into inquiry_date (YYYY-MM-DD)
     const inquiryPayload = {
       chef_id: formData.chefId,
+      service_id: formData.serviceId || null,
       email: formData.email,
       message: formData.specialRequests || '',
       inquiry_date: formData.date, // YYYY-MM-DD from date picker

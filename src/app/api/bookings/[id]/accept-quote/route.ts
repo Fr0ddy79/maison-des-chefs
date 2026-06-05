@@ -100,6 +100,22 @@ export async function POST(
       )
     }
 
+    // Mark the availability slot as booked to prevent double-booking
+    const { data: slot } = await supabase
+      .from('availability')
+      .select('id')
+      .eq('chef_id', booking.chef_id)
+      .eq('date', booking.booking_date)
+      .eq('is_booked', false)
+      .single()
+
+    if (slot) {
+      await supabase
+        .from('availability')
+        .update({ is_booked: true })
+        .eq('id', slot.id)
+    }
+
     // Send confirmation email (non-blocking)
     sendQuoteConfirmationEmail({
       bookingId,

@@ -36,6 +36,9 @@ export default function BookingStatusPage() {
   const [actionResult, setActionResult] = useState<{ bookingId: string; type: 'accepted' | 'declined'; message: string } | null>(null)
   const [showReviewForm, setShowReviewForm] = useState<string | null>(null)
   const [reviewStatuses, setReviewStatuses] = useState<Record<string, boolean>>({})
+  const [reviewSubmitted, setReviewSubmitted] = useState<Record<string, boolean>>({})
+  const [hoverRating, setHoverRating] = useState(0)
+  const [quickReviewLoading, setQuickReviewLoading] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -155,6 +158,29 @@ export default function BookingStatusPage() {
     setProcessingBooking(null)
   }
 
+  async function handleQuickReview(bookingId: string, rating: number) {
+    setQuickReviewLoading(bookingId)
+    try {
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          chef_id: bookings.find(b => b.id === bookingId)?.chef_id,
+          rating,
+          comment: null,
+        }),
+      })
+      if (res.ok) {
+        setReviewSubmitted(prev => ({ ...prev, [bookingId]: true }))
+        setReviewStatuses(prev => ({ ...prev, [bookingId]: true }))
+      }
+    } catch (err) {
+      // Silently fail - user can still use full review form
+    }
+    setQuickReviewLoading(null)
+  }
+
   function formatDate(dateStr: string) {
     const date = new Date(dateStr + 'T00:00:00')
     return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -215,7 +241,7 @@ export default function BookingStatusPage() {
 
           {/* Action Result Banner */}
           {actionResult && (
-            <div className={`mt-6 rounded-lg p-4 flex items-center gap-3 ${
+            <div className={`mt-6 rounded-lg p-4 ${
               actionResult.type === 'accepted' 
                 ? 'border bg-green-50' 
                 : 'border bg-amber-50'
@@ -223,18 +249,64 @@ export default function BookingStatusPage() {
               borderColor: actionResult.type === 'accepted' ? '#16a34a' : '#d97706',
               backgroundColor: actionResult.type === 'accepted' ? 'rgba(22, 163, 74, 0.05)' : 'rgba(217, 119, 6, 0.05)'
             }}>
-              <span className="text-2xl">{actionResult.type === 'accepted' ? '✓' : '↩'}</span>
-              <div>
-                <p className="font-medium" style={{ color: actionResult.type === 'accepted' ? '#15803d' : '#b45309' }}>
-                  {actionResult.message}
-                </p>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">{actionResult.type === 'accepted' ? '✓' : '↩'}</span>
+                <div className="flex-1">
+                  <p className="font-medium" style={{ color: actionResult.type === 'accepted' ? '#15803d' : '#b45309' }}>
+                    {actionResult.message}
+                  </p>
+                  
+                  {/* Inline Review Prompt for accepted quotes */}
+                  {actionResult.type === 'accepted' && !reviewSubmitted[actionResult.bookingId] && !reviewStatuses[actionResult.bookingId] && (
+                    <div className="mt-4 pt-4 border-t" style={{ borderColor: 'rgba(22, 163, 74, 0.2)' }}>
+                      <p className="text-sm mb-3" style={{ color: '#15803d' }}>How was your experience?</p>
+                      <div className="flex items-center gap-4">
+                        {/* Star rating inline */}
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => handleQuickReview(actionResult.bookingId, star)}
+                              className="p-0.5 transition-transform hover:scale-110"
+                              aria-label={`Rate ${star} stars`}
+                            >
+                              <svg
+                                className="w-6 h-6"
+                                style={{ color: star <= (hoverRating || 0) ? 'var(--color-mdc-accent)' : '#d1d5db' }}
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                              </svg>
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setShowReviewForm(actionResult.bookingId)}
+                          className="text-sm font-medium px-4 py-2 rounded transition-colors"
+                          style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                        >
+                          Leave a Review
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Review submitted confirmation */}
+                  {reviewSubmitted[actionResult.bookingId] && (
+                    <div className="mt-3 pt-3 border-t flex items-center gap-2" style={{ borderColor: 'rgba(22, 163, 74, 0.2)' }}>
+                      <span style={{ color: '#15803d' }}>✓</span>
+                      <p className="text-sm" style={{ color: '#15803d' }}>Review submitted! Thank you.</p>
+                    </div>
+                  )}
+                </div>
+                <button 
+                  onClick={() => setActionResult(null)}
+                  className="text-sm opacity-60 hover:opacity-100"
+                >
+                  ✕
+                </button>
               </div>
-              <button 
-                onClick={() => setActionResult(null)}
-                className="ml-auto text-sm opacity-60 hover:opacity-100"
-              >
-                ✕
-              </button>
             </div>
           )}
 
@@ -467,6 +539,7 @@ export default function BookingStatusPage() {
                         onReviewSubmitted={() => {
                           setShowReviewForm(null)
                           setReviewStatuses(prev => ({ ...prev, [booking.id]: true }))
+                          setReviewSubmitted(prev => ({ ...prev, [booking.id]: true }))
                         }}
                       />
                     </div>

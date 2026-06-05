@@ -92,3 +92,62 @@ export async function trackBookingFormSubmitted(event: BookingFormSubmittedEvent
     console.error('[Analytics] Error tracking booking_form_submitted:', error)
   }
 }
+
+interface ProfileCompletenessViewedEvent {
+  chef_id: string
+  completion_score: number
+  variant: 'social_proof' | 'gamification' | 'urgency'
+}
+
+interface ProfileCompletenessCompletedEvent {
+  chef_id: string
+  completion_score: number
+  variant: 'social_proof' | 'gamification' | 'urgency'
+  days_to_complete: number | null
+}
+
+export async function trackProfileCompletenessViewed(event: ProfileCompletenessViewedEvent): Promise<void> {
+  try {
+    const response = await fetch('/api/analytics/profile-completeness/viewed', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chef_id: event.chef_id,
+        completion_score: event.completion_score,
+        variant: event.variant,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[Analytics] Failed to track profile_completeness_viewed:', response.statusText)
+    }
+  } catch (error) {
+    console.error('[Analytics] Error tracking profile_completeness_viewed:', error)
+  }
+}
+
+export async function trackProfileCompletenessCompleted(event: ProfileCompletenessCompletedEvent): Promise<void> {
+  try {
+    const response = await fetch('/api/analytics/profile-completeness/completed', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chef_id: event.chef_id,
+        completion_score: event.completion_score,
+        variant: event.variant,
+        days_to_complete: event.days_to_complete,
+      }),
+    })
+
+
+    if (!response.ok) {
+      console.error('[Analytics] Failed to track profile_completeness_completed:', response.statusText)
+    }
+  } catch (error) {
+    console.error('[Analytics] Error tracking profile_completeness_completed:', error)
+  }
+}
