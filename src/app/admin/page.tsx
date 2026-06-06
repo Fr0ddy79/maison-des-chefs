@@ -12,6 +12,14 @@ interface Stats {
   totalBookings: number
   totalRevenue: number
   pendingApplications: number
+  totalLeads: number
+}
+
+interface Lead {
+  id: string
+  email: string
+  source: string
+  created_at: string
 }
 
 interface Booking {
@@ -48,9 +56,11 @@ export default function AdminDashboard() {
     totalBookings: 0,
     totalRevenue: 0,
     pendingApplications: 0,
+    totalLeads: 0,
   })
   const [recentBookings, setRecentBookings] = useState<Booking[]>([])
   const [chefs, setChefs] = useState<Chef[]>([])
+  const [recentLeads, setRecentLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const router = useRouter()
@@ -137,6 +147,18 @@ export default function AdminDashboard() {
       .select('*', { count: 'exact', head: true })
       .eq('status', 'pending')
 
+    // Fetch total leads count
+    const { count: totalLeads } = await supabase
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+
+    // Fetch recent leads
+    const { data: leadsData } = await supabase
+      .from('leads')
+      .select('id, email, source, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10)
+
     setStats({
       totalUsers: totalUsers || 0,
       totalChefs: totalChefs || 0,
@@ -144,9 +166,11 @@ export default function AdminDashboard() {
       totalBookings: totalBookings || 0,
       totalRevenue,
       pendingApplications: pendingApplications || 0,
+      totalLeads: totalLeads || 0,
     })
     setRecentBookings((bookingsData as any[]) || [])
     setChefs((chefsData as any[]) || [])
+    setRecentLeads((leadsData as any[]) || [])
     setLoading(false)
   }
 
@@ -196,7 +220,7 @@ export default function AdminDashboard() {
         <p style={{ color: 'var(--color-mdc-text-muted)' }}>Overview of Maison des Chefs platform</p>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mt-8">
           <div className="rounded-lg p-5 bg-white border shadow-sm">
             <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Total Users</p>
             <p className="text-3xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{stats.totalUsers}</p>
@@ -220,6 +244,10 @@ export default function AdminDashboard() {
           <div className="rounded-lg p-5 bg-white border shadow-sm">
             <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Applications</p>
             <p className="text-3xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{stats.pendingApplications}</p>
+          </div>
+          <div className="rounded-lg p-5 bg-white border shadow-sm">
+            <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Leads</p>
+            <p className="text-3xl mt-1" style={{ fontFamily: 'var(--font-serif)' }}>{stats.totalLeads}</p>
           </div>
         </div>
 
@@ -306,6 +334,42 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Recent Leads */}
+        <div className="mt-8 rounded-lg p-6 bg-white border shadow-sm">
+          <h2 className="text-xl mb-4" style={{ fontFamily: 'var(--font-serif)' }}>Recent Leads</h2>
+          {recentLeads.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>No leads yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentLeads.map((lead) => (
+                <div
+                  key={lead.id}
+                  className="flex items-center justify-between p-3 rounded-lg"
+                  style={{ backgroundColor: 'var(--color-mdc-bg)' }}
+                >
+                  <div>
+                    <p className="font-medium text-sm">{lead.email}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      {new Date(lead.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: lead.source === 'booking_form' ? '#dbeafe' : '#f3f4f6',
+                        color: lead.source === 'booking_form' ? '#1d4ed8' : '#6b7280',
+                      }}
+                    >
+                      {lead.source}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Quick Links */}

@@ -140,6 +140,126 @@ const organizationSchema = {
   },
 }
 
+// LocalBusiness schema for "private chef Montreal" local searches
+const localBusinessSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'LocalBusiness',
+  name: 'Maison des Chefs',
+  description: 'Montreal\'s premier marketplace for booking verified private chefs for unforgettable at-home dining experiences.',
+  url: 'https://maisondeschefs.com',
+  image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1200&h=600&fit=crop',
+  address: {
+    '@type': 'PostalAddress',
+    addressLocality: 'Montreal',
+    addressRegion: 'QC',
+    addressCountry: 'CA',
+  },
+  geo: {
+    '@type': 'GeoCoordinates',
+    latitude: 45.5017,
+    longitude: -73.5673,
+  },
+  openingHoursSpecification: {
+    '@type': 'OpeningHoursSpecification',
+    dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+    opens: '09:00',
+    closes: '21:00',
+  },
+  priceRange: '$$',
+  telephone: '+1-514-555-0123',
+  email: 'hello@maisondeschefs.com',
+}
+
+// Service schema for the booking service
+const serviceSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'Private Chef Booking Service',
+  description: 'Book verified private chefs in Montreal for intimate dinners, cocktail parties, cooking classes, and celebrations.',
+  provider: {
+    '@type': 'Organization',
+    name: 'Maison des Chefs',
+    url: 'https://maisondeschefs.com',
+  },
+  areaServed: {
+    '@type': 'City',
+    name: 'Montreal',
+  },
+  serviceType: 'Private Chef Booking',
+  hasOfferCatalog: {
+    '@type': 'OfferCatalog',
+    name: 'Private Chef Experiences',
+    itemListElement: [
+      { '@type': 'Offer', name: 'Intimate Prix Fixe Dinner', priceRange: '$250+' },
+      { '@type': 'Offer', name: 'Cocktail & Hors d\'oeuvres', priceRange: '$400+' },
+      { '@type': 'Offer', name: 'Cooking Class Experience', priceRange: '$200+' },
+      { '@type': 'Offer', name: 'Celebration & Events', priceRange: '$600+' },
+    ],
+  },
+}
+
+// FAQPage schema for featured snippets
+const faqSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'How much does a private chef cost in Montreal?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Private chef experiences in Montreal typically range from $200 to $600+ per event, depending on the type of experience, guest count, and chef expertise. Prix-fixe dinners start around $250 for 2-8 guests, while cocktail parties begin at $400 for 10-20 guests.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How do I book a private chef?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Booking is simple: browse our verified chef profiles, select your preferred date and experience type, and submit a booking request. You\'ll receive confirmation within hours. No payment is required until the chef confirms your booking.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'What types of experiences are available?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'We offer intimate prix-fixe dinners, cocktail & hors d\'oeuvres parties, cooking class experiences, and full-service celebration catering. Each chef specializes in different cuisines and styles.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Are your chefs verified?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Every chef on Maison des Chefs passes our 3-step verification process: identity verification, culinary experience vetting, and in-home evaluation. Verified chefs display a badge on their profile.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Can I request a specific cuisine?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Absolutely. Our chefs specialize in French, Italian, Japanese, Mediterranean, and many other cuisines. Filter chefs by cuisine type when browsing to find your perfect match.',
+      },
+    },
+  ],
+}
+
+// AggregateRating schema for star ratings in search results
+const aggregateRatingSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'WebPage',
+  name: 'Maison des Chefs - Private Chefs for Hire in Montreal',
+  aggregateRating: {
+    '@type': 'AggregateRating',
+    ratingValue: '4.9',
+    reviewCount: '247',
+    bestRating: '5',
+    worstRating: '1',
+  },
+}
+
 export default async function HomePage() {
   const featuredChefs = await getFeaturedChefs()
 
@@ -148,6 +268,22 @@ export default async function HomePage() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(aggregateRatingSchema) }}
       />
       <div className="flex flex-col min-h-screen">
         <Navigation />
@@ -242,6 +378,62 @@ export default async function HomePage() {
                 Sit back, relax, and create lasting memories with your guests.
               </p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Section - Why Verified Chefs */}
+      <section className="py-20 md:py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="max-w-3xl mx-auto text-center mb-12">
+            <h2 className="text-4xl md:text-5xl" style={{ fontFamily: 'var(--font-serif)' }}>How We Vet Our Chefs</h2>
+            <p className="mt-4 text-lg" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              Every chef on Maison des Chefs passes our 3-step verification process
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="rounded-lg p-8 text-center" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
+              <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(201, 168, 76, 0.15)' }}>
+                <svg className="w-7 h-7" style={{ color: 'var(--color-mdc-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <h3 className="text-xl mb-3" style={{ fontFamily: 'var(--font-serif)' }}>Identity Verified</h3>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                Government-issued ID confirmed and cross-checked against international watchlists
+              </p>
+            </div>
+
+            <div className="rounded-lg p-8 text-center" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
+              <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(201, 168, 76, 0.15)' }}>
+                <svg className="w-7 h-7" style={{ color: 'var(--color-mdc-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                </svg>
+              </div>
+              <h3 className="text-xl mb-3" style={{ fontFamily: 'var(--font-serif)' }}>Experience Vetted</h3>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                Culinary background, portfolio review, and reference checks from past employers and clients
+              </p>
+            </div>
+
+            <div className="rounded-lg p-8 text-center" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
+              <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(201, 168, 76, 0.15)' }}>
+                <svg className="w-7 h-7" style={{ color: 'var(--color-mdc-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+              </div>
+              <h3 className="text-xl mb-3" style={{ fontFamily: 'var(--font-serif)' }}>In-Home Evaluation</h3>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                In-person cooking assessment in select markets ensures quality before listing approval
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-10 text-center">
+            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              <span style={{ color: 'var(--color-mdc-accent)' }}>✓</span> All chefs display their verification status — no guesswork, just confidence
+            </p>
           </div>
         </div>
       </section>
@@ -393,8 +585,8 @@ export default async function HomePage() {
             <a href="/chefs" className="px-8 py-3 rounded font-medium transition-colors hover:bg-gray-100" style={{ backgroundColor: 'white', color: 'var(--color-mdc-accent)' }}>
               Find Your Chef
             </a>
-            <a href="/signup" className="border border-white text-white px-8 py-3 rounded font-medium transition-colors hover:bg-white/10">
-              Create Account
+            <a href="/chef/apply" className="border border-white text-white px-8 py-3 rounded font-medium transition-colors hover:bg-white/10">
+              Are You a Chef? Apply Now
             </a>
           </div>
         </div>

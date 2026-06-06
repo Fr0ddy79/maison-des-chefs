@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendBookingConfirmedEmail } from '@/lib/email/resend'
+import { parseDietaryFromText } from '@/lib/dietary-parser'
 
 // GET /api/inquiries - Get all inquiries for the authenticated chef
 export async function GET(request: NextRequest) {
@@ -32,6 +33,8 @@ export async function GET(request: NextRequest) {
         status,
         created_at,
         service_id,
+        dietary_preferences,
+        nut_allergy,
         services:service_id (title)
       `)
       .eq('chef_id', authUser.id)
@@ -132,6 +135,9 @@ export async function PATCH(request: NextRequest) {
         totalPrice = (service?.price_per_person || 0) * (inquiry.guest_count || 2)
       }
 
+      // Parse dietary info from the inquiry message (special requests)
+      const { dietary_restrictions, allergies } = parseDietaryFromText(inquiry.message)
+
       const { data: newBooking, error: bookingError } = await supabase
         .from('bookings')
         .insert({
@@ -143,6 +149,9 @@ export async function PATCH(request: NextRequest) {
           guest_count: inquiry.guest_count || 2,
           total_price: totalPrice,
           status: inquiry.service_id ? 'pending' : 'confirmed',
+          special_requests: inquiry.message || null,
+          dietary_restrictions: dietary_restrictions.length > 0 ? JSON.stringify(dietary_restrictions) : null,
+          allergies: allergies.length > 0 ? JSON.stringify(allergies) : null,
         })
         .select()
         .single()

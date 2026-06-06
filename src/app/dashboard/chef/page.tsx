@@ -14,6 +14,9 @@ interface Booking {
   guest_count: number
   total_price: number
   status: string
+  special_requests: string | null
+  dietary_restrictions: string | null
+  allergies: string | null
   services: { title: string } | null
   profiles: { full_name: string } | null
 }
@@ -225,6 +228,7 @@ export default function ChefDashboard() {
         .from('bookings')
         .select(`
           id, booking_date, start_time, guest_count, total_price, status, quote_status,
+          special_requests, dietary_restrictions, allergies,
           services:service_id (title),
           profiles:diner_id (full_name)
         `)
@@ -232,13 +236,16 @@ export default function ChefDashboard() {
         .in('status', ['pending', 'confirmed'])
         .order('booking_date', { ascending: true })
 
+
       setUpcomingBookings((upcomingData as any[]) || [])
+
 
       // Fetch bookings awaiting quotes (pending, no quote sent yet)
       const { data: awaitingQuotesData } = await supabase
         .from('bookings')
         .select(`
           id, booking_date, start_time, guest_count, total_price, status, quote_status,
+          special_requests, dietary_restrictions, allergies,
           services:service_id (title),
           profiles:diner_id (full_name)
         `)
@@ -312,6 +319,7 @@ export default function ChefDashboard() {
           .from('bookings')
           .select(`
             id, booking_date, start_time, guest_count, total_price, status, quote_status,
+            special_requests, dietary_restrictions, allergies,
             services:service_id (title),
             profiles:diner_id (full_name)
           `)
@@ -320,10 +328,12 @@ export default function ChefDashboard() {
           .order('booking_date', { ascending: true })
         setUpcomingBookings((updatedUpcomingData as any[]) || [])
 
+
         const { data: updatedAwaitingData } = await supabase
           .from('bookings')
           .select(`
             id, booking_date, start_time, guest_count, total_price, status, quote_status,
+            special_requests, dietary_restrictions, allergies,
             services:service_id (title),
             profiles:diner_id (full_name)
           `)
@@ -433,6 +443,7 @@ export default function ChefDashboard() {
         .from('bookings')
         .select(`
           id, booking_date, start_time, guest_count, total_price, status, quote_status,
+          special_requests, dietary_restrictions, allergies,
           services:service_id (title),
           profiles:diner_id (full_name)
         `)
@@ -826,35 +837,62 @@ export default function ChefDashboard() {
                   <p style={{ color: 'var(--color-mdc-text-muted)' }}>No upcoming bookings.</p>
                 ) : (
                   <div className="space-y-4">
-                    {upcomingBookings.map((booking) => (
-                      <div
-                        key={booking.id}
-                        className="flex items-center justify-between p-4 rounded-lg"
-                        style={{ backgroundColor: 'var(--color-mdc-bg)' }}
-                      >
-                        <div>
-                          <p className="font-medium">{(booking.profiles as any)?.full_name || 'Client'}</p>
-                          <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                            {(booking.services as any)?.title || 'Service'}
-                          </p>
-                          <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                            {booking.booking_date} at {booking.start_time} • {booking.guest_count} guests
-                          </p>
+                    {upcomingBookings.map((booking) => {
+                      const dietaryRestrictions = booking.dietary_restrictions ? JSON.parse(booking.dietary_restrictions) : []
+                      const allergies = booking.allergies ? JSON.parse(booking.allergies) : []
+                      const hasDietaryInfo = dietaryRestrictions.length > 0 || allergies.length > 0
+                      return (
+                        <div
+                          key={booking.id}
+                          className="flex items-center justify-between p-4 rounded-lg"
+                          style={{ backgroundColor: 'var(--color-mdc-bg)' }}
+                        >
+                          <div>
+                            <p className="font-medium">{(booking.profiles as any)?.full_name || 'Client'}</p>
+                            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {(booking.services as any)?.title || 'Service'}
+                            </p>
+                            <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {booking.booking_date} at {booking.start_time} • {booking.guest_count} guests
+                            </p>
+                            {hasDietaryInfo && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {allergies.map((allergy: string) => (
+                                  <span
+                                    key={allergy}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                    style={{ backgroundColor: '#fef2f2', color: '#b91c1c' }}
+                                  >
+                                    ⚠️ {allergy}
+                                  </span>
+                                ))}
+                                {dietaryRestrictions.map((diet: string) => (
+                                  <span
+                                    key={diet}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                    style={{ backgroundColor: '#dcfce7', color: '#15803d' }}
+                                  >
+                                    {diet}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <span
+                              className="inline-block px-3 py-1 rounded-full text-xs font-medium"
+                              style={{
+                                backgroundColor: booking.status === 'confirmed' ? '#dcfce7' : '#15803d',
+                                color: booking.status === 'confirmed' ? '#15803d' : '#a16207',
+                              }}
+                            >
+                              {booking.status}
+                            </span>
+                            <p className="mt-2 font-semibold">${booking.total_price}</p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span
-                            className="inline-block px-3 py-1 rounded-full text-xs font-medium"
-                            style={{
-                              backgroundColor: booking.status === 'confirmed' ? '#dcfce7' : '#15803d',
-                              color: booking.status === 'confirmed' ? '#15803d' : '#a16207',
-                            }}
-                          >
-                            {booking.status}
-                          </span>
-                          <p className="mt-2 font-semibold">${booking.total_price}</p>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -874,36 +912,63 @@ export default function ChefDashboard() {
                     These accepted bookings are waiting for you to send a quote.
                   </p>
                   <div className="space-y-4">
-                    {awaitingQuotesBookings.map((booking) => (
-                      <div
-                        key={booking.id}
-                        className="flex items-center justify-between p-4 rounded-lg"
-                        style={{ backgroundColor: 'white', border: '1px solid rgba(201, 168, 76, 0.2)' }}
-                      >
-                        <div>
-                          <p className="font-medium">{(booking.profiles as any)?.full_name || 'Client'}</p>
-                          <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                            {(booking.services as any)?.title || 'Service'}
-                          </p>
-                          <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                            {booking.booking_date} at {booking.start_time} • {booking.guest_count} guests
-                          </p>
-                        </div>
-                        <div className="text-right flex items-center gap-3">
+                    {awaitingQuotesBookings.map((booking) => {
+                      const dietaryRestrictions = booking.dietary_restrictions ? JSON.parse(booking.dietary_restrictions) : []
+                      const allergies = booking.allergies ? JSON.parse(booking.allergies) : []
+                      const hasDietaryInfo = dietaryRestrictions.length > 0 || allergies.length > 0
+                      return (
+                        <div
+                          key={booking.id}
+                          className="flex items-center justify-between p-4 rounded-lg"
+                          style={{ backgroundColor: 'white', border: '1px solid rgba(201, 168, 76, 0.2)' }}
+                        >
                           <div>
-                            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>Est. Price</p>
-                            <p className="font-semibold">${booking.total_price}</p>
+                            <p className="font-medium">{(booking.profiles as any)?.full_name || 'Client'}</p>
+                            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {(booking.services as any)?.title || 'Service'}
+                            </p>
+                            <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {booking.booking_date} at {booking.start_time} • {booking.guest_count} guests
+                            </p>
+                            {hasDietaryInfo && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {allergies.map((allergy: string) => (
+                                  <span
+                                    key={allergy}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                    style={{ backgroundColor: '#fef2f2', color: '#b91c1c' }}
+                                  >
+                                    ⚠️ {allergy}
+                                  </span>
+                                ))}
+                                {dietaryRestrictions.map((diet: string) => (
+                                  <span
+                                    key={diet}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                    style={{ backgroundColor: '#dcfce7', color: '#15803d' }}
+                                  >
+                                    {diet}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <button
-                            onClick={() => openQuoteModal(booking)}
-                            className="px-4 py-2 rounded font-medium text-sm transition-colors"
-                            style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
-                          >
-                            Send Quote
-                          </button>
+                          <div className="text-right flex items-center gap-3">
+                            <div>
+                              <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>Est. Price</p>
+                              <p className="font-semibold">${booking.total_price}</p>
+                            </div>
+                            <button
+                              onClick={() => openQuoteModal(booking)}
+                              className="px-4 py-2 rounded font-medium text-sm transition-colors"
+                              style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                            >
+                              Send Quote
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -1114,6 +1179,27 @@ export default function ChefDashboard() {
                       <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Message</p>
                       <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>{selectedInquiry.message}</p>
                     </div>
+                    {(selectedInquiry.dietary_preferences?.length > 0 || selectedInquiry.nut_allergy) && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Dietary Requirements</p>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {selectedInquiry.nut_allergy && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: '#fef2f2', color: '#b91c1c' }}>
+                              ⚠️ Nut Allergy — chef must confirm
+                            </span>
+                          )}
+                          {(selectedInquiry.dietary_preferences || []).map((diet: string) => (
+                            <span
+                              key={diet}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: '#dcfce7', color: '#15803d' }}
+                            >
+                              {diet.charAt(0).toUpperCase() + diet.slice(1).replace('-', '/')}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="mt-6 flex gap-3">
                     <button
@@ -1347,7 +1433,7 @@ export default function ChefDashboard() {
                 <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
                   Our support team is here to assist you.
                 </p>
-                <a href="#" className="text-sm hover:underline" style={{ color: 'var(--color-mdc-accent)' }}>
+                <a href="/contact" className="text-sm hover:underline" style={{ color: 'var(--color-mdc-accent)' }}>
                   Contact Support →
                 </a>
               </div>

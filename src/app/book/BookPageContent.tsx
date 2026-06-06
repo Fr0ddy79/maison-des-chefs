@@ -32,8 +32,8 @@ function generateGuestSessionId(): string {
   return 'guest_' + Math.random().toString(36).substring(2) + Date.now().toString(36)
 }
 
-const STANDARD_STEPS = ['Select Chef', 'Choose Date & Time', 'Guest Details', 'Confirm']
-const SIMPLIFIED_STEPS = ['Select Chef & Schedule', 'Guest Details', 'Confirm']
+const STANDARD_STEPS = ['Select Chef', 'Select Service', 'Choose Date & Time', 'Guest Details', 'Confirm']
+const SIMPLIFIED_STEPS = ['Select Chef & Schedule', 'Select Service', 'Guest Details', 'Confirm']
 
 type ChefProfile = {
   id: string
@@ -51,6 +51,16 @@ type ChefProfile = {
   hero_image_url: string | null
 }
 
+type Service = {
+  id: string
+  title: string
+  description: string | null
+  cuisine_type: string | null
+  duration_hours: number | null
+  price_per_person: number | null
+  max_guests: number
+}
+
 export function BookPageContent() {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState({
@@ -63,35 +73,59 @@ export function BookPageContent() {
     email: '',
     phone: '',
     specialRequests: '',
+    dietary_preferences: [] as string[],
+    nut_allergy: false,
   })
   const [submitState, setSubmitState] = useState<'idle' | 'loading' | 'success' | 'conflict' | 'error'>('idle')
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [inquiryHadSlot, setInquiryHadSlot] = useState<boolean | null>(null)
+  const [showNutAllergyWarning, setShowNutAllergyWarning] = useState(false)
   const [chefs, setChefs] = useState<ChefProfile[]>([])
   const [chefsLoading, setChefsLoading] = useState(true)
+  const [services, setServices] = useState<Service[]>([])
+  const [servicesLoading, setServicesLoading] = useState(false)
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
+  const [leadId, setLeadId] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+  const [emailCaptureDone, setEmailCaptureDone] = useState(false)
+  const [emailCaptureLoading, setEmailCaptureLoading] = useState(false)
+  const [emailCaptureError, setEmailCaptureError] = useState<string | null>(null)
   const searchParams = useSearchParams()
 
   // Load guest session and pre-fill form on mount
   useEffect(() => {
-    const existingSession = getGuestSessionId()
-    if (existingSession) {
-      setGuestSessionId(existingSession)
-      // Pre-fill from stored form data (set on previous submission)
-      try {
-        const stored = localStorage.getItem(`guest_form_${existingSession}`)
-        if (stored) {
-          const parsed = JSON.parse(stored)
-          setFormData(prev => ({
-            ...prev,
-            name: parsed.name || prev.name,
-            email: parsed.email || prev.email,
-            phone: parsed.phone || prev.phone,
-          }))
+    async function checkAuthAndLoadSession() {
+      // Check if user is authenticated
+      const supabase = createClient()
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      setIsAuthenticated(!!authUser)
+
+      const existingSession = getGuestSessionId()
+      if (existingSession) {
+        setGuestSessionId(existingSession)
+        // Pre-fill from stored form data (set on previous submission)
+        try {
+          const stored = localStorage.getItem(`guest_form_${existingSession}`)
+          if (stored) {
+            const parsed = JSON.parse(stored)
+            setFormData(prev => ({
+              ...prev,
+              name: parsed.name || prev.name,
+              email: parsed.email || prev.email,
+              phone: parsed.phone || prev.phone,
+            }))
+          }
+          const storedLeadId = localStorage.getItem(`guest_lead_${existingSession}`)
+          if (storedLeadId) {
+            setLeadId(storedLeadId)
+            setEmailCaptureDone(true)
+          }
+        } catch {
+          // Ignore localStorage errors
         }
-      } catch {
-        // Ignore localStorage errors
       }
     }
+    checkAuthAndLoadSession()
   }, [])
 
   // URL param override for forced variant testing (?variant=simplified)
@@ -144,6 +178,44 @@ export function BookPageContent() {
     fetchChefs()
   }, [searchParams])
 
+  // Fetch services when chef is selected
+  useEffect(() => {
+    if (!formData.chefId) {
+      setServices([])
+      return
+    }
+
+    async function fetchServices() {
+      setServicesLoading(true)
+      try {
+        const response = await fetch(`/api/chefs/${formData.chefId}/services`)
+        if (response.ok) {
+          const data = await response.json()
+          setServices(data.services || [])
+        }
+      } catch (err) {
+        console.error('Error fetching services:', err)
+      } finally {
+        setServicesLoading(false)
+      }
+    }
+
+    fetchServices()
+  }, [formData.chefId])
+
+  // When service is selected, pre-fill guest count based on max_guests
+  useEffect(() => {
+    if (formData.serviceId) {
+      const service = services.find(s => s.id === formData.serviceId)
+      if (service && service.max_guests) {
+        setFormData(prev => ({
+          ...prev,
+          guestCount: Math.min(prev.guestCount, service.max_guests),
+        }))
+      }
+    }
+  }, [formData.serviceId, services])
+
   // Track booking form viewed on mount (step 0)
   useEffect(() => {
     const chefId = searchParams.get('chef_id') || formData.chefId || 'unknown'
@@ -156,6 +228,24 @@ export function BookPageContent() {
     })
   }, [formVariant, searchParams, formData.chefId])
 
+  // Capture lead when email is provided early (for unauthenticated users)
+  async function captureLead(email: string): Promise<string | null> {
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'booking_form' }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        return data.lead?.id || null
+      }
+    } catch {
+      // Lead capture failure is non-blocking — don't interrupt the flow
+    }
+    return null
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (submitState === 'loading') return
@@ -166,12 +256,12 @@ export function BookPageContent() {
     const chefId = searchParams.get('chef_id') || formData.chefId || 'unknown'
     const serviceId = searchParams.get('service_id') || 'unknown'
 
-    // Track analytics
+    // Track analytics with lead_id
     trackBookingFormSubmitted({
       chef_id: chefId,
       service_id: serviceId,
       form_variant: formVariant,
-      lead_id: null, // TODO: set after lead creation
+      lead_id: leadId,
       guest_count: formData.guestCount,
       event_date: formData.date,
     })
@@ -184,13 +274,16 @@ export function BookPageContent() {
       setGuestSessionCookie(sessionId)
     }
 
-    // Persist form data for returning guests
+    // Persist form data and lead_id for returning guests
     try {
       localStorage.setItem(`guest_form_${sessionId}`, JSON.stringify({
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
       }))
+      if (leadId) {
+        localStorage.setItem(`guest_lead_${sessionId}`, leadId)
+      }
     } catch {
       // Ignore localStorage errors
     }
@@ -204,6 +297,9 @@ export function BookPageContent() {
       inquiry_date: formData.date, // YYYY-MM-DD from date picker
       guest_count: formData.guestCount,
       inquiry_time: formData.time, // HH:MM from time picker
+      lead_id: leadId,
+      dietary_preferences: formData.dietary_preferences,
+      nut_allergy: formData.nut_allergy,
     }
 
     try {
@@ -214,6 +310,8 @@ export function BookPageContent() {
       })
 
       if (response.ok) {
+        const data = await response.json()
+        setInquiryHadSlot(data.has_availability_slot ?? null)
         setSubmitState('success')
       } else if (response.status === 409) {
         const data = await response.json()
@@ -247,6 +345,12 @@ export function BookPageContent() {
     return chef?.display_name || 'Unknown Chef'
   }
 
+  // Helper to get service name from ID
+  const getServiceName = (serviceId: string) => {
+    const service = services.find(s => s.id === serviceId)
+    return service?.title || 'Unknown Service'
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
@@ -258,12 +362,66 @@ export function BookPageContent() {
             Form Variant: <span className="font-mono">{formVariant}</span>
           </div>
 
-          {/* Guest login prompt — optional, not blocking */}
-          <div className="mb-6 p-4 rounded-lg border flex items-center justify-between" style={{ borderColor: 'var(--color-mdc-border)', backgroundColor: 'var(--color-mdc-bg)' }}>
-            <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
-              Already have an account? <Link href="/login" className="underline hover:opacity-80" style={{ color: 'var(--color-mdc-accent)' }}>Sign in</Link> for a faster booking experience.
-            </p>
-          </div>
+          {/* Email capture for unauthenticated users — shown before they start */}
+          {(() => {
+            if (isAuthenticated !== false) return null
+            if (emailCaptureDone) return null
+            return (
+              <div className="mb-6 p-6 rounded-lg border" style={{ borderColor: 'var(--color-mdc-accent)', backgroundColor: 'rgba(201, 168, 76, 0.04)' }}>
+                <h3 className="text-lg mb-1" style={{ fontFamily: 'var(--font-serif)' }}>Reserve your spot</h3>
+                <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                  Enter your email to get started. No account needed — we'll save your progress.
+                </p>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (!formData.email || emailCaptureLoading) return
+                    setEmailCaptureError(null)
+                    setEmailCaptureLoading(true)
+                    const id = await captureLead(formData.email)
+                    setEmailCaptureLoading(false)
+                    if (id) {
+                      setLeadId(id)
+                      setEmailCaptureDone(true)
+                      // Persist lead_id in session
+                      const sessionId = getGuestSessionId()
+                      if (sessionId) {
+                        localStorage.setItem(`guest_lead_${sessionId}`, id)
+                      }
+                    } else {
+                      setEmailCaptureError('Could not save email. You can continue anyway.')
+                    }
+                  }}
+                  className="flex gap-3"
+                >
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="your@email.com"
+                    className="flex-1 px-4 py-3 rounded border bg-white"
+                    style={{ borderColor: 'var(--color-mdc-border)' }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!formData.email || emailCaptureLoading}
+                    className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                  >
+                    {emailCaptureLoading ? 'Saving...' : 'Continue'}
+                  </button>
+                </form>
+                {emailCaptureError && (
+                  <p className="text-sm mt-2" style={{ color: '#dc2626' }}>{emailCaptureError}</p>
+                )}
+                {isAuthenticated === false && (
+                  <p className="text-xs mt-3" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    Already have an account? <Link href="/login" className="underline hover:opacity-80" style={{ color: 'var(--color-mdc-accent)' }}>Sign in</Link>
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Progress Steps */}
           <div className="mb-12">
@@ -465,12 +623,12 @@ export function BookPageContent() {
 
                 <div className="mt-8">
                   <button
-                    onClick={() => setCurrentStep(isSimplified ? 1 : 1)}
+                    onClick={() => setCurrentStep(1)}
                     disabled={!formData.chefId || (isSimplified && (!formData.date || !formData.time))}
                     className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
                     style={{ backgroundColor: 'var(--color-mdc-accent)' }}
                   >
-                    {isSimplified ? 'Continue to Guest Details' : 'Continue'}
+                    {isSimplified ? 'Continue to Services' : 'Select Service'}
                   </button>
                   {!isSimplified && (
                     <span className="ml-4 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
@@ -481,8 +639,121 @@ export function BookPageContent() {
               </div>
             )}
 
-            {/* STEP 1: Date & Time (standard only) or Guest Details (simplified) */}
-            {currentStep === 1 && !isSimplified && (
+            {/* STEP 1: Service Selection */}
+            {currentStep === 1 && (
+              <div>
+                <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Select a Service</h2>
+                <p className="mb-6" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                  Choose the experience that best fits your event.
+                </p>
+
+                {servicesLoading ? (
+                  <div className="text-center py-8" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    Loading services...
+                  </div>
+                ) : services.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    No services available for this chef. Please select a different chef or continue without selecting a service.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                    {services.map((service) => {
+                      const isSelected = formData.serviceId === service.id
+                      return (
+                        <button
+                          key={service.id}
+                          onClick={() => setFormData({ ...formData, serviceId: service.id })}
+                          className="p-4 rounded border text-left transition-all duration-150 relative"
+                          style={{
+                            borderColor: isSelected ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
+                            borderWidth: isSelected ? '2px' : '1px',
+                            backgroundColor: isSelected ? 'rgba(201, 168, 76, 0.05)' : 'transparent',
+                          }}
+                        >
+                          {/* Service info */}
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <p className="font-semibold text-base" style={{ fontFamily: 'var(--font-serif)' }}>{service.title}</p>
+                              {service.cuisine_type && (
+                                <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                                  {service.cuisine_type}
+                                </p>
+                              )}
+                            </div>
+                            {service.price_per_person && (
+                              <div className="text-right flex-shrink-0 ml-4">
+                                <p className="font-semibold">${service.price_per_person}</p>
+                                <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>/ person</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {service.description && (
+                            <p className="text-sm mt-2" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {service.description.length > 100
+                                ? service.description.substring(0, 100) + '...'
+                                : service.description}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-4 mt-3 text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            {service.max_guests && (
+                              <span>Up to {service.max_guests} guests</span>
+                            )}
+                            {service.duration_hours && (
+                              <span>{service.duration_hours}h experience</span>
+                            )}
+                          </div>
+
+                          {/* Selected indicator */}
+                          {isSelected && (
+                            <div
+                              className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                            >
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <div className="mt-8 flex gap-4">
+                  <button onClick={() => setCurrentStep(0)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
+                  <button
+                    onClick={() => setCurrentStep(isSimplified ? 2 : 2)}
+                    className="px-6 py-3 rounded font-medium text-white transition-colors"
+                    style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                  >
+                    {isSimplified ? 'Continue to Guest Details' : 'Continue'}
+                  </button>
+                  {!isSimplified && (
+                    <span className="ml-4 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      Step {currentStep + 1} of {steps.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Skip service option */}
+                <p className="mt-4 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                  No specific service in mind?{' '}
+                  <button
+                    onClick={() => setCurrentStep(isSimplified ? 2 : 2)}
+                    className="underline hover:opacity-80"
+                    style={{ color: 'var(--color-mdc-accent)' }}
+                  >
+                    Continue without selecting a service
+                  </button>
+                </p>
+              </div>
+            )}
+
+            {/* STEP 2 (standard): Date & Time */}
+            {(currentStep === 2 && !isSimplified) && (
               <div>
                 <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Choose Date & Time</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -543,8 +814,8 @@ export function BookPageContent() {
               </div>
             )}
 
-            {/* STEP 1 (simplified) / STEP 2 (standard): Guest Details */}
-            {((!isSimplified && currentStep === 2) || (isSimplified && currentStep === 1)) && (
+            {/* STEP 2 (simplified) / STEP 3 (standard): Guest Details */}
+            {((!isSimplified && currentStep === 3) || (isSimplified && currentStep === 2)) && (
               <div>
                 <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Your Details</h2>
                 <div className="space-y-4">
@@ -586,16 +857,82 @@ export function BookPageContent() {
                     <textarea
                       value={formData.specialRequests}
                       onChange={(e) => setFormData({ ...formData, specialRequests: e.target.value })}
-                      className="w-full min-h-[100px] px-4 py-3 rounded border bg-white resize-none"
+                      className="w-full min-h-[80px] px-4 py-3 rounded border bg-white resize-none"
                       style={{ borderColor: 'var(--color-mdc-border)' }}
-                      placeholder="Dietary restrictions, allergies, celebration notes..."
+                      placeholder="Celebration notes, seating preferences, etc..."
                     />
+                  </div>
+
+                  {/* Dietary Preferences */}
+                  <div>
+                    <label className="text-sm font-medium block mb-2">Dietary Preferences (optional)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'nut-free', 'halal-kosher'].map((diet) => (
+                        <label
+                          key={diet}
+                          className="flex items-center gap-2 px-3 py-2 rounded border cursor-pointer transition-colors text-sm"
+                          style={{
+                            borderColor: formData.dietary_preferences.includes(diet) ? 'var(--color-mdc-accent)' : 'var(--color-mdc-border)',
+                            backgroundColor: formData.dietary_preferences.includes(diet) ? 'rgba(201, 168, 76, 0.08)' : 'transparent',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.dietary_preferences.includes(diet)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({ ...formData, dietary_preferences: [...formData.dietary_preferences, diet] })
+                              } else {
+                                setFormData({ ...formData, dietary_preferences: formData.dietary_preferences.filter(d => d !== diet) })
+                              }
+                            }}
+                            className="w-4 h-4 rounded"
+                            style={{ accentColor: 'var(--color-mdc-accent)' }}
+                          />
+                          <span className="capitalize">{diet.replace('-', '/')}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Nut Allergy Confirmation */}
+                  <div
+                    className="p-4 rounded-lg border-2"
+                    style={{
+                      borderColor: formData.nut_allergy ? '#dc2626' : 'var(--color-mdc-border)',
+                      backgroundColor: formData.nut_allergy ? '#fef2f2' : 'transparent',
+                    }}
+                  >
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.nut_allergy}
+                        onChange={(e) => {
+                          setFormData({ ...formData, nut_allergy: e.target.checked })
+                          if (e.target.checked) {
+                            setShowNutAllergyWarning(true)
+                          } else {
+                            setShowNutAllergyWarning(false)
+                          }
+                        }}
+                        className="w-5 h-5 rounded mt-0.5"
+                        style={{ accentColor: '#dc2626' }}
+                      />
+                      <div>
+                        <p className="font-medium text-sm" style={{ color: '#b91c1c' }}>I have a severe nut allergy and require confirmation from the chef</p>
+                        {formData.nut_allergy && (
+                          <p className="mt-2 text-sm" style={{ color: '#7f1d1d' }}>
+                            ⚠️ The chef will be notified and must confirm availability before your booking is accepted.
+                          </p>
+                        )}
+                      </div>
+                    </label>
                   </div>
                 </div>
                 <div className="mt-8 flex gap-4">
-                  <button onClick={() => setCurrentStep(isSimplified ? 0 : 1)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
+                  <button onClick={() => setCurrentStep(isSimplified ? 1 : 2)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
                   <button
-                    onClick={() => setCurrentStep(isSimplified ? 2 : 3)}
+                    onClick={() => setCurrentStep(isSimplified ? 3 : 4)}
                     disabled={!formData.name || !formData.email || !formData.phone}
                     className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
                     style={{ backgroundColor: 'var(--color-mdc-accent)' }}
@@ -607,7 +944,7 @@ export function BookPageContent() {
             )}
 
             {/* Confirm step - shared with offset logic */}
-            {(isSimplified ? currentStep === 2 : currentStep === 3) && (
+            {(isSimplified ? currentStep === 3 : currentStep === 4) && (
               <div>
                 <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-serif)' }}>Confirm Your Booking</h2>
                 <div className="rounded-lg p-6" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
@@ -618,6 +955,12 @@ export function BookPageContent() {
                         {getChefName(formData.chefId)}
                       </span>
                     </div>
+                    {formData.serviceId && (
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--color-mdc-text-muted)' }}>Service</span>
+                        <span className="font-medium">{getServiceName(formData.serviceId)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span style={{ color: 'var(--color-mdc-text-muted)' }}>Date</span>
                       <span className="font-medium">{formData.date}</span>
@@ -640,6 +983,27 @@ export function BookPageContent() {
                         <p className="mt-1 text-sm">{formData.specialRequests}</p>
                       </div>
                     )}
+                    {(formData.dietary_preferences.length > 0 || formData.nut_allergy) && (
+                      <div className="border-t pt-4" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                        <span style={{ color: 'var(--color-mdc-text-muted)' }}>Dietary</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {formData.nut_allergy && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: '#fef2f2', color: '#b91c1c' }}>
+                              ⚠️ Nut Allergy
+                            </span>
+                          )}
+                          {formData.dietary_preferences.map((diet) => (
+                            <span
+                              key={diet}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: '#dcfce7', color: '#15803d' }}
+                            >
+                              {diet.charAt(0).toUpperCase() + diet.slice(1).replace('-', '/')}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <p className="mt-6 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
@@ -647,7 +1011,7 @@ export function BookPageContent() {
                   No payment is required at this stage.
                 </p>
                 <div className="mt-8 flex gap-4">
-                  <button onClick={() => setCurrentStep(isSimplified ? 1 : 2)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
+                  <button onClick={() => setCurrentStep(isSimplified ? 2 : 3)} className="px-6 py-3 rounded font-medium transition-colors border" style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}>Back</button>
                   <button
                     onClick={handleSubmit}
                     disabled={submitState === 'loading'}
@@ -707,6 +1071,15 @@ export function BookPageContent() {
                       </div>
                     </div>
 
+                    {/* Note when chef has no online availability set up yet */}
+                    {inquiryHadSlot === false && (
+                      <div className="mt-4 p-4 rounded-lg border text-sm" style={{ borderColor: 'var(--color-mdc-border)', backgroundColor: 'rgba(201, 168, 76, 0.04)' }}>
+                        <p style={{ color: 'var(--color-mdc-text-muted)' }}>
+                          <span style={{ color: 'var(--color-mdc-accent)' }}>💡</span> This chef hasn't set up their online calendar yet. They'll confirm your date directly by email — no need to worry if you don't see an instant confirmation.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Booking Summary Card */}
                     <div className="mt-4 p-4 rounded-lg border" style={{ borderColor: 'var(--color-mdc-border)' }}>
                       <h4 className="font-medium mb-3" style={{ color: 'var(--color-mdc-text-muted)' }}>Booking Summary</h4>
@@ -715,6 +1088,12 @@ export function BookPageContent() {
                           <p style={{ color: 'var(--color-mdc-text-muted)' }}>Chef</p>
                           <p className="font-medium">{getChefName(formData.chefId)}</p>
                         </div>
+                        {formData.serviceId && (
+                          <div>
+                            <p style={{ color: 'var(--color-mdc-text-muted)' }}>Service</p>
+                            <p className="font-medium">{getServiceName(formData.serviceId)}</p>
+                          </div>
+                        )}
                         <div>
                           <p style={{ color: 'var(--color-mdc-text-muted)' }}>Date</p>
                           <p className="font-medium">{formData.date}</p>
@@ -779,7 +1158,7 @@ export function BookPageContent() {
                     <p className="mt-2 text-sm" style={{ color: '#7f1d1d' }}>{submitError}</p>
                     {submitState === 'conflict' && (
                       <button
-                        onClick={() => { setSubmitState('idle'); setCurrentStep(isSimplified ? 0 : 1) }}
+                        onClick={() => { setSubmitState('idle'); setCurrentStep(isSimplified ? 0 : 2) }}
                         className="mt-3 text-sm underline"
                         style={{ color: '#dc2626' }}
                       >

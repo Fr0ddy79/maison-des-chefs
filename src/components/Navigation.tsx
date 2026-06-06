@@ -20,6 +20,9 @@ export function Navigation() {
           <Link href="/#experiences" className="text-sm transition-colors hover:opacity-80" style={{ color: 'var(--color-mdc-text-muted)' }}>
             Experiences
           </Link>
+          <Link href="/signup?role=chef" className="text-sm transition-colors hover:opacity-80" style={{ color: 'var(--color-mdc-accent)' }}>
+            List Your Services
+          </Link>
         </div>
 
         <div className="flex items-center gap-4">

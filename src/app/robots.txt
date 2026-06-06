@@ -1,0 +1,11 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# Block admin paths
+Disallow: /admin/
+Disallow: /api/
+Disallow: /dashboard/
+
+# Allow search engines to crawl public pages
+Sitemap: https://maisondeschefs.com/sitemap.xml

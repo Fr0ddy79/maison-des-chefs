@@ -13,6 +13,30 @@ const CTA_TEXT: Record<Variant, { primary: string; secondary: string }> = {
   exclusive_dining: { primary: 'Exclusive Dining Experiences — Reserve Now', secondary: 'Are You a Chef? Apply' },
 }
 
+const TRUST_BADGES: Record<Variant, { badges: string[] }> = {
+  find_your_chef: {
+    badges: [
+      '✓ No payment required today',
+      '✓ Background-verified chefs',
+      '✓ Free cancellation up to 48h',
+    ],
+  },
+  book_private_chef: {
+    badges: [
+      '✓ No payment required today',
+      '✓ Limited availability — book now',
+      '✓ Free cancellation up to 48h',
+    ],
+  },
+  exclusive_dining: {
+    badges: [
+      '✓ No payment required today',
+      '✓ Curated, verified private chefs',
+      '✓ Free cancellation up to 48h',
+    ],
+  },
+}
+
 function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null
   const cookies = document.cookie.split(';')
@@ -96,6 +120,15 @@ export function HeroCTA() {
           {text.secondary}
         </Link>
       </div>
+
+      {/* Trust micro-copy strip — variant-matched objection handling at decision point */}
+      {ready && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+          {TRUST_BADGES[variant].badges.map((badge, i) => (
+            <span key={i}>{badge}</span>
+          ))}
+        </div>
+      )}
 
       {showDebug && ready && (
         <div className="mt-4 text-xs p-2 bg-gray-100 rounded">

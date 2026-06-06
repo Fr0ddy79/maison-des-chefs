@@ -16,6 +16,9 @@ export async function POST(request: NextRequest) {
       guest_count,
       inquiry_time,
       inquiry_time_end,
+      lead_id,
+      dietary_preferences,
+      nut_allergy,
     } = body
 
     // Validate required fields
@@ -81,6 +84,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if chef has an availability slot on this date
+    // NOTE: If no slots are configured at all (MAI-2376), we allow the inquiry to proceed
+    // rather than blocking the entire flow. The chef can still respond manually.
     const { data: availabilitySlot } = await supabase
       .from('availability')
       .select('id, start_time, end_time')
@@ -89,14 +94,33 @@ export async function POST(request: NextRequest) {
       .eq('is_booked', false)
       .single()
 
+
+    const hasAvailabilitySlotsConfigured = availabilitySlot !== null
+
+    // Only block if a slot was explicitly checked and found unavailable (i.e. booked)
+    // If no slots exist at all, allow the inquiry to proceed — chef has not set up availability yet
     if (!availabilitySlot) {
-      return NextResponse.json(
-        {
-          error: `Chef is not available on ${inquiry_date}. Please select a different date or time.`,
-          conflictType: 'NO_AVAILABILITY_SLOT',
-        },
-        { status: 409 }
-      )
+      // Check if ANY slots exist for this chef at all — if none, allow inquiry
+      const { data: anySlot } = await supabase
+        .from('availability')
+        .select('id')
+        .eq('chef_id', chef_id)
+        .limit(1)
+        .single()
+
+      if (!anySlot) {
+        // Chef has no availability slots configured — allow inquiry anyway
+        // Frontend will show a note: "Chef will confirm availability"
+      } else {
+        // Chef has slots but none available on this specific date — it's genuinely booked
+        return NextResponse.json(
+          {
+            error: `Chef is not available on ${inquiry_date}. Please select a different date or time.`,
+            conflictType: 'NO_AVAILABILITY_SLOT',
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // b) Check if date is blocked
@@ -196,6 +220,9 @@ export async function POST(request: NextRequest) {
         inquiry_date,
         guest_count: guest_count || null,
         inquiry_time: inquiry_time || null,
+        lead_id: lead_id || null,
+        dietary_preferences: Array.isArray(dietary_preferences) ? dietary_preferences : [],
+        nut_allergy: nut_allergy === true,
         status: 'pending',
       })
       .select()
@@ -246,6 +273,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         message: 'Inquiry submitted successfully',
+        has_availability_slot: hasAvailabilitySlotsConfigured,
         inquiry: {
           id: newInquiry.id,
           chef_id: newInquiry.chef_id,
@@ -255,6 +283,8 @@ export async function POST(request: NextRequest) {
           guest_count: newInquiry.guest_count,
           inquiry_time: newInquiry.inquiry_time,
           status: newInquiry.status,
+          dietary_preferences: newInquiry.dietary_preferences || [],
+          nut_allergy: newInquiry.nut_allergy || false,
         },
       },
       { status: 201 }

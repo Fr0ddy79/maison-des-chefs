@@ -141,6 +141,11 @@ export interface Database {
           quote_message: string | null
           quote_valid_until: string | null
           quote_status: 'pending' | 'accepted' | 'declined' | 'expired' | null
+          dietary_restrictions: string | null
+          allergies: string | null
+          allergy_severity: string | null
+          food_preferences: string | null
+          special_occasion: string | null
         }
         Insert: {
           id?: string
@@ -159,6 +164,11 @@ export interface Database {
           quote_message?: string | null
           quote_valid_until?: string | null
           quote_status?: 'pending' | 'accepted' | 'declined' | 'expired' | null
+          dietary_restrictions?: string | null
+          allergies?: string | null
+          allergy_severity?: string | null
+          food_preferences?: string | null
+          special_occasion?: string | null
         }
         Update: {
           id?: string
@@ -177,6 +187,11 @@ export interface Database {
           quote_message?: string | null
           quote_valid_until?: string | null
           quote_status?: 'pending' | 'accepted' | 'declined' | 'expired' | null
+          dietary_restrictions?: string | null
+          allergies?: string | null
+          allergy_severity?: string | null
+          food_preferences?: string | null
+          special_occasion?: string | null
         }
       }
       reviews: {
@@ -271,6 +286,7 @@ export interface Database {
           inquiry_time: string | null
           status: 'pending' | 'contacted' | 'converted' | 'cancelled'
           created_at: string
+          lead_id: string | null
         }
         Insert: {
           id?: string
@@ -284,6 +300,7 @@ export interface Database {
           inquiry_time?: string | null
           status?: 'pending' | 'contacted' | 'converted' | 'cancelled'
           created_at?: string
+          lead_id?: string | null
         }
         Update: {
           id?: string
@@ -297,6 +314,27 @@ export interface Database {
           inquiry_time?: string | null
           status?: 'pending' | 'contacted' | 'converted' | 'cancelled'
           created_at?: string
+          lead_id?: string | null
+        }
+      }
+      leads: {
+        Row: {
+          id: string
+          email: string
+          source: 'booking_form' | 'waitlist' | 'contact' | 'other'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          source?: 'booking_form' | 'waitlist' | 'contact' | 'other'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          source?: 'booking_form' | 'waitlist' | 'contact' | 'other'
+          created_at?: string
         }
       }
     }
@@ -309,3 +347,4 @@ export type Service = Database['public']['Tables']['services']['Row']
 export type Booking = Database['public']['Tables']['bookings']['Row']
 export type Review = Database['public']['Tables']['reviews']['Row']
 export type ChefApplication = Database['public']['Tables']['chef_applications']['Row']
+export type Lead = Database['public']['Tables']['leads']['Row']
