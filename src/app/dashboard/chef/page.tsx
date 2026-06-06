@@ -412,7 +412,7 @@ export default function ChefDashboard() {
     setLoadingInquiries(true)
     const { data } = await supabase
       .from('inquiries')
-      .select(`id, email, message, inquiry_date, status, created_at, service_id, services:service_id (title)`)
+      .select(`id, email, message, inquiry_date, inquiry_time, status, created_at, service_id, guest_count, services:service_id (title)`)
       .eq('chef_id', authUser.id)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
@@ -1169,6 +1169,18 @@ export default function ChefDashboard() {
                         {new Date(selectedInquiry.inquiry_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                       </p>
                     </div>
+                    {selectedInquiry.guest_count && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Party Size</p>
+                        <p className="font-medium">{selectedInquiry.guest_count} guests</p>
+                      </div>
+                    )}
+                    {selectedInquiry.inquiry_time && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Requested Time</p>
+                        <p className="font-medium">{formatTime(selectedInquiry.inquiry_time)}</p>
+                      </div>
+                    )}
                     {selectedInquiry.services && (
                       <div>
                         <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>Service</p>
