@@ -377,6 +377,117 @@ interface SendQuoteNotificationParams {
   quoteValidUntil: string
 }
 
+interface SendQuoteExpiredEmailParams {
+  bookingId: string
+  chefId: string
+  dinerId: string
+  quoteAmount: number
+  quoteMessage: string | null
+  quoteValidUntil: string
+}
+
+export async function sendQuoteExpiredEmail({
+  bookingId,
+  chefId,
+  dinerId,
+  quoteAmount,
+  quoteMessage,
+  quoteValidUntil,
+}: SendQuoteExpiredEmailParams): Promise<{ success: boolean; error?: string }> {
+  // Graceful degradation: if no API key, skip email but don't fail the operation
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Email] RESEND_API_KEY not set - skipping quote expired email')
+    return { success: true }
+  }
+
+  try {
+    const supabase = await createClient()
+
+    // Fetch booking, chef, and diner details
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('booking_date, start_time, guest_count')
+      .eq('id', bookingId)
+      .single()
+
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', chefId)
+      .single()
+
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+    const dinerEmail = dinerProfile?.email
+    const dinerName = dinerProfile?.full_name || 'Dear guest'
+
+    if (!dinerEmail) {
+      return { success: false, error: 'Diner email not found' }
+    }
+
+    const formattedDate = booking
+      ? new Date(booking.booking_date).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : 'your date'
+
+    const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/booking/${bookingId}`
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">Quote Expired — What Happened?</h1>
+        <p>Dear ${dinerName},</p>
+        <p>We wanted to let you know that the quote from <strong>${chefName}</strong> for your dining experience on <strong>${formattedDate}</strong> has expired.</p>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <p><strong>Chef:</strong> ${chefName}</p>
+          <p><strong>Date:</strong> ${formattedDate}</p>
+          ${booking?.guest_count ? `<p><strong>Party Size:</strong> ${booking.guest_count} guests</p>` : ''}
+          <p><strong>Quote Amount:</strong> $${quoteAmount}</p>
+          ${quoteMessage ? `<p><strong>Chef's Message:</strong></p><p style="font-style: italic; color: #555;">"${quoteMessage}"</p>` : ''}
+        </div>
+        
+        <p><strong>Don't worry!</strong> If you're still interested in this experience, you can:</p>
+        <ul style="line-height: 1.8;">
+          <li>Reply to this email and we'll help connect you with ${chefName}</li>
+          <li>Browse other chefs who may be available on your preferred date</li>
+        </ul>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/chefs/${chefId}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 8px;">Contact ${chefName}</a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: dinerEmail,
+      subject: `Quote Expired — ${chefName} on ${formattedDate}`,
+      html,
+    })
+
+    if (error) {
+      console.error('[Email] Failed to send quote expired email:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending quote expired email:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}
+
 export async function sendQuoteNotificationEmail({
   bookingId,
   chefId,

@@ -161,6 +161,34 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
       }
 
+      // ========================================
+      // LINK BOOKING TO DINER (post-creation)
+      // ========================================
+      // If diner_id is null but we have an inquiry email, try to match it to an authenticated diner
+      // This handles the case where an authenticated diner submitted an inquiry but diner_id wasn't captured
+      if (!newBooking.diner_id && inquiry.email) {
+        const { data: dinerProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', inquiry.email.toLowerCase().trim())
+          .eq('role', 'diner')
+          .single()
+
+        if (dinerProfile) {
+          const { error: updateDinerError } = await supabase
+            .from('bookings')
+            .update({ diner_id: dinerProfile.id })
+            .eq('id', newBooking.id)
+
+          if (updateDinerError) {
+            console.error('Error linking booking to diner:', updateDinerError)
+            // Non-fatal: booking is still created, just not linked
+          } else {
+            console.log(`[Booking] Linked booking ${newBooking.id} to diner ${dinerProfile.id} via email match`)
+          }
+        }
+      }
+
       // Update inquiry status
       const { error: updateError } = await supabase
         .from('inquiries')
