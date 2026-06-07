@@ -143,6 +143,7 @@ export async function PATCH(request: NextRequest) {
         .insert({
           chef_id: authUser.id,
           service_id: inquiry.service_id,
+          inquiry_id: inquiryId,
           diner_id: inquiry.diner_id,
           booking_date: inquiry.inquiry_date,
           start_time: inquiry.inquiry_time || slot.start_time,

@@ -126,6 +126,7 @@ export interface Database {
       bookings: {
         Row: {
           id: string
+          inquiry_id: string | null
           service_id: string | null
           chef_id: string
           diner_id: string
@@ -149,6 +150,7 @@ export interface Database {
         }
         Insert: {
           id?: string
+          inquiry_id?: string | null
           service_id?: string | null
           chef_id: string
           diner_id: string
@@ -172,6 +174,7 @@ export interface Database {
         }
         Update: {
           id?: string
+          inquiry_id?: string | null
           service_id?: string | null
           chef_id?: string
           diner_id?: string
