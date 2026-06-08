@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sendWaitlistConfirmationEmail } from '@/lib/email/sendWaitlistConfirmationEmail'
 
 export async function POST(request: NextRequest) {
   try {
@@ -55,6 +56,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Send confirmation email (non-blocking — failures logged but don't fail subscription)
+    sendWaitlistConfirmationEmail({ email: data.email }).catch((err) => {
+      console.error('[Subscribe] Failed to send confirmation email:', err)
+    })
 
     return NextResponse.json(
       { message: 'success', email: data.email },
