@@ -1,4 +1,4 @@
-import { resend, FROM_EMAIL } from './resend'
+import { sendEmailOrLog, getResendApiKeyStatus } from './resend'
 
 interface SendChefRejectionEmailParams {
   applicantEmail: string
@@ -9,11 +9,7 @@ export async function sendChefRejectionEmail({
   applicantEmail,
   applicantName,
 }: SendChefRejectionEmailParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the operation
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping chef rejection email')
-    return { success: true }
-  }
+  const keyStatus = getResendApiKeyStatus()
 
   try {
     const html = `
@@ -36,16 +32,15 @@ export async function sendChefRejectionEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: applicantEmail,
       subject: 'Update on Your Maison des Chefs Application',
       html,
+      fallbackLog: `[Email] Chef rejection email to ${applicantEmail}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send chef rejection email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }

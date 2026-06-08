@@ -1,4 +1,4 @@
-import { resend, FROM_EMAIL } from './resend'
+import { sendEmailOrLog } from './resend'
 
 interface ChefApplicationData {
   name: string
@@ -21,12 +21,6 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'info@maison-des-chefs.com'
 export async function sendChefApplicationNotificationEmail({
   application,
 }: SendChefApplicationNotificationParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the application
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping chef application notification email')
-    return { success: true }
-  }
-
   try {
     const cuisineList = application.cuisine_types.join(', ')
     const formattedDate = new Date().toLocaleDateString('en-US', {
@@ -36,8 +30,7 @@ export async function sendChefApplicationNotificationEmail({
       day: 'numeric',
     })
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: ADMIN_EMAIL,
       subject: `New Chef Application — ${application.name}`,
       html: `
@@ -62,11 +55,11 @@ export async function sendChefApplicationNotificationEmail({
           <p style="color: #666; font-size: 14px; margin-top: 30px;">— Maison des Chefs Platform</p>
         </div>
       `,
+      fallbackLog: `[Email] Chef application notification for ${application.name} (${application.email})`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send chef application notification email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }

@@ -39,6 +39,11 @@ export default function BookingStatusPage() {
   const [reviewSubmitted, setReviewSubmitted] = useState<Record<string, boolean>>({})
   const [hoverRating, setHoverRating] = useState(0)
   const [quickReviewLoading, setQuickReviewLoading] = useState<string | null>(null)
+  const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null)
+  const [cancelResult, setCancelResult] = useState<{ bookingId: string; message: string } | null>(null)
+  const [showModifyModal, setShowModifyModal] = useState<string | null>(null)
+  const [modifyDate, setModifyDate] = useState('')
+  const [modifyTime, setModifyTime] = useState('')
   const router = useRouter()
   const supabase = createClient()
 
@@ -181,6 +186,86 @@ export default function BookingStatusPage() {
     setQuickReviewLoading(null)
   }
 
+  async function handleCancelBooking(bookingId: string) {
+    setProcessingBooking(bookingId)
+    setShowCancelConfirm(null)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      })
+      const data = await res.json()
+      
+      if (res.ok) {
+        setCancelResult({ bookingId, message: 'Booking cancelled. The time slot has been released.' })
+        // Refresh bookings
+        const { data: updated } = await supabase
+          .from('bookings')
+          .select(`
+            id, chef_id, booking_date, start_time, guest_count, total_price, status,
+            quote_amount, quote_message, quote_valid_until, quote_status,
+            special_requests,
+            services:service_id (title),
+            chef_profiles:chef_id (display_name, location, cuisines)
+          `)
+          .eq('diner_id', user.id)
+          .order('created_at', { ascending: false })
+        setBookings((updated as any[]) || [])
+      } else {
+        alert(data.error || 'Failed to cancel booking. Please try again.')
+      }
+    } catch (err) {
+      alert('Something went wrong. Please try again.')
+    }
+    setProcessingBooking(null)
+  }
+
+  async function handleModifyBooking(bookingId: string) {
+    if (!modifyDate || !modifyTime) {
+      alert('Please select both a date and time.')
+      return
+    }
+    setProcessingBooking(bookingId)
+    setShowModifyModal(null)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'modify',
+          new_booking_date: modifyDate,
+          new_start_time: modifyTime,
+        }),
+      })
+      const data = await res.json()
+      
+      if (res.ok) {
+        setCancelResult({ bookingId, message: `Booking modified to ${formatDate(modifyDate)} at ${formatTime(modifyTime)}.` })
+        setModifyDate('')
+        setModifyTime('')
+        // Refresh bookings
+        const { data: updated } = await supabase
+          .from('bookings')
+          .select(`
+            id, chef_id, booking_date, start_time, guest_count, total_price, status,
+            quote_amount, quote_message, quote_valid_until, quote_status,
+            special_requests,
+            services:service_id (title),
+            chef_profiles:chef_id (display_name, location, cuisines)
+          `)
+          .eq('diner_id', user.id)
+          .order('created_at', { ascending: false })
+        setBookings((updated as any[]) || [])
+      } else {
+        alert(data.error || 'Failed to modify booking. Please try again.')
+      }
+    } catch (err) {
+      alert('Something went wrong. Please try again.')
+    }
+    setProcessingBooking(null)
+  }
+
   function formatDate(dateStr: string) {
     const date = new Date(dateStr + 'T00:00:00')
     return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
@@ -302,6 +387,32 @@ export default function BookingStatusPage() {
                 </div>
                 <button 
                   onClick={() => setActionResult(null)}
+                  className="text-sm opacity-60 hover:opacity-100"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Cancel Result Banner */}
+          {cancelResult && (
+            <div 
+              className="mt-6 rounded-lg p-4 border bg-amber-50"
+              style={{ 
+                borderColor: '#d97706',
+                backgroundColor: 'rgba(217, 119, 6, 0.05)'
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">✕</span>
+                <div className="flex-1">
+                  <p className="font-medium" style={{ color: '#b45309' }}>
+                    {cancelResult.message}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setCancelResult(null)}
                   className="text-sm opacity-60 hover:opacity-100"
                 >
                   ✕
@@ -525,6 +636,124 @@ export default function BookingStatusPage() {
                         <span className="text-sm" style={{ color: '#15803d' }}>
                           ✓ Reviewed
                         </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Cancel/Modify Section - Show for pending or confirmed bookings (not cancelled) */}
+                  {(booking.status === 'pending' || booking.status === 'confirmed') && (
+                    <div className="p-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>Need to make changes?</p>
+                        <div className="flex items-center gap-3">
+                          {/* Modify Button - Only for pending bookings */}
+                          {booking.status === 'pending' && (
+                            <button
+                              onClick={() => {
+                                setShowModifyModal(booking.id)
+                                setModifyDate(booking.booking_date)
+                                setModifyTime(booking.start_time)
+                              }}
+                              className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors border"
+                              style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              Modify Date/Time
+                            </button>
+                          )}
+                          {/* Cancel Button */}
+                          <button
+                            onClick={() => setShowCancelConfirm(booking.id)}
+                            disabled={processingBooking === booking.id}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors border"
+                            style={{ borderColor: 'var(--color-mdc-error)', color: 'var(--color-mdc-error)' }}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            Cancel Booking
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Cancel Confirmation Dialog */}
+                      {showCancelConfirm === booking.id && (
+                        <div className="mt-4 p-4 rounded-lg border" style={{ backgroundColor: 'rgba(181, 74, 74, 0.05)', borderColor: 'rgba(181, 74, 74, 0.2)' }}>
+                          <p className="font-medium text-sm" style={{ color: 'var(--color-mdc-error)' }}>
+                            Are you sure you want to cancel this booking? This action cannot be undone.
+                          </p>
+                          <div className="mt-3 flex gap-3">
+                            <button
+                              onClick={() => handleCancelBooking(booking.id)}
+                              disabled={processingBooking === booking.id}
+                              className="px-4 py-2 rounded text-sm font-medium text-white transition-colors disabled:opacity-50"
+                              style={{ backgroundColor: 'var(--color-mdc-error)' }}
+                            >
+                              {processingBooking === booking.id ? 'Cancelling...' : 'Yes, Cancel Booking'}
+                            </button>
+                            <button
+                              onClick={() => setShowCancelConfirm(null)}
+                              className="px-4 py-2 rounded text-sm font-medium transition-colors border"
+                              style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+                            >
+                              Keep Booking
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Modify Date/Time Modal */}
+                      {showModifyModal === booking.id && (
+                        <div className="mt-4 p-4 rounded-lg border" style={{ backgroundColor: 'rgba(59, 130, 246, 0.05)', borderColor: 'rgba(59, 130, 246, 0.2)' }}>
+                          <p className="font-medium text-sm mb-3" style={{ color: '#2563eb' }}>
+                            Select new date and time for your booking:
+                          </p>
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <label className="block text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>New Date</label>
+                              <input
+                                type="date"
+                                value={modifyDate}
+                                onChange={(e) => setModifyDate(e.target.value)}
+                                className="w-full px-3 py-2 rounded border"
+                                style={{ borderColor: 'var(--color-mdc-border)' }}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>New Time</label>
+                              <input
+                                type="time"
+                                value={modifyTime}
+                                onChange={(e) => setModifyTime(e.target.value)}
+                                className="w-full px-3 py-2 rounded border"
+                                style={{ borderColor: 'var(--color-mdc-border)' }}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleModifyBooking(booking.id)}
+                              disabled={processingBooking === booking.id}
+                              className="px-4 py-2 rounded text-sm font-medium text-white transition-colors disabled:opacity-50"
+                              style={{ backgroundColor: '#2563eb' }}
+                            >
+                              {processingBooking === booking.id ? 'Updating...' : 'Update Booking'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowModifyModal(null)
+                                setModifyDate('')
+                                setModifyTime('')
+                              }}
+                              className="px-4 py-2 rounded text-sm font-medium transition-colors border"
+                              style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}

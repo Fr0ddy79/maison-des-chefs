@@ -1,4 +1,4 @@
-import { resend, FROM_EMAIL } from './resend'
+import { sendEmailOrLog } from './resend'
 
 interface SendChefApprovalEmailParams {
   applicantEmail: string
@@ -11,12 +11,6 @@ export async function sendChefApprovalEmail({
   applicantName,
   chefId,
 }: SendChefApprovalEmailParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the operation
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping chef approval email')
-    return { success: true }
-  }
-
   try {
     const profileSetupUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/chef`
 
@@ -46,16 +40,15 @@ export async function sendChefApprovalEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: applicantEmail,
       subject: "You've Been Accepted — Welcome to Maison des Chefs!",
       html,
+      fallbackLog: `[Email] Chef approval email to ${applicantEmail} for chef ${chefId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send chef approval email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }

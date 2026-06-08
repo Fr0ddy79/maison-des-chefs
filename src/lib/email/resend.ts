@@ -5,6 +5,88 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 const FROM_EMAIL = 'Maison des Chefs <noreply@maison-des-chefs.com>'
 
+const PLACEHOLDER_KEYS = ['your_resend_api_key_here', 're_placeholder', 'placeholder']
+
+export function isPlaceholderApiKey(key: string | undefined): boolean {
+  if (!key) return true
+  const lower = key.toLowerCase()
+  return PLACEHOLDER_KEYS.some(p => lower === p || lower.includes(p))
+}
+
+export interface ApiKeyStatus {
+  isConfigured: boolean
+  isPlaceholder: boolean
+  status: 'valid' | 'placeholder' | 'missing'
+  message: string
+}
+
+export function getResendApiKeyStatus(): ApiKeyStatus {
+  const key = process.env.RESEND_API_KEY
+  
+  if (!key) {
+    return {
+      isConfigured: false,
+      isPlaceholder: false,
+      status: 'missing',
+      message: 'RESEND_API_KEY is not set'
+    }
+  }
+  
+  if (isPlaceholderApiKey(key)) {
+    return {
+      isConfigured: true,
+      isPlaceholder: true,
+      status: 'placeholder',
+      message: 'RESEND_API_KEY is set to a placeholder value — emails will be logged to console'
+    }
+  }
+  
+  return {
+    isConfigured: true,
+    isPlaceholder: false,
+    status: 'valid',
+    message: 'RESEND_API_KEY is properly configured'
+  }
+}
+
+// Helper to send email or log to console based on key status
+export async function sendEmailOrLog(opts: {
+  to: string
+  subject: string
+  html: string
+  fallbackLog: string
+}): Promise<{ success: boolean; error?: string; logged?: boolean }> {
+  const keyStatus = getResendApiKeyStatus()
+  
+  if (!keyStatus.isConfigured) {
+    console.warn('[Email] RESEND_API_KEY not set — skipping email')
+    return { success: true }
+  }
+  
+  if (keyStatus.isPlaceholder) {
+    console.log('[Email] ===== EMAIL FALLBACK (placeholder key) =====')
+    console.log(`[Email] To: ${opts.to}`)
+    console.log(`[Email] Subject: ${opts.subject}`)
+    console.log(`[Email] Body:\n${opts.html}`)
+    console.log('[Email] ===========================================')
+    return { success: true, logged: true }
+  }
+  
+  const { error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+  })
+  
+  if (error) {
+    console.error('[Email] Failed to send:', error)
+    return { success: false, error: error.message }
+  }
+  
+  return { success: true }
+}
+
 export { resend, FROM_EMAIL }
 
 interface SendInquiryConfirmationParams {
@@ -42,12 +124,6 @@ export async function sendBookingConfirmedEmail({
   serviceTitle,
   quoteAmount,
 }: SendBookingConfirmedEmailParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the booking
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping booking confirmed email')
-    return { success: true }
-  }
-
   try {
     // Fetch chef's display name
     const supabase = await createClient()
@@ -91,16 +167,15 @@ export async function sendBookingConfirmedEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: dinerEmail,
       subject: `Booking Confirmed — ${chefName}`,
       html,
+      fallbackLog: `[Email] Booking confirmed email to ${dinerEmail} for booking ${bookingId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send booking confirmed email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
@@ -116,12 +191,6 @@ export async function sendQuoteConfirmationEmail({
   dinerId,
   action,
 }: SendQuoteConfirmationParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the operation
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping quote confirmation email')
-    return { success: true }
-  }
-
   try {
     const supabase = await createClient()
 
@@ -190,16 +259,15 @@ export async function sendQuoteConfirmationEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: dinerEmail,
       subject,
       html,
+      fallbackLog: `[Email] Quote ${action} email to ${dinerEmail} for booking ${bookingId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send quote confirmation email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
@@ -228,12 +296,6 @@ export async function sendNewInquiryNotificationToChef({
   inquiryId,
   serviceType,
 }: SendNewInquiryNotificationParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the inquiry
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping new inquiry notification to chef')
-    return { success: true }
-  }
-
   try {
     // Fetch chef's display name and email
     const supabase = await createClient()
@@ -266,8 +328,7 @@ export async function sendNewInquiryNotificationToChef({
     const messagePreview = message.length > 100 ? message.substring(0, 100) + '...' : message
     const serviceText = serviceType ? `<p><strong>Service:</strong> ${serviceType}</p>` : ''
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: chefAccount.email,
       subject: `New Booking Inquiry — ${formattedDate}`,
       html: `
@@ -289,11 +350,11 @@ export async function sendNewInquiryNotificationToChef({
           <p style="color: #666; font-size: 14px; margin-top: 30px;">— Maison des Chefs</p>
         </div>
       `,
+      fallbackLog: `[Email] New inquiry notification to chef ${chefAccount.email} for inquiry ${inquiryId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send new inquiry notification to chef:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
@@ -309,12 +370,6 @@ export async function sendInquiryConfirmationEmail({
   inquiryDate,
   inquiryId,
 }: SendInquiryConfirmationParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the inquiry
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping confirmation email')
-    return { success: true }
-  }
-
   try {
     // Fetch chef's display name
     const supabase = await createClient()
@@ -333,8 +388,7 @@ export async function sendInquiryConfirmationEmail({
       day: 'numeric',
     })
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: dinerEmail,
       subject: `Booking Inquiry Received — ${chefName}`,
       html: `
@@ -355,11 +409,11 @@ export async function sendInquiryConfirmationEmail({
           <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
         </div>
       `,
+      fallbackLog: `[Email] Inquiry confirmation to ${dinerEmail} for inquiry ${inquiryId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send confirmation email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
@@ -394,12 +448,6 @@ export async function sendQuoteExpiredEmail({
   quoteMessage,
   quoteValidUntil,
 }: SendQuoteExpiredEmailParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the operation
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping quote expired email')
-    return { success: true }
-  }
-
   try {
     const supabase = await createClient()
 
@@ -469,16 +517,15 @@ export async function sendQuoteExpiredEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: dinerEmail,
       subject: `Quote Expired — ${chefName} on ${formattedDate}`,
       html,
+      fallbackLog: `[Email] Quote expired email to ${dinerEmail} for booking ${bookingId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send quote expired email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
@@ -496,12 +543,6 @@ export async function sendQuoteNotificationEmail({
   quoteMessage,
   quoteValidUntil,
 }: SendQuoteNotificationParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the operation
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping quote notification email')
-    return { success: true }
-  }
-
   try {
     const supabase = await createClient()
 
@@ -575,16 +616,15 @@ export async function sendQuoteNotificationEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: dinerEmail,
       subject: `Quote from ${chefName} — Review Now`,
       html,
+      fallbackLog: `[Email] Quote notification to ${dinerEmail} for booking ${bookingId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send quote notification email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
@@ -611,12 +651,6 @@ export async function sendAbandonedBookingFollowUpEmail({
   serviceType,
   guestCount,
 }: SendAbandonedBookingFollowUpParams): Promise<{ success: boolean; error?: string }> {
-  // Graceful degradation: if no API key, skip email but don't fail the operation
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set - skipping abandoned booking follow-up email')
-    return { success: true }
-  }
-
   try {
     const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/book?chef_id=${chefId}`
     const guestText = guestCount ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}` : ''
@@ -645,21 +679,336 @@ export async function sendAbandonedBookingFollowUpEmail({
       </div>
     `
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const result = await sendEmailOrLog({
       to: email,
       subject: `Complete Your Booking — ${chefName}`,
       html,
+      fallbackLog: `[Email] Abandoned booking follow-up to ${email} for chef ${chefId}`,
     })
 
-    if (error) {
-      console.error('[Email] Failed to send abandoned booking follow-up email:', error)
-      return { success: false, error: error.message }
+    if (!result.success) {
+      return { success: false, error: result.error }
     }
 
     return { success: true }
   } catch (err) {
     console.error('[Email] Error sending abandoned booking follow-up email:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}
+
+interface SendBookingCancellationParams {
+  bookingId: string
+  chefId: string
+  dinerId: string
+  action: 'cancelled'
+}
+
+interface SendBookingReminderParams {
+  bookingId: string
+  chefId: string
+  dinerId: string
+  bookingDate: string
+  startTime: string | null
+  guestCount: number | null
+}
+
+// Send reminder email to diner 48h before confirmed booking
+export async function sendBookingReminderEmailToDiner({
+  bookingId,
+  chefId,
+  dinerId,
+  bookingDate,
+  startTime,
+  guestCount,
+}: SendBookingReminderParams): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch chef and diner details
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', chefId)
+      .single()
+
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+    const dinerEmail = dinerProfile?.email
+    const dinerName = dinerProfile?.full_name || 'Dear guest'
+
+    if (!dinerEmail) {
+      return { success: false, error: 'Diner email not found' }
+    }
+
+    const formattedDate = new Date(bookingDate).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const timeText = startTime ? `at ${startTime}` : ''
+    const guestText = guestCount ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}` : ''
+    const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/bookings`
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">Your Dining Experience is Coming Up!</h1>
+        <p>Dear ${dinerName},</p>
+        <p>This is a friendly reminder that your booking with <strong>${chefName}</strong> is in <strong>2 days</strong>.</p>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <p><strong>Chef:</strong> ${chefName}</p>
+          <p><strong>Date:</strong> ${formattedDate}</p>
+          ${timeText ? `<p><strong>Time:</strong> ${timeText}</p>` : ''}
+          ${guestText ? `<p><strong>Party Size:</strong> ${guestText}</p>` : ''}
+          <p><strong>Reference ID:</strong> ${bookingId}</p>
+        </div>
+        
+        <p>Make sure you're prepared! If you have any questions or need to make changes, please reply to this email.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${bookingUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">View Your Bookings</a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const result = await sendEmailOrLog({
+      to: dinerEmail,
+      subject: `Reminder: Your Booking with ${chefName} is in 2 Days`,
+      html,
+      fallbackLog: `[Email] Booking reminder to diner ${dinerEmail} for booking ${bookingId}`,
+    })
+
+    if (!result.success) {
+      return { success: false, error: result.error }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending booking reminder to diner:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}
+
+// Send reminder email to chef 48h before confirmed booking
+export async function sendBookingReminderEmailToChef({
+  bookingId,
+  chefId,
+  dinerId,
+  bookingDate,
+  startTime,
+  guestCount,
+}: SendBookingReminderParams): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch chef and diner details
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', chefId)
+      .single()
+
+    const { data: chefAccount } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', chefId)
+      .single()
+
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+    const chefEmail = chefAccount?.email
+    const dinerName = dinerProfile?.full_name || 'your guest'
+
+    if (!chefEmail) {
+      return { success: false, error: 'Chef email not found' }
+    }
+
+    const formattedDate = new Date(bookingDate).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const timeText = startTime ? `at ${startTime}` : ''
+    const guestText = guestCount ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}` : ''
+    const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/chef`
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">Upcoming Booking Reminder</h1>
+        <p>Hi <strong>${chefName}</strong>,</p>
+        <p>This is a friendly reminder that you have a booking in <strong>2 days</strong> with <strong>${dinerName}</strong>.</p>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <p><strong>Guest:</strong> ${dinerName}</p>
+          <p><strong>Date:</strong> ${formattedDate}</p>
+          ${timeText ? `<p><strong>Time:</strong> ${timeText}</p>` : ''}
+          ${guestText ? `<p><strong>Party Size:</strong> ${guestText}</p>` : ''}
+          <p><strong>Reference ID:</strong> ${bookingId}</p>
+        </div>
+        
+        <p>Please make sure you're prepared for this booking. If you need to make any changes, you can manage your bookings from your dashboard.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${dashboardUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">View Your Dashboard</a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const result = await sendEmailOrLog({
+      to: chefEmail,
+      subject: `Reminder: Booking with ${dinerName} in 2 Days`,
+      html,
+      fallbackLog: `[Email] Booking reminder to chef ${chefEmail} for booking ${bookingId}`,
+    })
+
+    if (!result.success) {
+      return { success: false, error: result.error }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending booking reminder to chef:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}
+
+// Send cancellation email to both diner and chef
+// action is always 'cancelled' for now
+export async function sendBookingCancellationEmail({
+  bookingId,
+  chefId,
+  dinerId,
+  action,
+}: SendBookingCancellationParams): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch booking, chef, and diner details
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('booking_date, start_time, guest_count, total_price, special_requests')
+      .eq('id', bookingId)
+      .single()
+
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', chefId)
+      .single()
+
+    const { data: chefAccount } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', chefId)
+      .single()
+
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+    const chefEmail = chefAccount?.email
+    const dinerEmail = dinerProfile?.email
+    const dinerName = dinerProfile?.full_name || 'Dear guest'
+
+    const formattedDate = booking
+      ? new Date(booking.booking_date).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : 'your date'
+
+    const timeText = booking?.start_time ? `at ${booking.start_time}` : ''
+    const guestText = booking?.guest_count ? `${booking.guest_count} ${booking.guest_count === 1 ? 'guest' : 'guests'}` : ''
+
+    // Send email to diner
+    if (dinerEmail) {
+      const dinerHtml = `
+        <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #1a1a1a;">Booking Cancelled</h1>
+          <p>Dear ${dinerName},</p>
+          <p>Your booking with <strong>${chefName}</strong> on <strong>${formattedDate}</strong> has been <strong>cancelled</strong>.</p>
+          
+          <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <p><strong>Chef:</strong> ${chefName}</p>
+            <p><strong>Date:</strong> ${formattedDate}</p>
+            ${timeText ? `<p><strong>Time:</strong> ${timeText}</p>` : ''}
+            ${guestText ? `<p><strong>Party Size:</strong> ${guestText}</p>` : ''}
+            ${booking?.total_price ? `<p><strong>Quote Amount:</strong> $${booking.total_price}</p>` : ''}
+            <p><strong>Reference ID:</strong> ${bookingId}</p>
+          </div>
+          
+          <p>If you need to rebook or have any questions, feel free to reply to this email or browse our chefs for other availability.</p>
+          
+          <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+        </div>
+      `
+
+      await sendEmailOrLog({
+        to: dinerEmail,
+        subject: `Booking Cancelled — ${chefName} on ${formattedDate}`,
+        html: dinerHtml,
+        fallbackLog: `[Email] Cancellation email to diner ${dinerEmail} for booking ${bookingId}`,
+      })
+    }
+
+    // Send email to chef
+    if (chefEmail) {
+      const chefHtml = `
+        <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #1a1a1a;">Booking Cancelled</h1>
+          <p>Hi <strong>${chefName}</strong>,</p>
+          <p>The booking with <strong>${dinerName}</strong> on <strong>${formattedDate}</strong> has been <strong>cancelled</strong> by the diner.</p>
+          
+          <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+            <p><strong>Guest:</strong> ${dinerName}</p>
+            <p><strong>Date:</strong> ${formattedDate}</p>
+            ${timeText ? `<p><strong>Time:</strong> ${timeText}</p>` : ''}
+            ${guestText ? `<p><strong>Party Size:</strong> ${guestText}</p>` : ''}
+            ${booking?.total_price ? `<p><strong>Quote Amount:</strong> $${booking.total_price}</p>` : ''}
+            <p><strong>Reference ID:</strong> ${bookingId}</p>
+          </div>
+          
+          <p>The time slot has been freed and is now available for other bookings.</p>
+          
+          <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+        </div>
+      `
+
+      await sendEmailOrLog({
+        to: chefEmail,
+        subject: `Booking Cancelled — ${dinerName} on ${formattedDate}`,
+        html: chefHtml,
+        fallbackLog: `[Email] Cancellation email to chef ${chefEmail} for booking ${bookingId}`,
+      })
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending cancellation email:', err)
     return { success: false, error: 'Unexpected error' }
   }
 }

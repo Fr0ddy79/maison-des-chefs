@@ -147,6 +147,7 @@ export interface Database {
           allergy_severity: string | null
           food_preferences: string | null
           special_occasion: string | null
+          reminder_sent: boolean
         }
         Insert: {
           id?: string
@@ -171,6 +172,7 @@ export interface Database {
           allergy_severity?: string | null
           food_preferences?: string | null
           special_occasion?: string | null
+          reminder_sent?: boolean
         }
         Update: {
           id?: string
