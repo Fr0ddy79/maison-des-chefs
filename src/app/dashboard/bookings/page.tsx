@@ -44,6 +44,12 @@ export default function BookingStatusPage() {
   const [showModifyModal, setShowModifyModal] = useState<string | null>(null)
   const [modifyDate, setModifyDate] = useState('')
   const [modifyTime, setModifyTime] = useState('')
+  const [showMessageModal, setShowMessageModal] = useState(false)
+  const [selectedThreadBooking, setSelectedThreadBooking] = useState<Booking | null>(null)
+  const [selectedThreadMessages, setSelectedThreadMessages] = useState<any[]>([])
+  const [messageReplyInput, setMessageReplyInput] = useState('')
+  const [loadingThreadMessages, setLoadingThreadMessages] = useState(false)
+  const [sendingReply, setSendingReply] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -97,6 +103,15 @@ export default function BookingStatusPage() {
     }
     checkUser()
   }, [])
+
+  // Poll for new messages every 30 seconds when modal is open
+  useEffect(() => {
+    if (!showMessageModal || !selectedThreadBooking) return
+    const interval = setInterval(() => {
+      refreshThreadMessages()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [showMessageModal, selectedThreadBooking])
 
   async function handleAcceptQuote(bookingId: string) {
     setProcessingBooking(bookingId)
@@ -264,6 +279,69 @@ export default function BookingStatusPage() {
       alert('Something went wrong. Please try again.')
     }
     setProcessingBooking(null)
+  }
+
+  async function openMessageModal(booking: Booking) {
+    setSelectedThreadBooking(booking)
+    setShowMessageModal(true)
+    setLoadingThreadMessages(true)
+    setMessageReplyInput('')
+    
+    try {
+      const res = await fetch(`/api/bookings/${booking.id}/messages`)
+      if (res.ok) {
+        setSelectedThreadMessages(await res.json())
+      }
+    } catch (e) {
+      setSelectedThreadMessages([])
+    }
+    setLoadingThreadMessages(false)
+  }
+
+  async function sendMessageReply(e: React.FormEvent) {
+    e.preventDefault()
+    if (!messageReplyInput.trim() || !selectedThreadBooking || sendingReply) return
+
+    setSendingReply(true)
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_id: selectedThreadBooking.id,
+          content: messageReplyInput.trim(),
+          sender_type: 'diner',
+        }),
+      })
+
+      if (res.ok) {
+        setMessageReplyInput('')
+        const threadRes = await fetch(`/api/bookings/${selectedThreadBooking.id}/messages`)
+        if (threadRes.ok) {
+          setSelectedThreadMessages(await threadRes.json())
+        }
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to send reply')
+      }
+    } catch (err) {
+      alert('Failed to send reply. Please try again.')
+    }
+    setSendingReply(false)
+  }
+
+  async function refreshThreadMessages() {
+    if (!selectedThreadBooking) return
+    setLoadingThreadMessages(true)
+    try {
+      const res = await fetch(`/api/bookings/${selectedThreadBooking.id}/messages`)
+      if (res.ok) {
+        setSelectedThreadMessages(await res.json())
+      }
+    } catch (e) {
+      // Ignore
+    }
+    setLoadingThreadMessages(false)
   }
 
   function formatDate(dateStr: string) {
@@ -606,17 +684,30 @@ export default function BookingStatusPage() {
 
                   {/* Book Again Button - Show for completed bookings */}
                   {(booking.status === 'completed' || booking.status === 'confirmed') && (
-                    <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: 'var(--color-mdc-border)' }}>
-                      <a
-                        href={`/book?chef_id=${booking.chef_id}&date=${encodeURIComponent(booking.booking_date)}&time=${encodeURIComponent(booking.start_time)}&guests=${booking.guest_count}`}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors"
-                        style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Book Again
-                      </a>
+                    <div className="p-4 border-t flex items-center justify-between gap-4 flex-wrap" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <a
+                          href={`/book?chef_id=${booking.chef_id}&date=${encodeURIComponent(booking.booking_date)}&time=${encodeURIComponent(booking.start_time)}&guests=${booking.guest_count}`}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors"
+                          style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Book Again
+                        </a>
+
+                        <button
+                          onClick={() => openMessageModal(booking)}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition-colors border"
+                          style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          Message Chef
+                        </button>
+                      </div>
 
                       {/* Leave a Review Button - Show only if no review exists */}
                       {booking.status === 'completed' && !reviewStatuses[booking.id] && (
@@ -779,6 +870,103 @@ export default function BookingStatusPage() {
           </div>
         </div>
       </div>
+
+      {/* Message Thread Modal */}
+      {showMessageModal && selectedThreadBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setShowMessageModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>
+                  {selectedThreadBooking.chef_profiles?.display_name || 'Chef'}
+                </h3>
+                <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                  {formatDate(selectedThreadBooking.booking_date)} at {formatTime(selectedThreadBooking.start_time)}
+                </p>
+              </div>
+              <button onClick={() => setShowMessageModal(false)} className="text-2xl" style={{ color: 'var(--color-mdc-text-muted)' }}>×</button>
+            </div>
+
+            {/* Messages */}
+            <div
+              className="flex-1 border rounded-lg p-4 mb-4 overflow-y-auto"
+              style={{ borderColor: 'var(--color-mdc-border)', minHeight: '240px' }}
+            >
+              {loadingThreadMessages ? (
+                <div className="flex items-center justify-center h-full">
+                  <p style={{ color: 'var(--color-mdc-text-muted)' }}>Loading...</p>
+                </div>
+              ) : selectedThreadMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <span className="text-3xl mb-2">💬</span>
+                  <p style={{ color: 'var(--color-mdc-text-muted)' }}>No messages yet. Start the conversation!</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {selectedThreadMessages.map((msg: any) => {
+                    const isDiner = msg.sender_type === 'diner'
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex ${isDiner ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className="max-w-[80%] rounded-lg px-4 py-2"
+                          style={{
+                            backgroundColor: isDiner ? 'rgba(201, 168, 76, 0.15)' : 'var(--color-mdc-bg)',
+                            border: isDiner ? 'none' : '1px solid var(--color-mdc-border)',
+                          }}
+                        >
+                          <p className="text-sm break-words">{msg.content}</p>
+                          <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            {isDiner ? 'You' : selectedThreadBooking.chef_profiles?.display_name || 'Chef'} · {new Date(msg.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={refreshThreadMessages}
+                disabled={loadingThreadMessages}
+                className="text-sm px-3 py-1.5 rounded transition-colors border"
+                style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+              >
+                {loadingThreadMessages ? 'Refreshing...' : 'Refresh'}
+              </button>
+              <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                Auto-refreshes every 30s when open
+              </p>
+            </div>
+
+            {/* Reply Input */}
+            <form onSubmit={sendMessageReply} className="flex gap-2">
+              <input
+                type="text"
+                value={messageReplyInput}
+                onChange={(e) => setMessageReplyInput(e.target.value)}
+                placeholder="Type a message..."
+                disabled={sendingReply}
+                className="flex-1 px-4 py-2 rounded-lg border text-sm"
+                style={{ borderColor: 'var(--color-mdc-border)' }}
+              />
+              <button
+                type="submit"
+                disabled={sendingReply || !messageReplyInput.trim()}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+              >
+                {sendingReply ? '...' : 'Send'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
