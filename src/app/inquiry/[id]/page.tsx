@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -20,6 +20,21 @@ interface InquiryDetail {
   chef_profiles: any
 }
 
+interface Booking {
+  id: string
+  chef_id: string
+  diner_id: string
+  inquiry_id: string | null
+}
+
+interface Message {
+  id: string
+  sender_type: 'chef' | 'diner'
+  sender_id: string
+  content: string
+  created_at: string
+}
+
 function formatTime(time: string) {
   if (!time) return ''
   const [hours, minutes] = time.split(':')
@@ -29,13 +44,103 @@ function formatTime(time: string) {
   return `${h12}:${minutes} ${ampm}`
 }
 
+function formatMessageTime(dateStr: string) {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  if (diffDays < 7) return `${diffDays}d ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export default function InquiryStatusPage() {
   const params = useParams()
   const id = params.id as string
   const [inquiry, setInquiry] = useState<InquiryDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [booking, setBooking] = useState<Booking | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loadingMessages, setLoadingMessages] = useState(false)
+  const [messageInput, setMessageInput] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
+
+  // Build inquiry token for diner auth (base64 email:booking_id)
+  function getInquiryToken(bookingId: string, email: string): string {
+    return Buffer.from(`${email}:${bookingId}`).toString('base64')
+  }
+
+  async function fetchBooking() {
+    if (!inquiry || inquiry.status !== 'confirmed') return
+
+    // Look up booking by inquiry_id
+    const { data } = await supabase
+      .from('bookings')
+      .select('id, chef_id, diner_id, inquiry_id')
+      .eq('inquiry_id', id)
+      .single()
+
+    if (data) {
+      setBooking(data)
+    }
+  }
+
+  async function fetchMessages() {
+    if (!booking) return
+
+    setLoadingMessages(true)
+    try {
+      const token = getInquiryToken(booking.id, inquiry?.email || '')
+      const res = await fetch(`/api/bookings/${booking.id}/messages`, {
+        headers: { 'x-inquiry-token': token },
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setMessages(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch messages:', err)
+    }
+    setLoadingMessages(false)
+  }
+
+  async function sendMessage(e: React.FormEvent) {
+    e.preventDefault()
+    if (!messageInput.trim() || !booking || sendingMessage) return
+
+    setSendingMessage(true)
+    try {
+      const token = getInquiryToken(booking.id, inquiry?.email || '')
+      const res = await fetch(`/api/bookings/${booking.id}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-inquiry-token': token,
+        },
+        body: JSON.stringify({ text: messageInput.trim() }),
+      })
+
+      if (res.ok) {
+        setMessageInput('')
+        await fetchMessages()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to send message')
+      }
+    } catch (err) {
+      alert('Failed to send message. Please try again.')
+    }
+    setSendingMessage(false)
+  }
 
   useEffect(() => {
     async function fetchInquiry() {
@@ -59,10 +164,39 @@ export default function InquiryStatusPage() {
 
       setInquiry(data as InquiryDetail)
       setLoading(false)
+
+      // Fetch booking if confirmed
+      if ((data as InquiryDetail).status === 'confirmed') {
+        const { data: bookingData } = await supabase
+          .from('bookings')
+          .select('id, chef_id, diner_id, inquiry_id')
+          .eq('inquiry_id', id)
+          .single()
+
+        if (bookingData) {
+          setBooking(bookingData as Booking)
+        }
+      }
     }
 
     fetchInquiry()
   }, [id])
+
+  // Poll for messages every 30 seconds when booking is available
+  useEffect(() => {
+    if (!booking) return
+
+    fetchMessages()
+    const interval = setInterval(fetchMessages, 30000)
+    return () => clearInterval(interval)
+  }, [booking])
+
+  // Scroll to bottom of messages when new ones arrive
+  useEffect(() => {
+    if (messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages])
 
   if (loading) {
     return (
@@ -206,19 +340,99 @@ export default function InquiryStatusPage() {
           </div>
         </div>
 
-        {/* Contact Chef */}
-        <div className="text-center">
-          <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
-            Questions about your booking?
-          </p>
-          <a
-            href={`mailto:?subject=Inquiry Status Check&body=Hi, I'm checking on my booking inquiry (ID: ${inquiry.id}). Please advise on the status.`}
-            className="inline-block w-full px-6 py-3 rounded font-medium text-sm transition-colors border"
-            style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
-          >
-            Contact Chef
-          </a>
-        </div>
+        {/* Message Thread - shown when booking is confirmed */}
+        {inquiry.status === 'confirmed' && booking && (
+          <div className="rounded-lg p-6 bg-white border shadow-sm mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg" style={{ fontFamily: 'var(--font-serif)' }}>Messages</h3>
+              <span className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                Chat directly with your chef
+              </span>
+            </div>
+
+            {/* Messages */}
+            <div
+              className="border rounded-lg p-4 mb-4"
+              style={{ borderColor: 'var(--color-mdc-border)', height: '320px', overflowY: 'auto' }}
+            >
+              {loadingMessages && messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <p style={{ color: 'var(--color-mdc-text-muted)' }}>Loading messages...</p>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <span className="text-3xl mb-2">💬</span>
+                  <p style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    No messages yet. Say hello to your chef!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((msg) => {
+                    const isChef = msg.sender_type === 'chef'
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex ${isChef ? 'justify-start' : 'justify-end'}`}
+                      >
+                        <div
+                          className="max-w-[80%] rounded-lg px-4 py-2"
+                          style={{
+                            backgroundColor: isChef ? 'var(--color-mdc-bg)' : 'rgba(201, 168, 76, 0.15)',
+                            border: isChef ? '1px solid var(--color-mdc-border)' : 'none',
+                          }}
+                        >
+                          <p className="text-sm break-words">{msg.content}</p>
+                          <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            {isChef ? 'Chef' : 'You'} · {formatMessageTime(msg.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </div>
+
+            {/* Message Input */}
+            <form onSubmit={sendMessage} className="flex gap-2">
+              <input
+                type="text"
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                placeholder="Type a message..."
+                disabled={sendingMessage}
+                className="flex-1 px-4 py-2 rounded-lg border text-sm"
+                style={{ borderColor: 'var(--color-mdc-border)' }}
+              />
+              <button
+                type="submit"
+                disabled={sendingMessage || !messageInput.trim()}
+                className="px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+              >
+                {sendingMessage ? '...' : 'Send'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Contact Chef - only show for non-confirmed inquiries */}
+        {inquiry.status !== 'confirmed' && (
+          <div className="text-center">
+            <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              Questions about your booking?
+            </p>
+            <a
+              href={`mailto:?subject=Inquiry Status Check&body=Hi, I'm checking on my booking inquiry (ID: ${inquiry.id}). Please advise on the status.`}
+              className="inline-block w-full px-6 py-3 rounded font-medium text-sm transition-colors border"
+              style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+            >
+              Contact Chef
+            </a>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="mt-12 text-center">

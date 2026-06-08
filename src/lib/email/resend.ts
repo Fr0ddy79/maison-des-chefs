@@ -593,3 +593,73 @@ export async function sendQuoteNotificationEmail({
     return { success: false, error: 'Unexpected error' }
   }
 }
+
+interface SendAbandonedBookingFollowUpParams {
+  abandonedBookingId: string
+  email: string
+  chefId: string
+  chefName: string
+  serviceType: string | null
+  guestCount: number | null
+}
+
+export async function sendAbandonedBookingFollowUpEmail({
+  abandonedBookingId,
+  email,
+  chefId,
+  chefName,
+  serviceType,
+  guestCount,
+}: SendAbandonedBookingFollowUpParams): Promise<{ success: boolean; error?: string }> {
+  // Graceful degradation: if no API key, skip email but don't fail the operation
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Email] RESEND_API_KEY not set - skipping abandoned booking follow-up email')
+    return { success: true }
+  }
+
+  try {
+    const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/book?chef_id=${chefId}`
+    const guestText = guestCount ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}` : ''
+    const serviceText = serviceType || 'dining experience'
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">Complete Your Booking</h1>
+        <p>Hi there,</p>
+        <p>We noticed you were interested in booking <strong>${chefName}</strong> but didn't complete your reservation.</p>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <p><strong>Chef:</strong> ${chefName}</p>
+          ${serviceType ? `<p><strong>Service:</strong> ${serviceType}</p>` : ''}
+          ${guestText ? `<p><strong>Party Size:</strong> ${guestText}</p>` : ''}
+        </div>
+        
+        <p>Your requested experience is still available! Complete your booking today and secure your date.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${bookingUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">Complete Your Booking</a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">If you have any questions, reply to this email and we'll be happy to help.</p>
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: email,
+      subject: `Complete Your Booking — ${chefName}`,
+      html,
+    })
+
+    if (error) {
+      console.error('[Email] Failed to send abandoned booking follow-up email:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending abandoned booking follow-up email:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}

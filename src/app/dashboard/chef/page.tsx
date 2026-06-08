@@ -86,6 +86,15 @@ export default function ChefDashboard() {
     bookings: any[]
   } | null>(null)
   const [loadingQuotePerformance, setLoadingQuotePerformance] = useState(false)
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+  const [messageThreads, setMessageThreads] = useState<Record<string, any[]>>({})
+  const [showMessageModal, setShowMessageModal] = useState(false)
+  const [selectedThreadBooking, setSelectedThreadBooking] = useState<any>(null)
+  const [selectedThreadMessages, setSelectedThreadMessages] = useState<any[]>([])
+  const [loadingThreadMessages, setLoadingThreadMessages] = useState(false)
+  const [messageReplyInput, setMessageReplyInput] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
+  const [loadingMessageThreads, setLoadingMessageThreads] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -271,6 +280,113 @@ export default function ChefDashboard() {
     router.push('/login')
   }
 
+  async function fetchMessageThreads() {
+    if (!user?.id) return
+    setLoadingMessageThreads(true)
+    
+    // Get confirmed/pending bookings for this chef
+    const { data: bookingsData } = await supabase
+      .from('bookings')
+      .select('id, diner_id, booking_date, start_time, status, profiles:diner_id(full_name)')
+      .eq('chef_id', user.id)
+      .in('status', ['confirmed', 'pending'])
+      .order('booking_date', { ascending: false })
+      .limit(10)
+
+    if (!bookingsData || bookingsData.length === 0) {
+      setLoadingMessageThreads(false)
+      return
+    }
+
+    // Fetch last message for each booking
+    const threads: Record<string, any[]> = {}
+    let unreadTotal = 0
+
+    for (const booking of bookingsData) {
+      try {
+        const res = await fetch(`/api/bookings/${booking.id}/messages`)
+        if (res.ok) {
+          const messages = await res.json()
+          threads[booking.id] = messages
+          
+          // Calculate unread: diner messages in last 24h that are newer than chef's last message
+          const dinerMessages = messages.filter((m: any) => m.sender_type === 'diner')
+          const chefMessages = messages.filter((m: any) => m.sender_type === 'chef')
+          const lastChefMsg = chefMessages[chefMessages.length - 1]
+          const recentDinerMsgs = dinerMessages.filter((m: any) => {
+            const msgAge = Date.now() - new Date(m.created_at).getTime()
+            return msgAge < 24 * 60 * 60 * 1000 // last 24 hours
+          })
+          // Count as unread if there's a recent diner msg after chef's last msg (or no chef msgs)
+          if (recentDinerMsgs.length > 0) {
+            const lastDinerMsg = recentDinerMsgs[recentDinerMsgs.length - 1]
+            if (!lastChefMsg || new Date(lastDinerMsg.created_at) > new Date(lastChefMsg.created_at)) {
+              unreadTotal += recentDinerMsgs.length
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore individual failures
+      }
+    }
+
+    setMessageThreads(threads)
+    setUnreadMessageCount(unreadTotal)
+    setLoadingMessageThreads(false)
+  }
+
+  async function openMessageModal(booking: any) {
+    setSelectedThreadBooking(booking)
+    setShowMessageModal(true)
+    setLoadingThreadMessages(true)
+    setMessageReplyInput('')
+    
+    try {
+      const res = await fetch(`/api/bookings/${booking.id}/messages`)
+      if (res.ok) {
+        setSelectedThreadMessages(await res.json())
+      }
+    } catch (e) {
+      setSelectedThreadMessages([])
+    }
+    setLoadingThreadMessages(false)
+  }
+
+  async function sendMessageReply(e: React.FormEvent) {
+    e.preventDefault()
+    if (!messageReplyInput.trim() || !selectedThreadBooking || sendingReply) return
+
+    setSendingReply(true)
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_id: selectedThreadBooking.id,
+          content: messageReplyInput.trim(),
+          sender_type: 'chef',
+        }),
+      })
+
+      if (res.ok) {
+        setMessageReplyInput('')
+        // Refresh thread
+        const threadRes = await fetch(`/api/bookings/${selectedThreadBooking.id}/messages`)
+        if (threadRes.ok) {
+          setSelectedThreadMessages(await threadRes.json())
+        }
+        // Refresh all threads
+        await fetchMessageThreads()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to send reply')
+      }
+    } catch (err) {
+      alert('Failed to send reply. Please try again.')
+    }
+    setSendingReply(false)
+  }
+
   function openQuoteModal(booking: any) {
     setSelectedQuoteBooking(booking)
     setQuoteAmount(booking.total_price?.toString() || '')
@@ -370,7 +486,15 @@ export default function ChefDashboard() {
     if (user?.id) {
       fetchAvailabilitySlots()
       fetchInquiries()
+      fetchMessageThreads()
     }
+  }, [user?.id])
+
+  // Poll for new messages every 30 seconds
+  useEffect(() => {
+    if (!user?.id) return
+    const interval = setInterval(fetchMessageThreads, 30000)
+    return () => clearInterval(interval)
   }, [user?.id])
 
   async function handleAddSlot(e: React.FormEvent) {
@@ -512,6 +636,20 @@ export default function ChefDashboard() {
             <span className="font-serif text-xl font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>Maison des Chefs</span>
           </Link>
           <div className="flex items-center gap-4">
+            {unreadMessageCount > 0 && (
+              <button
+                onClick={() => {}}
+                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                style={{ backgroundColor: 'rgba(201, 168, 76, 0.1)', color: 'var(--color-mdc-accent)' }}
+                title="Unread messages"
+              >
+                <span>💬</span>
+                <span>{unreadMessageCount}</span>
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-xs font-bold text-white" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
+                  {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                </span>
+              </button>
+            )}
             <span className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
               {user?.full_name || user?.email}
             </span>
@@ -1398,6 +1536,88 @@ export default function ChefDashboard() {
               </div>
             )}
 
+            {/* Message Thread Modal */}
+            {showMessageModal && selectedThreadBooking && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setShowMessageModal(false)}>
+                <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>
+                        {(selectedThreadBooking.profiles as any)?.full_name || 'Client'}
+                      </h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        {selectedThreadBooking.booking_date} at {selectedThreadBooking.start_time}
+                      </p>
+                    </div>
+                    <button onClick={() => setShowMessageModal(false)} className="text-2xl" style={{ color: 'var(--color-mdc-text-muted)' }}>×</button>
+                  </div>
+
+                  {/* Messages */}
+                  <div
+                    className="flex-1 border rounded-lg p-4 mb-4 overflow-y-auto"
+                    style={{ borderColor: 'var(--color-mdc-border)', minHeight: '240px' }}
+                  >
+                    {loadingThreadMessages ? (
+                      <div className="flex items-center justify-center h-full">
+                        <p style={{ color: 'var(--color-mdc-text-muted)' }}>Loading...</p>
+                      </div>
+                    ) : selectedThreadMessages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center">
+                        <span className="text-3xl mb-2">💬</span>
+                        <p style={{ color: 'var(--color-mdc-text-muted)' }}>No messages yet. Start the conversation!</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {selectedThreadMessages.map((msg: any) => {
+                          const isChef = msg.sender_type === 'chef'
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex ${isChef ? 'justify-start' : 'justify-end'}`}
+                            >
+                              <div
+                                className="max-w-[80%] rounded-lg px-4 py-2"
+                                style={{
+                                  backgroundColor: isChef ? 'var(--color-mdc-bg)' : 'rgba(201, 168, 76, 0.15)',
+                                  border: isChef ? '1px solid var(--color-mdc-border)' : 'none',
+                                }}
+                              >
+                                <p className="text-sm break-words">{msg.content}</p>
+                                <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                                  {isChef ? 'You' : (selectedThreadBooking.profiles as any)?.full_name || 'Diner'} · {new Date(msg.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reply Input */}
+                  <form onSubmit={sendMessageReply} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={messageReplyInput}
+                      onChange={(e) => setMessageReplyInput(e.target.value)}
+                      placeholder="Type a reply..."
+                      disabled={sendingReply}
+                      className="flex-1 px-4 py-2 rounded-lg border text-sm"
+                      style={{ borderColor: 'var(--color-mdc-border)' }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={sendingReply || !messageReplyInput.trim()}
+                      className="px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                    >
+                      {sendingReply ? '...' : 'Send'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
             {/* Sidebar */}
             <aside className="space-y-6">
               {/* Profile Card */}
@@ -1437,6 +1657,79 @@ export default function ChefDashboard() {
                     Account Settings
                   </a>
                 </div>
+              </div>
+
+              {/* Messages */}
+              <div className="rounded-lg p-6 bg-white border shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium">Messages</h3>
+                    {unreadMessageCount > 0 && (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold text-white" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
+                        {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {loadingMessageThreads ? (
+                  <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>Loading...</p>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.keys(messageThreads).length === 0 ? (
+                      <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>No conversations yet.</p>
+                    ) : (
+                      Object.entries(messageThreads)
+                        .sort(([, a], [, b]) => {
+                          const aTime = (a as any[]).length > 0 ? new Date((a as any[])[(a as any[]).length - 1].created_at).getTime() : 0
+                          const bTime = (b as any[]).length > 0 ? new Date((b as any[])[(b as any[]).length - 1].created_at).getTime() : 0
+                          return bTime - aTime
+                        })
+                        .slice(0, 5)
+                        .map(([bookingId, messages]) => {
+                          const msgs = messages as any[]
+                          if (msgs.length === 0) return null
+                          const lastMsg = msgs[msgs.length - 1]
+                          const booking = (upcomingBookings as any[]).find(b => b.id === bookingId) || { id: bookingId, booking_date: '', start_time: '', profiles: { full_name: 'Client' } }
+                          const dinerName = (booking.profiles as any)?.full_name || 'Client'
+                          const isUnread = (() => {
+                            const dinerMsgs = msgs.filter((m: any) => m.sender_type === 'diner')
+                            const chefMsgs = msgs.filter((m: any) => m.sender_type === 'chef')
+                            const lastChefMsg = chefMsgs[chefMsgs.length - 1]
+                            const recentDinerMsgs = dinerMsgs.filter((m: any) => {
+                              const msgAge = Date.now() - new Date(m.created_at).getTime()
+                              return msgAge < 24 * 60 * 60 * 1000
+                            })
+                            if (recentDinerMsgs.length > 0) {
+                              const lastDinerMsg = recentDinerMsgs[recentDinerMsgs.length - 1]
+                              return !lastChefMsg || new Date(lastDinerMsg.created_at) > new Date(lastChefMsg.created_at)
+                            }
+                            return false
+                          })()
+                          return (
+                            <button
+                              key={bookingId}
+                              onClick={() => {
+                                const bk = upcomingBookings.find(b => b.id === bookingId) || { id: bookingId, booking_date: '', start_time: '', profiles: { full_name: dinerName } }
+                                openMessageModal(bk)
+                              }}
+                              className="w-full text-left p-3 rounded-lg transition-colors hover:bg-gray-50"
+                              style={{ backgroundColor: isUnread ? 'rgba(201, 168, 76, 0.08)' : 'var(--color-mdc-bg)' }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium text-sm truncate">{dinerName}</p>
+                                {isUnread && (
+                                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--color-mdc-accent)' }} />
+                                )}
+                              </div>
+                              <p className="text-xs truncate mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                                {lastMsg.sender_type === 'chef' ? 'You: ' : ''}{lastMsg.content.slice(0, 40)}{lastMsg.content.length > 40 ? '...' : ''}
+                              </p>
+                            </button>
+                          )
+                        })
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Help */}

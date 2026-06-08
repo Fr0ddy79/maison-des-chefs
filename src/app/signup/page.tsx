@@ -173,8 +173,8 @@ function SignupForm() {
 
       <p className="mt-4 text-center text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
         By creating an account, you agree to our{' '}
-        <a href="#" className="underline">Terms of Service</a> and{' '}
-        <a href="#" className="underline">Privacy Policy</a>.
+        <Link href="/terms" className="underline">Terms of Service</Link> and{' '}
+        <Link href="/privacy" className="underline">Privacy Policy</Link>.
       </p>
     </div>
   )

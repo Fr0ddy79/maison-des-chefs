@@ -78,6 +78,12 @@ export default function LoginPage() {
               </p>
             )}
 
+            <p className="text-right">
+              <Link href="/forgot-password" className="text-sm hover:underline" style={{ color: 'var(--color-mdc-accent)' }}>
+                Forgot password?
+              </Link>
+            </p>
+
             <button
               type="submit"
               disabled={loading}

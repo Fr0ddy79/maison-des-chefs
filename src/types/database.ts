@@ -340,6 +340,38 @@ export interface Database {
           created_at?: string
         }
       }
+      abandoned_bookings: {
+        Row: {
+          id: string
+          email: string
+          chef_id: string
+          service_id: string | null
+          service_type: string | null
+          guest_count: number
+          created_at: string
+          contacted_at: string | null
+        }
+        Insert: {
+          id?: string
+          email: string
+          chef_id: string
+          service_id?: string | null
+          service_type?: string | null
+          guest_count?: number
+          created_at?: string
+          contacted_at?: string | null
+        }
+        Update: {
+          id?: string
+          email?: string
+          chef_id?: string
+          service_id?: string | null
+          service_type?: string | null
+          guest_count?: number
+          created_at?: string
+          contacted_at?: string | null
+        }
+      }
     }
   }
 }
@@ -351,3 +383,4 @@ export type Booking = Database['public']['Tables']['bookings']['Row']
 export type Review = Database['public']['Tables']['reviews']['Row']
 export type ChefApplication = Database['public']['Tables']['chef_applications']['Row']
 export type Lead = Database['public']['Tables']['leads']['Row']
+export type AbandonedBooking = Database['public']['Tables']['abandoned_bookings']['Row']
