@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { captureUTMFromURL } from '@/lib/utm'
 
 interface FormErrors {
   email?: string
@@ -14,6 +15,12 @@ export function WaitlistCapture() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [isAlreadySubscribed, setIsAlreadySubscribed] = useState(false)
+
+
+  // Capture UTM params on first visit (mount)
+  useEffect(() => {
+    captureUTMFromURL()
+  }, [])
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {}
@@ -40,6 +47,9 @@ export function WaitlistCapture() {
     setErrors({})
 
     try {
+      // Get stored UTM params to pass with subscription
+      const utmParams = captureUTMFromURL()
+
       const response = await fetch('/api/subscribe', {
         method: 'POST',
         headers: {
@@ -47,6 +57,7 @@ export function WaitlistCapture() {
         },
         body: JSON.stringify({
           email: email.trim(),
+          ...utmParams,
         }),
       })
 

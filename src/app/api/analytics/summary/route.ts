@@ -200,6 +200,69 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 8. Acquisition Channels (from lead_sources linked to inquiries and emails)
+    // Top UTM sources by inquiry count this month
+    const { data: leadSourcesWithInquiries } = await supabase
+      .from('lead_sources')
+      .select('utm_source, utm_medium, utm_campaign, id')
+      .not('utm_source', 'is', null)
+      .gte('created_at', startOfMonth.toISOString())
+
+    // Aggregate by utm_source
+    const sourceInquiryCounts: Record<string, number> = {}
+    const sourceWaitlistCounts: Record<string, number> = {}
+    if (leadSourcesWithInquiries) {
+      for (const row of leadSourcesWithInquiries) {
+        const src = row.utm_source || '(direct)'
+        sourceInquiryCounts[src] = (sourceInquiryCounts[src] || 0) + 1
+      }
+    }
+
+    // Get waitlist signups with lead_source_id this month
+    const { data: waitlistWithSource } = await supabase
+      .from('emails')
+      .select('lead_source_id, id')
+      .not('lead_source_id', 'is', null)
+      .gte('created_at', startOfMonth.toISOString())
+
+    if (waitlistWithSource) {
+      const leadSourceIds = waitlistWithSource.map((w: any) => w.lead_source_id).filter(Boolean)
+      if (leadSourceIds.length > 0) {
+        const { data: leadSourcesForWaitlist } = await supabase
+          .from('lead_sources')
+          .select('id, utm_source')
+          .in('id', leadSourceIds)
+
+        if (leadSourcesForWaitlist) {
+          for (const ls of leadSourcesForWaitlist) {
+            const src = ls.utm_source || '(direct)'
+            sourceWaitlistCounts[src] = (sourceWaitlistCounts[src] || 0) + 1
+          }
+        }
+      }
+    }
+
+    const topChannelsByInquiries = Object.entries(sourceInquiryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([source, count]) => ({ source, count }))
+
+    const topChannelsByWaitlist = Object.entries(sourceWaitlistCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([source, count]) => ({ source, count }))
+
+    // % of inquiries with tracked source
+    const { count: inquiriesWithSource } = await supabase
+      .from('inquiries')
+      .select('*', { count: 'exact', head: true })
+      .not('lead_source_id', 'is', null)
+      .gte('created_at', startOfMonth.toISOString())
+
+    const trackedSourceRate = (inquiriesThisMonth ?? 0) > 0
+      ? Math.round(((inquiriesWithSource ?? 0) / (inquiriesThisMonth ?? 0)) * 100 * 100) / 100
+      : 0
+
     return NextResponse.json({
       // Waitlist metrics
       waitlist_signups_this_month: waitlistSignupsThisMonth || 0,
@@ -231,6 +294,15 @@ export async function GET(request: NextRequest) {
 
       // Top chefs
       top_chefs: topChefsWithDetails,
+
+      // Acquisition channels
+      acquisition_channels: {
+        top_channels_by_inquiries: topChannelsByInquiries,
+        top_channels_by_waitlist: topChannelsByWaitlist,
+        tracked_source_rate: `${trackedSourceRate}%`,
+        inquiries_with_source: inquiriesWithSource || 0,
+        total_inquiries: inquiriesThisMonth || 0,
+      },
     })
   } catch (err) {
     console.error('[Analytics] Error fetching summary:', err)

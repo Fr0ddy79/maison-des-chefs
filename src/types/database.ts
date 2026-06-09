@@ -148,6 +148,9 @@ export interface Database {
           food_preferences: string | null
           special_occasion: string | null
           reminder_sent: boolean
+          payment_intent_id: string | null
+          payment_status: 'pending' | 'paid' | 'failed' | 'refunded' | null
+          checkout_session_id: string | null
         }
         Insert: {
           id?: string
@@ -173,6 +176,9 @@ export interface Database {
           food_preferences?: string | null
           special_occasion?: string | null
           reminder_sent?: boolean
+          payment_intent_id?: string | null
+          payment_status?: 'pending' | 'paid' | 'failed' | 'refunded' | null
+          checkout_session_id?: string | null
         }
         Update: {
           id?: string
@@ -197,6 +203,10 @@ export interface Database {
           allergy_severity?: string | null
           food_preferences?: string | null
           special_occasion?: string | null
+          reminder_sent?: boolean
+          payment_intent_id?: string | null
+          payment_status?: 'pending' | 'paid' | 'failed' | 'refunded' | null
+          checkout_session_id?: string | null
         }
       }
       reviews: {

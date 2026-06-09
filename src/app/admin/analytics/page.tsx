@@ -23,6 +23,13 @@ interface AnalyticsData {
   bookings_last_month: number
   weekly_trends: { week: string; page_views: number; waitlist_signups: number; inquiries: number }[]
   top_chefs: { chef_id: string; display_name: string | null; booking_count: number }[]
+  acquisition_channels: {
+    top_channels_by_inquiries: { source: string; count: number }[]
+    top_channels_by_waitlist: { source: string; count: number }[]
+    tracked_source_rate: string
+    inquiries_with_source: number
+    total_inquiries: number
+  }
 }
 
 export default function AnalyticsPage() {
@@ -249,6 +256,70 @@ export default function AnalyticsPage() {
                       </span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Acquisition Channels Card */}
+            {analytics.acquisition_channels && (
+              <div className="rounded-lg p-6 bg-white border shadow-sm">
+                <h2 className="text-lg font-semibold mb-4">Acquisition Channels</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="text-center p-4 rounded-lg bg-blue-50">
+                    <p className="text-3xl font-bold mb-1" style={{ color: '#2563eb' }}>
+                      {analytics.acquisition_channels.tracked_source_rate}
+                    </p>
+                    <p style={{ color: 'var(--color-mdc-text-muted)' }}>Inquiries with Tracked Source</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      {analytics.acquisition_channels.inquiries_with_source} of {analytics.acquisition_channels.total_inquiries}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Top Channels by Inquiries */}
+                  <div>
+                    <h3 className="font-medium mb-3" style={{ color: 'var(--color-mdc-text-muted)' }}>Top Channels by Inquiries</h3>
+                    {analytics.acquisition_channels.top_channels_by_inquiries.length > 0 ? (
+                      <div className="space-y-2">
+                        {analytics.acquisition_channels.top_channels_by_inquiries.map((channel, index) => (
+                          <div key={channel.source} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-bold" style={{ color: 'var(--color-mdc-text-muted)' }}>#{index + 1}</span>
+                              <span className="font-medium text-sm">{channel.source || '(direct)'}</span>
+                            </div>
+                            <span className="font-semibold" style={{ color: 'var(--color-mdc-accent)' }}>
+                              {channel.count} {channel.count === 1 ? 'inquiry' : 'inquiries'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>No UTM data captured yet. Add UTM parameters to URLs to start tracking acquisition channels.</p>
+                    )}
+                  </div>
+
+                  {/* Top Channels by Waitlist */}
+                  <div>
+                    <h3 className="font-medium mb-3" style={{ color: 'var(--color-mdc-text-muted)' }}>Top Channels by Waitlist Signups</h3>
+                    {analytics.acquisition_channels.top_channels_by_waitlist.length > 0 ? (
+                      <div className="space-y-2">
+                        {analytics.acquisition_channels.top_channels_by_waitlist.map((channel, index) => (
+                          <div key={channel.source} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-bold" style={{ color: 'var(--color-mdc-text-muted)' }}>#{index + 1}</span>
+                              <span className="font-medium text-sm">{channel.source || '(direct)'}</span>
+                            </div>
+                            <span className="font-semibold" style={{ color: 'var(--color-mdc-accent)' }}>
+                              {channel.count} {channel.count === 1 ? 'signup' : 'signups'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>No waitlist UTM data captured yet.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

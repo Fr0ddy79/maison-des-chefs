@@ -3,10 +3,23 @@ import { createClient } from '@/lib/supabase/server'
 
 // POST /api/leads - Create or get a lead by email
 // Used to capture guest emails early in the booking funnel
+// Also creates a lead_source record for UTM tracking when utm params are provided
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, source = 'booking_form', chef_id = null, service_id = null } = body
+    const {
+      email,
+      source = 'booking_form',
+      chef_id = null,
+      service_id = null,
+      utm_source = null,
+      utm_medium = null,
+      utm_campaign = null,
+      utm_content = null,
+      utm_term = null,
+      referrer = null,
+      landing_page = null,
+    } = body
 
     // Validate required fields
     if (!email || typeof email !== 'string') {
@@ -50,6 +63,30 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
+    // Helper to create a lead source record for first-touch attribution
+    async function createLeadSource(leadId: string | null): Promise<string | null> {
+      const hasUtmData = utm_source || utm_medium || utm_campaign || utm_content || utm_term || referrer || landing_page
+      if (!hasUtmData) return null
+
+      const leadSourceInsert: Record<string, unknown> = {}
+      if (leadId) leadSourceInsert.lead_id = leadId
+      if (utm_source) leadSourceInsert.utm_source = utm_source
+      if (utm_medium) leadSourceInsert.utm_medium = utm_medium
+      if (utm_campaign) leadSourceInsert.utm_campaign = utm_campaign
+      if (utm_content) leadSourceInsert.utm_content = utm_content
+      if (utm_term) leadSourceInsert.utm_term = utm_term
+      if (referrer) leadSourceInsert.referrer = referrer
+      if (landing_page) leadSourceInsert.landing_page = landing_page
+
+      const { data: leadSource } = await supabase
+        .from('lead_sources')
+        .insert(leadSourceInsert)
+        .select('id')
+        .single()
+
+      return leadSource?.id || null
+    }
+
     // Try to find existing lead by email
     const { data: existingLead } = await supabase
       .from('leads')
@@ -59,6 +96,7 @@ export async function POST(request: NextRequest) {
 
     if (existingLead) {
       // Lead already exists - return it (idempotent)
+      // Note: we don't backfill lead_source_id for existing leads (first-touch is immutable)
       return NextResponse.json(
         {
           message: 'Lead already exists',
@@ -75,19 +113,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new lead with optional chef/service preferences
-    // Note: chef_id and service_id columns may not exist in the leads table yet
-    // We store them as metadata for now; a future migration can promote them to proper columns
-    const leadInsert = {
+    const leadInsert: Record<string, unknown> = {
       email: email.toLowerCase().trim(),
       source,
     }
 
-    // Only include chef_id/service_id if they're valid strings
     if (chef_id && typeof chef_id === 'string') {
-      (leadInsert as any).chef_id = chef_id
+      leadInsert.chef_id = chef_id
     }
     if (service_id && typeof service_id === 'string') {
-      (leadInsert as any).service_id = service_id
+      leadInsert.service_id = service_id
     }
 
     const { data: newLead, error } = await supabase
@@ -99,7 +134,6 @@ export async function POST(request: NextRequest) {
     if (error) {
       // Handle unique constraint violation (race condition - lead created by another request)
       if (error.code === '23505') {
-        // Re-fetch the lead that was created
         const { data: retryLead } = await supabase
           .from('leads')
           .select('id, email, source, created_at')
@@ -130,6 +164,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Create lead source record for UTM tracking (first-touch attribution)
+    const leadSourceId = await createLeadSource(newLead.id)
+
     return NextResponse.json(
       {
         message: 'Lead created successfully',
@@ -139,6 +176,7 @@ export async function POST(request: NextRequest) {
           source: newLead.source,
           created_at: newLead.created_at,
         },
+        lead_source_id: leadSourceId,
         isNew: true,
       },
       { status: 201 }

@@ -20,6 +20,69 @@ interface ChefApplication {
   created_at: string
   reviewed_at: string | null
   reviewed_by: string | null
+  rejection_reason?: string | null
+}
+
+interface ConfirmationModalProps {
+  action: 'approve' | 'reject'
+  chefName: string
+  onConfirm: (rejectionReason?: string) => void
+  onCancel: () => void
+  processing: boolean
+}
+
+function ConfirmationModal({ action, chefName, onConfirm, onCancel, processing }: ConfirmationModalProps) {
+  const [rejectionReason, setRejectionReason] = useState('')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+        <h3 className="text-xl font-semibold mb-2" style={{ fontFamily: 'var(--font-serif)' }}>
+          {action === 'approve' ? 'Approve Application?' : 'Reject Application?'}
+        </h3>
+        <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
+          {action === 'approve'
+            ? `Are you sure you want to approve ${chefName}'s application? This will create a chef account and send them a welcome email.`
+            : `Are you sure you want to reject ${chefName}'s application? This will send them a rejection email.`}
+        </p>
+        {action === 'reject' && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Rejection Reason (optional)</label>
+            <textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Explain why the application was rejected..."
+              className="w-full px-3 py-2 rounded-lg border text-sm"
+              style={{ borderColor: 'var(--color-mdc-border)' }}
+              rows={3}
+            />
+          </div>
+        )}
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={processing}
+            className="flex-1 px-4 py-2 rounded-lg border text-sm font-medium transition-colors hover:opacity-80"
+            style={{ borderColor: 'var(--color-mdc-border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(rejectionReason)}
+            disabled={processing}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+              action === 'approve'
+                ? 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-red-600 text-white hover:bg-red-700'
+            }`}
+          >
+            {processing ? 'Processing...' : action === 'approve' ? '✓ Approve' : '✗ Reject'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ChefApplicationReviewPage() {
@@ -29,6 +92,8 @@ export default function ChefApplicationReviewPage() {
   const [user, setUser] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [showModal, setShowModal] = useState(false)
+  const [modalAction, setModalAction] = useState<'approve' | 'reject' | null>(null)
   const router = useRouter()
   const params = useParams()
   const supabase = createClient()
@@ -76,26 +141,32 @@ export default function ChefApplicationReviewPage() {
     setLoading(false)
   }
 
-  async function handleAction(action: 'approve' | 'reject') {
-    if (!application) return
+  function openModal(action: 'approve' | 'reject') {
+    setModalAction(action)
+    setShowModal(true)
+  }
+
+  async function confirmAction(rejectionReason?: string) {
+    if (!application || !modalAction) return
     setProcessing(true)
     setError(null)
     setSuccessMessage(null)
+    setShowModal(false)
 
     try {
       const res = await fetch(`/api/admin/chef-applications/${applicationId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action: modalAction, rejectionReason }),
       })
 
       const result = await res.json()
 
       if (!res.ok) {
-        setError(result.error || `Failed to ${action} application`)
+        setError(result.error || `Failed to ${modalAction} application`)
       } else {
         setSuccessMessage(
-          action === 'approve'
+          modalAction === 'approve'
             ? `Application approved! Chef account created for ${application.name}.`
             : `Application rejected. Rejection email sent to ${application.name}.`
         )
@@ -107,6 +178,12 @@ export default function ChefApplicationReviewPage() {
     }
 
     setProcessing(false)
+    setModalAction(null)
+  }
+
+  function cancelModal() {
+    setShowModal(false)
+    setModalAction(null)
   }
 
   function formatDate(dateString: string) {
@@ -268,14 +345,14 @@ export default function ChefApplicationReviewPage() {
         {application.status === 'pending' && (
           <div className="flex gap-4">
             <button
-              onClick={() => handleAction('approve')}
+              onClick={() => openModal('approve')}
               disabled={processing}
               className="flex-1 px-6 py-3 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {processing ? 'Processing...' : '✓ Approve Application'}
             </button>
             <button
-              onClick={() => handleAction('reject')}
+              onClick={() => openModal('reject')}
               disabled={processing}
               className="flex-1 px-6 py-3 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -293,6 +370,16 @@ export default function ChefApplicationReviewPage() {
             ← Back to all applications
           </Link>
         </div>
+
+        {showModal && modalAction && application && (
+          <ConfirmationModal
+            action={modalAction}
+            chefName={application.name}
+            onConfirm={confirmAction}
+            onCancel={cancelModal}
+            processing={processing}
+          />
+        )}
       </main>
     </div>
   )

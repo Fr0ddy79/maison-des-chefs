@@ -5,7 +5,7 @@ import { sendWaitlistConfirmationEmail } from '@/lib/email/sendWaitlistConfirmat
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email } = body
+    const { email, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, landing_page } = body
 
     // Validation
     if (!email || typeof email !== 'string') {
@@ -40,11 +40,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Insert the email
+    // Create lead source record for UTM tracking (first-touch attribution)
+    let leadSourceId: string | null = null
+    const hasUtmData = utm_source || utm_medium || utm_campaign || utm_content || utm_term || referrer || landing_page
+    if (hasUtmData) {
+      const leadSourceInsert: Record<string, unknown> = {}
+      if (utm_source) leadSourceInsert.utm_source = utm_source
+      if (utm_medium) leadSourceInsert.utm_medium = utm_medium
+      if (utm_campaign) leadSourceInsert.utm_campaign = utm_campaign
+      if (utm_content) leadSourceInsert.utm_content = utm_content
+      if (utm_term) leadSourceInsert.utm_term = utm_term
+      if (referrer) leadSourceInsert.referrer = referrer
+      if (landing_page) leadSourceInsert.landing_page = landing_page
+
+      const { data: leadSource } = await supabase
+        .from('lead_sources')
+        .insert(leadSourceInsert)
+        .select('id')
+        .single()
+
+      leadSourceId = leadSource?.id || null
+    }
+
+    // Insert the email with lead_source_id
     const { data, error } = await supabase
       .from('emails')
       .insert({
         email: email.toLowerCase().trim(),
+        ...(leadSourceId ? { lead_source_id: leadSourceId } : {}),
       })
       .select()
       .single()

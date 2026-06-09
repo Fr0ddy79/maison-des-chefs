@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
       inquiry_time,
       inquiry_time_end,
       lead_id,
+      lead_source_id,
       dietary_preferences,
       nut_allergy,
     } = body
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest) {
         guest_count: guest_count || null,
         inquiry_time: inquiry_time || null,
         lead_id: lead_id || null,
+        lead_source_id: lead_source_id || null,
         dietary_preferences: Array.isArray(dietary_preferences) ? dietary_preferences : [],
         nut_allergy: nut_allergy === true,
         status: 'pending',

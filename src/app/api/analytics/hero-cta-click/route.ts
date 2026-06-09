@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const validVariants = ['find_your_chef', 'book_private_chef', 'exclusive_dining']
+    const validVariants = ['find_your_chef', 'book_private_chef', 'exclusive_dining', 'weekend_booking']
     const validCTATypes = ['primary', 'secondary']
 
     if (!validVariants.includes(variant)) {

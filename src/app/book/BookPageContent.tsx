@@ -8,6 +8,7 @@ import { Footer } from '@/components/Footer'
 import { trackBookingFormViewed, trackBookingFormSubmitted, trackEmailCaptureStarted, trackEmailCaptureCompleted } from '@/lib/analytics'
 import { useABVariant } from '@/lib/useABVariant'
 import { createClient } from '@/lib/supabase/client'
+import { captureUTMFromURL, getStoredUTM } from '@/lib/utm'
 
 // Cookie helpers
 const GUEST_SESSION_COOKIE = 'mdc_guest_session'
@@ -86,6 +87,7 @@ export function BookPageContent() {
   const [servicesLoading, setServicesLoading] = useState(false)
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
   const [leadId, setLeadId] = useState<string | null>(null)
+  const [leadSourceId, setLeadSourceId] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [showEmailCapture, setShowEmailCapture] = useState(false)
   const [emailCaptureDone, setEmailCaptureDone] = useState(false)
@@ -100,6 +102,9 @@ export function BookPageContent() {
       const supabase = createClient()
       const { data: { user: authUser } } = await supabase.auth.getUser()
       setIsAuthenticated(!!authUser)
+
+      // Capture UTM params on first visit
+      captureUTMFromURL()
 
       const existingSession = getGuestSessionId()
       if (existingSession) {
@@ -120,6 +125,10 @@ export function BookPageContent() {
           if (storedLeadId) {
             setLeadId(storedLeadId)
             setEmailCaptureDone(true)
+          }
+          const storedLeadSourceId = localStorage.getItem(`guest_lead_source_${existingSession}`)
+          if (storedLeadSourceId) {
+            setLeadSourceId(storedLeadSourceId)
           }
         } catch {
           // Ignore localStorage errors
@@ -265,18 +274,33 @@ export function BookPageContent() {
   // Capture lead when email is provided after chef selection
   async function captureLead(email: string, chefId: string): Promise<string | null> {
     try {
+      // Get stored UTM params to pass with lead creation
+      const utmParams = getStoredUTM()
       const response = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email, 
+        body: JSON.stringify({
+          email,
           source: 'booking_form',
           chef_id: chefId,
           service_id: formData.serviceId || null,
+          ...utmParams,
         }),
       })
       if (response.ok) {
         const data = await response.json()
+        // Store lead_source_id for inquiry linking
+        if (data.lead_source_id) {
+          setLeadSourceId(data.lead_source_id)
+          const sessionId = getGuestSessionId()
+          if (sessionId) {
+            try {
+              localStorage.setItem(`guest_lead_source_${sessionId}`, data.lead_source_id)
+            } catch {
+              // Ignore localStorage errors
+            }
+          }
+        }
         return data.lead?.id || null
       }
     } catch {
@@ -337,6 +361,7 @@ export function BookPageContent() {
       guest_count: formData.guestCount,
       inquiry_time: formData.time, // HH:MM from time picker
       lead_id: leadId,
+      lead_source_id: leadSourceId,
       dietary_preferences: formData.dietary_preferences,
       nut_allergy: formData.nut_allergy,
     }

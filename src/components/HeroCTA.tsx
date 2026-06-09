@@ -5,12 +5,13 @@ import { useEffect, useState } from 'react'
 
 const COOKIE_NAME = 'ab_hero_cta_variant'
 
-type Variant = 'find_your_chef' | 'book_private_chef' | 'exclusive_dining'
+type Variant = 'find_your_chef' | 'book_private_chef' | 'exclusive_dining' | 'weekend_booking'
 
 const CTA_TEXT: Record<Variant, { primary: string; secondary: string }> = {
   find_your_chef: { primary: 'Book a Chef', secondary: 'Browse Chefs' },
   book_private_chef: { primary: 'Book a Chef — Limited Availability', secondary: 'Browse Chefs' },
   exclusive_dining: { primary: 'Book a Chef — Reserve Now', secondary: 'Browse Chefs' },
+  weekend_booking: { primary: 'Book for This Weekend', secondary: 'Browse Chefs' },
 }
 
 const TRUST_BADGES: Record<Variant, { badges: string[] }> = {
@@ -32,6 +33,13 @@ const TRUST_BADGES: Record<Variant, { badges: string[] }> = {
     badges: [
       '✓ No payment required today',
       '✓ Curated, verified private chefs',
+      '✓ Free cancellation up to 48h',
+    ],
+  },
+  weekend_booking: {
+    badges: [
+      '✓ Chefs available this weekend',
+      '✓ No payment required today',
       '✓ Free cancellation up to 48h',
     ],
   },
@@ -74,7 +82,7 @@ export function HeroCTA() {
     const urlParams = new URLSearchParams(window.location.search)
     const urlOverride = urlParams.get('hero_cta_variant') as Variant | null
 
-    if (urlOverride && (urlOverride === 'find_your_chef' || urlOverride === 'book_private_chef' || urlOverride === 'exclusive_dining')) {
+    if (urlOverride && (urlOverride === 'find_your_chef' || urlOverride === 'book_private_chef' || urlOverride === 'exclusive_dining' || urlOverride === 'weekend_booking')) {
       setVariant(urlOverride)
       setReady(true)
       return
@@ -82,12 +90,12 @@ export function HeroCTA() {
 
     // Check existing cookie
     const existing = getCookie(COOKIE_NAME)
-    if (existing === 'find_your_chef' || existing === 'book_private_chef' || existing === 'exclusive_dining') {
+    if (existing === 'find_your_chef' || existing === 'book_private_chef' || existing === 'exclusive_dining' || existing === 'weekend_booking') {
       setVariant(existing)
     } else {
-      // Assign randomly if no cookie (equal 1/3 probability for each variant)
+      // Assign randomly if no cookie (equal 1/4 probability for each variant)
       const rand = Math.random()
-      const assigned: Variant = rand < 1/3 ? 'find_your_chef' : rand < 2/3 ? 'book_private_chef' : 'exclusive_dining'
+      const assigned: Variant = rand < 0.25 ? 'find_your_chef' : rand < 0.5 ? 'book_private_chef' : rand < 0.75 ? 'exclusive_dining' : 'weekend_booking'
       setVariant(assigned)
       setCookie(COOKIE_NAME, assigned)
     }

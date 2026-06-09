@@ -31,7 +31,7 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { action } = body
+    const { action, rejectionReason } = body
 
     if (!action || !['approve', 'reject'].includes(action)) {
       return NextResponse.json(
@@ -266,6 +266,7 @@ export async function PATCH(
           status: 'rejected',
           reviewed_at: new Date().toISOString(),
           reviewed_by: user.id,
+          rejection_reason: rejectionReason || null,
         })
         .eq('id', id)
 
@@ -281,6 +282,7 @@ export async function PATCH(
       sendChefRejectionEmail({
         applicantEmail: application.email,
         applicantName: application.name,
+        rejectionReason: rejectionReason || undefined,
       }).catch(err => {
         console.error('[Email] Failed to send chef rejection email:', err)
       })
