@@ -33,9 +33,27 @@ export async function GET() {
     console.error('Error fetching waitlist count:', waitlistError)
   }
 
+  // Get average rating and total review count
+  const { data: reviewsData, error: reviewsError } = await supabase
+    .from('reviews')
+    .select('rating')
+
+  let avgRating = 0
+  let totalReviews = 0
+
+  if (reviewsError) {
+    console.error('Error fetching reviews:', reviewsError)
+  } else if (reviewsData && reviewsData.length > 0) {
+    totalReviews = reviewsData.length
+    const sum = reviewsData.reduce((acc, r) => acc + (r.rating || 0), 0)
+    avgRating = Math.round((sum / totalReviews) * 10) / 10
+  }
+
   return NextResponse.json({
     chefs_available: chefCount || 0,
     dinners_booked: bookingCount || 0,
     waitlist_count: waitlistCount || 0,
+    avg_platform_rating: avgRating,
+    total_reviews: totalReviews,
   })
 }

@@ -33,23 +33,7 @@ const experiences = [
   },
 ]
 
-const testimonials = [
-  {
-    quote: "Chef Laurent transformed our anniversary dinner into something truly magical. The attention to detail, the flavors, the presentation — absolutely unforgettable.",
-    author: "Isabelle & Marc D.",
-    location: "Westmount",
-  },
-  {
-    quote: "We've hosted multiple dinner parties through Maison des Chefs. Each time, our guests leave amazed. It's become our secret for impressive entertaining.",
-    author: "Jean-Pierre R.",
-    location: "Old Montreal",
-  },
-  {
-    quote: "As a chef, this platform lets me connect with clients who truly appreciate culinary artistry. The bookings are consistent, the clients are wonderful.",
-    author: "Sophie T.",
-    location: "Chef",
-  },
-]
+
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -132,6 +116,38 @@ async function getWeekendChefs() {
     }
   }
   return chefs.slice(0, 3)
+}
+
+async function getTestimonials() {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('reviews')
+    .select(`
+      id,
+      rating,
+      comment,
+      created_at,
+      profiles (
+        full_name
+      ),
+      chef_profiles (
+        display_name
+      )
+    `)
+    .not('comment', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(3)
+  
+  if (error) {
+    console.error('Error fetching testimonials:', error)
+    return []
+  }
+  
+  return (data || []).map((review) => ({
+    quote: review.comment,
+    author: (review.profiles as unknown as { full_name?: string }[])?.[0]?.full_name || 'Verified Diner',
+    location: (review.chef_profiles as unknown as { display_name?: string }[])?.[0]?.display_name ? `Chef ${(review.chef_profiles as unknown as { display_name?: string }[])[0].display_name}` : 'Verified Booking',
+  }))
 }
 
 export const metadata: Metadata = {
@@ -313,6 +329,7 @@ const aggregateRatingSchema = {
 export default async function HomePage() {
   const featuredChefs = await getFeaturedChefs()
   const weekendChefs = await getWeekendChefs()
+  const testimonials = await getTestimonials()
 
   return (
     <>
@@ -688,28 +705,30 @@ export default async function HomePage() {
       </section>
 
       {/* Testimonials */}
-      <section className="py-20 md:py-28" style={{ backgroundColor: 'var(--color-mdc-text)' }}>
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl text-white" style={{ fontFamily: 'var(--font-serif)' }}>What People Are Saying</h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial, index) => (
-              <div key={index} className="rounded-lg p-8 bg-white/5">
-                <svg className="w-8 h-8 mb-4" style={{ color: 'var(--color-mdc-accent)' }} fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
-                </svg>
-                <p className="leading-relaxed" style={{ color: '#d1d5db' }}>{testimonial.quote}</p>
-                <div className="mt-6">
-                  <p className="font-medium text-white">{testimonial.author}</p>
-                  <p className="text-sm" style={{ color: '#6b7280' }}>{testimonial.location}</p>
+      {testimonials.length > 0 && (
+        <section className="py-20 md:py-28" style={{ backgroundColor: 'var(--color-mdc-text)' }}>
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="text-center mb-16">
+              <h2 className="text-4xl md:text-5xl text-white" style={{ fontFamily: 'var(--font-serif)' }}>What People Are Saying</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {testimonials.map((testimonial, index) => (
+                <div key={index} className="rounded-lg p-8 bg-white/5">
+                  <svg className="w-8 h-8 mb-4" style={{ color: 'var(--color-mdc-accent)' }} fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
+                  </svg>
+                  <p className="leading-relaxed" style={{ color: '#d1d5db' }}>{testimonial.quote}</p>
+                  <div className="mt-6">
+                    <p className="font-medium text-white">{testimonial.author}</p>
+                    <p className="text-sm" style={{ color: '#6b7280' }}>{testimonial.location}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* CTA */}
       <section className="py-20 md:py-28" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
