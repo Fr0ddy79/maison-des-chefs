@@ -247,11 +247,55 @@ export default function ChefsPage() {
       <div className="flex-1 pb-24" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
         <div className="max-w-6xl mx-auto px-6 py-12">
           {/* Header */}
-          <div className="mb-10">
+          <div className="mb-8">
             <h1 className="text-4xl md:text-5xl" style={{ fontFamily: 'var(--font-serif)' }}>Our Chefs</h1>
             <p className="mt-3" style={{ color: 'var(--color-mdc-text-muted)' }}>
               Discover Montreal's finest private chefs for your next dining experience
             </p>
+          </div>
+
+          {/* CTA Banner - Above the Fold */}
+          <div className="mb-10 rounded-xl p-8 md:p-10 border shadow-sm" style={{ backgroundColor: 'var(--color-mdc-accent)', borderColor: 'var(--color-mdc-accent)' }}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="flex-1">
+                <h2 className="text-2xl md:text-3xl text-white" style={{ fontFamily: 'var(--font-serif)' }}>
+                  Ready for an Exclusive Dining Experience?
+                </h2>
+                <p className="mt-2 text-white/80 text-lg">
+                  Book a private chef for your next celebration, intimate dinner, or special occasion.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/70">
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    No payment required today
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Background-verified chefs
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Free cancellation up to 48h
+                  </span>
+                </div>
+              </div>
+              <div className="flex-shrink-0 flex flex-col sm:flex-row gap-3">
+                <Link
+                  href="/book"
+                  className="px-6 py-3 rounded font-medium text-center text-white transition-colors hover:opacity-90 shadow-md"
+                  style={{ backgroundColor: '#fff', color: 'var(--color-mdc-accent)' }}
+                >
+                  Book a Chef
+                </Link>
+                <Link
+                  href="/subscribe"
+                  className="px-6 py-3 rounded font-medium text-center transition-colors border text-white hover:bg-white/10"
+                  style={{ borderColor: 'rgba(255,255,255,0.5)' }}
+                >
+                  Join Waitlist
+                </Link>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-col lg:flex-row gap-10">
