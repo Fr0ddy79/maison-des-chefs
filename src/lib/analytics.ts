@@ -93,6 +93,17 @@ export async function trackBookingFormSubmitted(event: BookingFormSubmittedEvent
   }
 }
 
+interface EmailCaptureStartedEvent {
+  chef_id: string
+  form_variant: 'standard' | 'simplified'
+}
+
+interface EmailCaptureCompletedEvent {
+  chef_id: string
+  form_variant: 'standard' | 'simplified'
+  has_lead_id: boolean
+}
+
 interface ProfileCompletenessViewedEvent {
   chef_id: string
   completion_score: number
@@ -104,6 +115,51 @@ interface ProfileCompletenessCompletedEvent {
   completion_score: number
   variant: 'social_proof' | 'gamification' | 'urgency'
   days_to_complete: number | null
+}
+
+export async function trackEmailCaptureStarted(event: EmailCaptureStartedEvent): Promise<void> {
+  try {
+    const response = await fetch('/api/analytics/events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        event_type: 'email_capture_started',
+        chef_id: event.chef_id,
+        form_variant: event.form_variant,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[Analytics] Failed to track email_capture_started:', response.statusText)
+    }
+  } catch (error) {
+    console.error('[Analytics] Error tracking email_capture_started:', error)
+  }
+}
+
+export async function trackEmailCaptureCompleted(event: EmailCaptureCompletedEvent): Promise<void> {
+  try {
+    const response = await fetch('/api/analytics/events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        event_type: 'email_capture_completed',
+        chef_id: event.chef_id,
+        form_variant: event.form_variant,
+        has_lead_id: event.has_lead_id,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('[Analytics] Failed to track email_capture_completed:', response.statusText)
+    }
+  } catch (error) {
+    console.error('[Analytics] Error tracking email_capture_completed:', error)
+  }
 }
 
 export async function trackProfileCompletenessViewed(event: ProfileCompletenessViewedEvent): Promise<void> {

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
-import { trackBookingFormViewed, trackBookingFormSubmitted } from '@/lib/analytics'
+import { trackBookingFormViewed, trackBookingFormSubmitted, trackEmailCaptureStarted, trackEmailCaptureCompleted } from '@/lib/analytics'
 import { useABVariant } from '@/lib/useABVariant'
 import { createClient } from '@/lib/supabase/client'
 
@@ -87,6 +87,7 @@ export function BookPageContent() {
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
   const [leadId, setLeadId] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+  const [showEmailCapture, setShowEmailCapture] = useState(false)
   const [emailCaptureDone, setEmailCaptureDone] = useState(false)
   const [emailCaptureLoading, setEmailCaptureLoading] = useState(false)
   const [emailCaptureError, setEmailCaptureError] = useState<string | null>(null)
@@ -134,6 +135,18 @@ export function BookPageContent() {
   // Use A/B variant hook for traffic splitting
   const formVariant = useABVariant(urlVariant)
 
+  // Show email capture prompt after chef selection (for unauthenticated users)
+  useEffect(() => {
+    if (isAuthenticated === false && formData.chefId && !emailCaptureDone && !showEmailCapture) {
+      setShowEmailCapture(true)
+      // Track that email capture prompt was shown
+      trackEmailCaptureStarted({
+        chef_id: formData.chefId,
+        form_variant: formVariant,
+      })
+    }
+  }, [isAuthenticated, formData.chefId, emailCaptureDone, showEmailCapture, formVariant])
+
   // Determine which steps to show based on variant
   const steps = formVariant === 'simplified' ? SIMPLIFIED_STEPS : STANDARD_STEPS
 
@@ -141,11 +154,32 @@ export function BookPageContent() {
   useEffect(() => {
     async function fetchChefs() {
       const supabase = createClient()
-      const { data, error } = await supabase
+      const serviceType = searchParams.get('service_type')
+
+      let query = supabase
         .from('chef_profiles')
         .select('*')
         .eq('is_verified', true)
         .order('avg_rating', { ascending: false })
+
+      // Filter by service_type if provided (chefs who have at least one service of that type)
+      if (serviceType) {
+        // First get chefs who have services matching the service_type
+        const { data: matchingServices, error: servicesError } = await supabase
+          .from('services')
+          .select('chef_id')
+          .eq('service_type', serviceType)
+
+        if (servicesError) {
+          console.error('Error fetching services for filter:', servicesError)
+        } else if (matchingServices && matchingServices.length > 0) {
+          // Get distinct chef IDs
+          const chefIds = [...new Set(matchingServices.map(s => s.chef_id))]
+          query = query.in('id', chefIds)
+        }
+      }
+
+      const { data, error } = await query
 
       if (error) {
         console.error('Error fetching chefs:', error)
@@ -228,13 +262,18 @@ export function BookPageContent() {
     })
   }, [formVariant, searchParams, formData.chefId])
 
-  // Capture lead when email is provided early (for unauthenticated users)
-  async function captureLead(email: string): Promise<string | null> {
+  // Capture lead when email is provided after chef selection
+  async function captureLead(email: string, chefId: string): Promise<string | null> {
     try {
       const response = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, source: 'booking_form' }),
+        body: JSON.stringify({ 
+          email, 
+          source: 'booking_form',
+          chef_id: chefId,
+          service_id: formData.serviceId || null,
+        }),
       })
       if (response.ok) {
         const data = await response.json()
@@ -362,63 +401,89 @@ export function BookPageContent() {
             Form Variant: <span className="font-mono">{formVariant}</span>
           </div>
 
-          {/* Email capture for unauthenticated users — shown before they start */}
+          {/* Email capture prompt — shown after chef selection, before service selection */}
           {(() => {
-            if (isAuthenticated !== false) return null
+            if (!showEmailCapture) return null
             if (emailCaptureDone) return null
             return (
-              <div className="mb-6 p-6 rounded-lg border" style={{ borderColor: 'var(--color-mdc-accent)', backgroundColor: 'rgba(201, 168, 76, 0.04)' }}>
-                <h3 className="text-lg mb-1" style={{ fontFamily: 'var(--font-serif)' }}>Reserve your spot</h3>
-                <p className="text-sm mb-4" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                  Enter your email to get started. No account needed — we'll save your progress.
-                </p>
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault()
-                    if (!formData.email || emailCaptureLoading) return
-                    setEmailCaptureError(null)
-                    setEmailCaptureLoading(true)
-                    const id = await captureLead(formData.email)
-                    setEmailCaptureLoading(false)
-                    if (id) {
-                      setLeadId(id)
-                      setEmailCaptureDone(true)
-                      // Persist lead_id in session
-                      const sessionId = getGuestSessionId()
-                      if (sessionId) {
-                        localStorage.setItem(`guest_lead_${sessionId}`, id)
-                      }
-                    } else {
-                      setEmailCaptureError('Could not save email. You can continue anyway.')
-                    }
-                  }}
-                  className="flex gap-3"
-                >
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="your@email.com"
-                    className="flex-1 px-4 py-3 rounded border bg-white"
-                    style={{ borderColor: 'var(--color-mdc-border)' }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!formData.email || emailCaptureLoading}
-                    className="px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: 'var(--color-mdc-accent)' }}
-                  >
-                    {emailCaptureLoading ? 'Saving...' : 'Continue'}
-                  </button>
-                </form>
-                {emailCaptureError && (
-                  <p className="text-sm mt-2" style={{ color: '#dc2626' }}>{emailCaptureError}</p>
-                )}
-                {isAuthenticated === false && (
-                  <p className="text-xs mt-3" style={{ color: 'var(--color-mdc-text-muted)' }}>
-                    Already have an account? <Link href="/login" className="underline hover:opacity-80" style={{ color: 'var(--color-mdc-accent)' }}>Sign in</Link>
-                  </p>
-                )}
+              <div className="mb-6 p-4 rounded-lg border" style={{ borderColor: 'var(--color-mdc-accent)', backgroundColor: 'rgba(201, 168, 76, 0.04)' }}>
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-base mb-1" style={{ fontFamily: 'var(--font-serif)' }}>Save your spot — we'll hold your selection for 30 minutes</h3>
+                    <p className="text-sm mb-3" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      Enter your email to continue. No account needed.
+                    </p>
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault()
+                        if (!formData.email || emailCaptureLoading) return
+                        setEmailCaptureError(null)
+                        setEmailCaptureLoading(true)
+                        const id = await captureLead(formData.email, formData.chefId)
+                        setEmailCaptureLoading(false)
+                        if (id) {
+                          setLeadId(id)
+                          setEmailCaptureDone(true)
+                          setShowEmailCapture(false)
+                          // Track email capture completed
+                          trackEmailCaptureCompleted({
+                            chef_id: formData.chefId,
+                            form_variant: formVariant,
+                            has_lead_id: true,
+                          })
+                          // Persist lead_id in session
+                          const sessionId = getGuestSessionId()
+                          if (sessionId) {
+                            localStorage.setItem(`guest_lead_${sessionId}`, id)
+                          }
+                        } else {
+                          setEmailCaptureError('Could not save email. You can continue anyway.')
+                        }
+                      }}
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        placeholder="your@email.com"
+                        className="flex-1 px-3 py-2 rounded border bg-white text-sm"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={!formData.email || emailCaptureLoading}
+                        className="px-4 py-2 rounded font-medium text-white text-sm transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                      >
+                        {emailCaptureLoading ? '...' : 'Continue'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowEmailCapture(false)
+                          // Track that they skipped
+                          trackEmailCaptureCompleted({
+                            chef_id: formData.chefId,
+                            form_variant: formVariant,
+                            has_lead_id: false,
+                          })
+                        }}
+                        className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        Skip
+                      </button>
+                    </form>
+                    {emailCaptureError && (
+                      <p className="text-sm mt-2" style={{ color: '#dc2626' }}>{emailCaptureError}</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )
           })()}

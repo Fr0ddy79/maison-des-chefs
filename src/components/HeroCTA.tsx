@@ -8,9 +8,9 @@ const COOKIE_NAME = 'ab_hero_cta_variant'
 type Variant = 'find_your_chef' | 'book_private_chef' | 'exclusive_dining'
 
 const CTA_TEXT: Record<Variant, { primary: string; secondary: string }> = {
-  find_your_chef: { primary: 'Find Your Chef', secondary: 'Are You a Chef? Apply' },
-  book_private_chef: { primary: 'Book a Private Chef — Limited Availability', secondary: 'Are You a Chef? Apply' },
-  exclusive_dining: { primary: 'Exclusive Dining Experiences — Reserve Now', secondary: 'Are You a Chef? Apply' },
+  find_your_chef: { primary: 'Book a Chef', secondary: 'Browse Chefs' },
+  book_private_chef: { primary: 'Book a Chef — Limited Availability', secondary: 'Browse Chefs' },
+  exclusive_dining: { primary: 'Book a Chef — Reserve Now', secondary: 'Browse Chefs' },
 }
 
 const TRUST_BADGES: Record<Variant, { badges: string[] }> = {
@@ -104,7 +104,7 @@ export function HeroCTA() {
     <>
       <div className="mt-10 flex flex-col sm:flex-row gap-4">
         <Link
-          href="/chefs"
+          href="/book"
           className="px-6 py-3 rounded font-medium text-center text-white transition-colors hover:opacity-90"
           style={{ backgroundColor: 'var(--color-mdc-accent)' }}
           onClick={handlePrimaryClick}
@@ -112,7 +112,7 @@ export function HeroCTA() {
           {text.primary}
         </Link>
         <Link
-          href="/chef/apply"
+          href="/chefs"
           className="px-6 py-3 rounded font-medium text-center transition-colors border"
           style={{ borderColor: 'var(--color-mdc-accent)', color: 'var(--color-mdc-accent)' }}
           onClick={handleSecondaryClick}

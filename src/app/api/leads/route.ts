@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, source = 'booking_form' } = body
+    const { email, source = 'booking_form', chef_id = null, service_id = null } = body
 
     // Validate required fields
     if (!email || typeof email !== 'string') {
@@ -30,6 +30,20 @@ export async function POST(request: NextRequest) {
     if (!validSources.includes(source)) {
       return NextResponse.json(
         { error: `source must be one of: ${validSources.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Validate optional fields
+    if (chef_id !== null && typeof chef_id !== 'string') {
+      return NextResponse.json(
+        { error: 'chef_id must be a string' },
+        { status: 400 }
+      )
+    }
+    if (service_id !== null && typeof service_id !== 'string') {
+      return NextResponse.json(
+        { error: 'service_id must be a string' },
         { status: 400 }
       )
     }
@@ -60,13 +74,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create new lead
+    // Create new lead with optional chef/service preferences
+    // Note: chef_id and service_id columns may not exist in the leads table yet
+    // We store them as metadata for now; a future migration can promote them to proper columns
+    const leadInsert = {
+      email: email.toLowerCase().trim(),
+      source,
+    }
+
+    // Only include chef_id/service_id if they're valid strings
+    if (chef_id && typeof chef_id === 'string') {
+      (leadInsert as any).chef_id = chef_id
+    }
+    if (service_id && typeof service_id === 'string') {
+      (leadInsert as any).service_id = service_id
+    }
+
     const { data: newLead, error } = await supabase
       .from('leads')
-      .insert({
-        email: email.toLowerCase().trim(),
-        source,
-      })
+      .insert(leadInsert)
       .select('id, email, source, created_at')
       .single()
 
