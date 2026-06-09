@@ -396,11 +396,6 @@ export function BookPageContent() {
 
       <div className="flex-1" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
         <div className="max-w-3xl mx-auto px-6 py-12">
-          {/* Variant badge (for testing visibility) */}
-          <div className="mb-4 text-xs uppercase tracking-wider" style={{ color: 'var(--color-mdc-text-muted)' }}>
-            Form Variant: <span className="font-mono">{formVariant}</span>
-          </div>
-
           {/* Email capture prompt — shown after chef selection, before service selection */}
           {(() => {
             if (!showEmailCapture) return null
