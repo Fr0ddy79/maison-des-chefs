@@ -74,14 +74,64 @@ async function getFeaturedChefs() {
   const { data, error } = await supabase
     .from('chef_profiles')
     .select('id, display_name, location, cuisines, avg_rating, review_count, price_per_event, hero_image_url, is_verified')
+    .eq('is_verified', true)
     .order('avg_rating', { ascending: false })
-    .limit(6)
+    .limit(3)
   
   if (error) {
     console.error('Error fetching chefs:', error)
     return []
   }
   return data || []
+}
+
+async function getWeekendChefs() {
+  const supabase = createClient()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const nextWeek = new Date(today)
+  nextWeek.setDate(nextWeek.getDate() + 7)
+  
+  const { data, error } = await supabase
+    .from('availability')
+    .select(`
+      id,
+      available_date,
+      start_time,
+      end_time,
+      is_booked,
+      chef_profiles (
+        id, display_name, location, cuisines, avg_rating, review_count,
+        price_per_event, hero_image_url, is_verified
+      )
+    `)
+    .gte('available_date', today.toISOString().split('T')[0])
+    .lt('available_date', nextWeek.toISOString().split('T')[0])
+    .eq('is_booked', false)
+    .order('available_date', { ascending: true })
+    .limit(10)
+  
+  if (error) {
+    console.error('Error fetching weekend chefs:', error)
+    return []
+  }
+  // Deduplicate chefs (one entry per chef) and attach first available slot
+  const seen = new Set<string>()
+  const chefs: Array<{
+    chef: Record<string, unknown>
+    slot: { date: string; time: string }
+  }> = []
+  for (const row of (data || [])) {
+    const chef = row.chef_profiles as unknown as Record<string, unknown> | null
+    if (chef && !seen.has(chef.id as string)) {
+      seen.add(chef.id as string)
+      chefs.push({
+        chef,
+        slot: { date: row.available_date, time: row.start_time },
+      })
+    }
+  }
+  return chefs.slice(0, 3)
 }
 
 export const metadata: Metadata = {
@@ -262,6 +312,7 @@ const aggregateRatingSchema = {
 
 export default async function HomePage() {
   const featuredChefs = await getFeaturedChefs()
+  const weekendChefs = await getWeekendChefs()
 
   return (
     <>
@@ -302,6 +353,44 @@ export default async function HomePage() {
               for unforgettable at-home dining. From intimate dinners to grand celebrations.
             </p>
             <HeroCTA />
+
+            {/* Service-type quick links */}
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <a
+                href="/book?service_type=prix-fixe"
+                className="flex items-center gap-3 p-4 rounded-lg border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md bg-white"
+                style={{ borderColor: 'var(--color-mdc-border)' }}
+              >
+                <span className="text-2xl">🍽️</span>
+                <div>
+                  <p className="font-medium text-sm" style={{ fontFamily: 'var(--font-serif)' }}>Prix Fixe Dinner</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Intimate multi-course</p>
+                </div>
+              </a>
+              <a
+                href="/book?service_type=cocktail"
+                className="flex items-center gap-3 p-4 rounded-lg border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md bg-white"
+                style={{ borderColor: 'var(--color-mdc-border)' }}
+              >
+                <span className="text-2xl">🥂</span>
+                <div>
+                  <p className="font-medium text-sm" style={{ fontFamily: 'var(--font-serif)' }}>Cocktail Party</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Elegant passed apps</p>
+                </div>
+              </a>
+              <a
+                href="/book?service_type=cooking-class"
+                className="flex items-center gap-3 p-4 rounded-lg border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md bg-white"
+                style={{ borderColor: 'var(--color-mdc-border)' }}
+              >
+                <span className="text-2xl">👨‍🍳</span>
+                <div>
+                  <p className="font-medium text-sm" style={{ fontFamily: 'var(--font-serif)' }}>Cooking Class</p>
+                  <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>Hands-on learning</p>
+                </div>
+              </a>
+            </div>
+
             <div className="mt-6">
               <StatsBar />
             </div>
@@ -334,6 +423,44 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Available This Weekend */}
+      {weekendChefs.length > 0 && (
+        <section className="py-16 md:py-20" style={{ backgroundColor: 'rgba(201, 168, 76, 0.05)' }}>
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="flex items-center gap-3 mb-8">
+              <span className="text-2xl">📅</span>
+              <h2 className="text-3xl md:text-4xl" style={{ fontFamily: 'var(--font-serif)' }}>Available This Weekend</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {weekendChefs.map(({ chef, slot }) => (
+                <a
+                  key={(chef.id as string) + (slot.date)}
+                  href={`/book?chef_id=${chef.id}&date=${slot.date}&time=${slot.time}`}
+                  className="rounded-lg p-5 bg-white border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
+                  style={{ borderColor: 'var(--color-mdc-border)' }}
+                >
+                  <div className="flex items-center gap-4 mb-3">
+                    <img
+                      src={chef.hero_image_url as string}
+                      alt={chef.display_name as string}
+                      className="w-14 h-14 rounded-full object-cover"
+                    />
+                    <div>
+                      <h3 className="font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>{chef.display_name as string}</h3>
+                      <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.location as string}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                    <span>📅 {new Date(slot.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                    <span>🕐 {slot.time}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* How It Works */}
       <section id="how-it-works" className="py-20 md:py-28 bg-white">
@@ -455,18 +582,19 @@ export default async function HomePage() {
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {featuredChefs.map((chef) => (
-              <a
+              <div
                 key={chef.id}
-                href={`/chefs/${chef.id}`}
                 className="rounded-lg p-6 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg bg-white border"
                 style={{ borderColor: 'var(--color-mdc-border)' }}
               >
                 <div className="relative mb-6">
-                  <img
-                    src={chef.hero_image_url}
-                    alt={`Chef ${chef.display_name} - ${chef.cuisines?.join(', ')} private chef in ${chef.location}`}
-                    className="w-24 h-24 rounded-full object-cover mx-auto"
-                  />
+                  <a href={`/chefs/${chef.id}`}>
+                    <img
+                      src={chef.hero_image_url}
+                      alt={`Chef ${chef.display_name} - ${chef.cuisines?.join(', ')} private chef in ${chef.location}`}
+                      className="w-24 h-24 rounded-full object-cover mx-auto hover:opacity-90 transition-opacity"
+                    />
+                  </a>
                   {chef.is_verified && (
                     <div className="absolute bottom-0 right-1/2 translate-x-8 translate-y-1">
                       <span className="text-white text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-mdc-accent)' }}>
@@ -477,7 +605,9 @@ export default async function HomePage() {
                 </div>
                 
                 <div className="text-center">
-                  <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>{chef.display_name}</h3>
+                  <a href={`/chefs/${chef.id}`} className="hover:opacity-80 transition-opacity">
+                    <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>{chef.display_name}</h3>
+                  </a>
                   <p className="mt-1 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.location}</p>
                   
                   <div className="flex justify-center gap-2 mt-3 flex-wrap">
@@ -498,8 +628,16 @@ export default async function HomePage() {
                     <span className="font-semibold">${chef.price_per_event}</span>
                     <span className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}> / event</span>
                   </div>
+
+                  <a
+                    href={`/book?chef_id=${chef.id}`}
+                    className="mt-4 block w-full py-2.5 rounded font-medium text-center text-white transition-colors hover:opacity-90"
+                    style={{ backgroundColor: 'var(--color-mdc-accent)' }}
+                  >
+                    Book Now
+                  </a>
                 </div>
-              </a>
+              </div>
             ))}
           </div>
         </div>
