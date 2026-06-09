@@ -374,6 +374,32 @@ export interface Database {
           contacted_at?: string | null
         }
       }
+      analytics_events: {
+        Row: {
+          id: string
+          event_name: string
+          event_data: Json
+          session_id: string | null
+          user_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          event_name: string
+          event_data?: Json
+          session_id?: string | null
+          user_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          event_name?: string
+          event_data?: Json
+          session_id?: string | null
+          user_id?: string | null
+          created_at?: string
+        }
+      }
     }
   }
 }
@@ -386,3 +412,4 @@ export type Review = Database['public']['Tables']['reviews']['Row']
 export type ChefApplication = Database['public']['Tables']['chef_applications']['Row']
 export type Lead = Database['public']['Tables']['leads']['Row']
 export type AbandonedBooking = Database['public']['Tables']['abandoned_bookings']['Row']
+export type AnalyticsEvent = Database['public']['Tables']['analytics_events']['Row']
