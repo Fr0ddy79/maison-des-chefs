@@ -663,6 +663,44 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* Browse by Cuisine */}
+      <section className="py-16 md:py-20" style={{ backgroundColor: 'rgba(201, 168, 76, 0.05)' }}>
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl md:text-4xl" style={{ fontFamily: 'var(--font-serif)' }}>Browse by Cuisine</h2>
+            <p className="mt-3 max-w-xl mx-auto" style={{ color: 'var(--color-mdc-text-muted)' }}>
+              Find a chef who specializes in your favorite cuisine
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {[
+              { name: 'French', emoji: '🥐', slug: 'French' },
+              { name: 'Italian', emoji: '🍝', slug: 'Italian' },
+              { name: 'Japanese', emoji: '🍣', slug: 'Japanese' },
+              { name: 'Mediterranean', emoji: '🫒', slug: 'Mediterranean' },
+              { name: 'Seafood', emoji: '🦞', slug: 'Seafood' },
+              { name: 'Vegetarian', emoji: '🥗', slug: 'Vegetarian' },
+              { name: 'Asian Fusion', emoji: '🥡', slug: 'Asian%20Fusion' },
+            ].map((cuisine) => (
+              <a
+                key={cuisine.name}
+                href={`/chefs?cuisine=${cuisine.slug}`}
+                className="flex flex-col items-center gap-2 p-4 rounded-lg bg-white border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md"
+                style={{ borderColor: 'var(--color-mdc-border)' }}
+              >
+                <span className="text-3xl">{cuisine.emoji}</span>
+                <span className="text-sm font-medium text-center">{cuisine.name}</span>
+              </a>
+            ))}
+          </div>
+          <div className="text-center mt-6">
+            <a href="/chefs" className="text-sm font-medium hover:underline" style={{ color: 'var(--color-mdc-accent)' }}>
+              View all cuisines →
+            </a>
+          </div>
+        </div>
+      </section>
+
       {/* Experience Types */}
       <section id="experiences" className="py-20 md:py-28 bg-white">
         <div className="max-w-6xl mx-auto px-6">
