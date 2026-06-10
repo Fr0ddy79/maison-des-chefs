@@ -36,6 +36,7 @@ export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('30d')
   const router = useRouter()
   const supabase = createClient()
 
@@ -67,7 +68,7 @@ export default function AnalyticsPage() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/analytics/summary')
+      const response = await fetch(`/api/analytics/summary?range=${dateRange}`)
       if (!response.ok) {
         throw new Error('Failed to fetch analytics')
       }
@@ -126,6 +127,38 @@ export default function AnalyticsPage() {
           <p style={{ color: 'var(--color-mdc-text-muted)' }}>
             Funnel metrics and conversion tracking
           </p>
+        </div>
+
+        {/* Date Range Picker */}
+        <div className="flex items-center gap-3 mb-6">
+          <span className="text-sm font-medium" style={{ color: 'var(--color-mdc-text-muted)' }}>Date Range:</span>
+          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-mdc-border)' }}>
+            {(['7d', '30d', '90d'] as const).map((range) => (
+              <button
+                key={range}
+                onClick={() => {
+                  setDateRange(range)
+                  setAnalytics(null)
+                  setLoading(true)
+                  fetch(`/api/analytics/summary?range=${range}`)
+                    .then((res) => res.json())
+                    .then((data) => {
+                      setAnalytics(data)
+                      setLoading(false)
+                    })
+                    .catch(() => setLoading(false))
+                }}
+                className="px-4 py-2 text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: dateRange === range ? 'var(--color-mdc-accent)' : 'white',
+                  color: dateRange === range ? 'white' : 'var(--color-mdc-text-muted)',
+                  borderRight: range !== '90d' ? '1px solid var(--color-mdc-border)' : 'none',
+                }}
+              >
+                {range === '7d' ? '7 Days' : range === '30d' ? '30 Days' : '90 Days'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (
