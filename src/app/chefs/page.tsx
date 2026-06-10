@@ -6,6 +6,7 @@ import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { CompareBar } from '@/components/compare/CompareBar'
 import { SocialProofToast } from '@/components/SocialProofToast'
+import { StickyCTABar } from '@/components/StickyCTABar'
 import { createClient } from '@/lib/supabase/client'
 
 type Service = {
@@ -484,6 +485,8 @@ export default function ChefsPage() {
       />
 
       <SocialProofToast page="browse" delayMs={3000} />
+
+      <StickyCTABar />
 
       <Footer />
     </div>
