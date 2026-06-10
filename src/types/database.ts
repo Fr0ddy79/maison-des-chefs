@@ -218,6 +218,8 @@ export interface Database {
           rating: number
           comment: string | null
           created_at: string
+          chef_response: string | null
+          chef_response_at: string | null
         }
         Insert: {
           id?: string
@@ -227,6 +229,8 @@ export interface Database {
           rating: number
           comment?: string | null
           created_at?: string
+          chef_response?: string | null
+          chef_response_at?: string | null
         }
         Update: {
           id?: string
@@ -236,6 +240,8 @@ export interface Database {
           rating?: number
           comment?: string | null
           created_at?: string
+          chef_response?: string | null
+          chef_response_at?: string | null
         }
       }
       chef_applications: {

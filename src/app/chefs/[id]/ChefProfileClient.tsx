@@ -21,6 +21,8 @@ interface Review {
   rating: number
   comment: string | null
   created_at: string
+  chef_response: string | null
+  chef_response_at: string | null
   profiles: {
     full_name: string | null
     location: string | null
@@ -266,6 +268,21 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
                           <p className="mt-4 leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
                             {review.comment}
                           </p>
+                        )}
+                        {review.chef_response && (
+                          <div className="mt-4 p-4 rounded-lg" style={{ backgroundColor: 'rgba(201, 168, 76, 0.08)', borderLeft: '3px solid var(--color-mdc-accent)' }}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-sm font-medium" style={{ color: 'var(--color-mdc-accent)' }}>Chef's Response</span>
+                            </div>
+                            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {review.chef_response}
+                            </p>
+                            {review.chef_response_at && (
+                              <p className="text-xs mt-2" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                                {formatDate(review.chef_response_at)}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}

@@ -95,6 +95,13 @@ export default function ChefDashboard() {
   const [messageReplyInput, setMessageReplyInput] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
   const [loadingMessageThreads, setLoadingMessageThreads] = useState(false)
+  const [reviews, setReviews] = useState<any[]>([])
+  const [loadingReviews, setLoadingReviews] = useState(false)
+  const [showReviewResponseModal, setShowReviewResponseModal] = useState(false)
+  const [selectedReview, setSelectedReview] = useState<any>(null)
+  const [reviewResponseText, setReviewResponseText] = useState('')
+  const [submittingReviewResponse, setSubmittingReviewResponse] = useState(false)
+  const [reviewResponseSuccess, setReviewResponseSuccess] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -488,6 +495,7 @@ export default function ChefDashboard() {
       fetchAvailabilitySlots()
       fetchInquiries()
       fetchMessageThreads()
+      fetchChefReviews()
     }
   }, [user?.id])
 
@@ -543,6 +551,18 @@ export default function ChefDashboard() {
       .order('created_at', { ascending: false })
     setInquiries((data as any[]) || [])
     setLoadingInquiries(false)
+  }
+
+  async function fetchChefReviews() {
+    if (!user?.id) return
+    setLoadingReviews(true)
+    const { data } = await supabase
+      .from('reviews')
+      .select(`*, profiles:diners_id(full_name, location)`)
+      .eq('chef_id', user.id)
+      .order('created_at', { ascending: false })
+    setReviews((data as any[]) || [])
+    setLoadingReviews(false)
   }
 
   async function handleInquiryAction(inquiryId: string, status: 'accepted' | 'rejected') {
@@ -618,6 +638,52 @@ export default function ChefDashboard() {
     const ampm = h >= 12 ? 'PM' : 'AM'
     const h12 = h % 12 || 12
     return `${h12}:${minutes} ${ampm}`
+  }
+
+  function openReviewResponseModal(review: any) {
+    setSelectedReview(review)
+    setReviewResponseText(review.chef_response || '')
+    setReviewResponseSuccess(null)
+    setShowReviewResponseModal(true)
+  }
+
+  async function handleSubmitReviewResponse(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedReview || submittingReviewResponse) return
+
+    if (reviewResponseText.length > 500) {
+      alert('Response must be 500 characters or less')
+      return
+    }
+
+    setSubmittingReviewResponse(true)
+    setReviewResponseSuccess(null)
+
+    try {
+      const res = await fetch(`/api/reviews/${selectedReview.id}/response`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chef_response: reviewResponseText.trim() || null }),
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        setReviewResponseSuccess('Response saved successfully!')
+        // Refresh reviews
+        await fetchChefReviews()
+        setTimeout(() => {
+          setShowReviewResponseModal(false)
+          setSelectedReview(null)
+          setReviewResponseText('')
+          setReviewResponseSuccess(null)
+        }, 1500)
+      } else {
+        alert(data.error || 'Failed to save response')
+      }
+    } catch (err) {
+      alert('Failed to save response. Please try again.')
+    }
+    setSubmittingReviewResponse(false)
   }
 
   if (loading) {
@@ -1283,6 +1349,177 @@ export default function ChefDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Reviews Section */}
+            <div className="rounded-lg p-6 bg-white border shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Your Reviews</h2>
+                <span className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{reviews.length} total</span>
+              </div>
+              {loadingReviews ? (
+                <p style={{ color: 'var(--color-mdc-text-muted)' }}>Loading...</p>
+              ) : reviews.length === 0 ? (
+                <p style={{ color: 'var(--color-mdc-text-muted)' }}>No reviews yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {reviews.map((review) => (
+                    <div
+                      key={review.id}
+                      className="p-4 rounded-lg"
+                      style={{ backgroundColor: 'var(--color-mdc-bg)' }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(201, 168, 76, 0.1)' }}>
+                            <span className="font-medium" style={{ color: 'var(--color-mdc-accent)' }}>
+                              {(review.profiles?.full_name || 'A')[0]}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium">{review.profiles?.full_name || 'Anonymous'}</p>
+                            <p className="text-xs" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {review.profiles?.location || 'Unknown'} • {new Date(review.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <svg
+                                key={star}
+                                className="w-4 h-4"
+                                style={{ color: star <= review.rating ? 'var(--color-mdc-accent)' : '#d1d5db' }}
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                              </svg>
+                            ))}
+                          </div>
+                          <span className="text-sm font-medium">{review.rating}</span>
+                        </div>
+                      </div>
+                      {review.comment && (
+                        <p className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                          {review.comment}
+                        </p>
+                      )}
+                      {review.chef_response && (
+                        <div className="mt-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(201, 168, 76, 0.1)', borderLeft: '3px solid var(--color-mdc-accent)' }}>
+                          <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-mdc-accent)' }}>Your Response</p>
+                          <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{review.chef_response}</p>
+                          {review.chef_response_at && (
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                              {new Date(review.chef_response_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => openReviewResponseModal(review)}
+                        className="mt-3 text-sm px-3 py-1.5 rounded font-medium transition-colors"
+                        style={{ 
+                          backgroundColor: review.chef_response ? 'var(--color-mdc-bg)' : 'var(--color-mdc-accent)',
+                          color: review.chef_response ? 'var(--color-mdc-accent)' : 'white',
+                          border: review.chef_response ? '1px solid var(--color-mdc-accent)' : 'none'
+                        }}
+                      >
+                        {review.chef_response ? '✏️ Edit Response' : '💬 Respond to Review'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Respond to Review Modal */}
+            {showReviewResponseModal && selectedReview && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setShowReviewResponseModal(false)}>
+                <div className="bg-white rounded-lg p-6 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Respond to Review</h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        From {(selectedReview.profiles as any)?.full_name || 'Anonymous'} • {new Date(selectedReview.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    </div>
+                    <button onClick={() => setShowReviewResponseModal(false)} className="text-2xl" style={{ color: 'var(--color-mdc-text-muted)' }}>×</button>
+                  </div>
+                  
+                  {/* Original Review */}
+                  <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <svg
+                            key={star}
+                            className="w-4 h-4"
+                            style={{ color: star <= selectedReview.rating ? 'var(--color-mdc-accent)' : '#d1d5db' }}
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                          </svg>
+                        ))}
+                      </div>
+                      <span className="text-sm font-medium">{selectedReview.rating}/5</span>
+                    </div>
+                    {selectedReview.comment && (
+                      <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{selectedReview.comment}</p>
+                    )}
+                  </div>
+
+                  {/* Response Form */}
+                  <form onSubmit={handleSubmitReviewResponse}>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        Your Response
+                      </label>
+                      <textarea
+                        value={reviewResponseText}
+                        onChange={(e) => setReviewResponseText(e.target.value)}
+                        placeholder="Share your perspective, thank the guest, or address any concerns..."
+                        maxLength={500}
+                        rows={4}
+                        className="w-full px-3 py-2 rounded border text-sm resize-none"
+                        style={{ borderColor: 'var(--color-mdc-border)' }}
+                      />
+                      <p className="text-xs mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                        {reviewResponseText.length}/500 characters
+                      </p>
+                    </div>
+                    
+                    {reviewResponseSuccess && (
+                      <div className="mb-4 px-4 py-3 rounded-lg text-sm font-medium" style={{ backgroundColor: '#dcfce7', color: '#15803d' }}>
+                        {reviewResponseSuccess}
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={submittingReviewResponse}
+                        className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--color-mdc-accent)', color: 'white' }}
+                      >
+                        {submittingReviewResponse ? 'Saving...' : 'Save Response'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowReviewResponseModal(false)}
+                        className="flex-1 text-sm px-4 py-2 rounded font-medium transition-colors border"
+                        style={{ borderColor: 'var(--color-mdc-border)', color: 'var(--color-mdc-text-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="text-xs mt-3" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      You can edit your response within 30 days.
+                    </p>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {/* Inquiry Detail Modal */}
             {showInquiryModal && selectedInquiry && (
