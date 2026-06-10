@@ -4,6 +4,7 @@ import { Footer } from '@/components/Footer'
 import { HeroCTA } from '@/components/HeroCTA'
 import { StatsBar } from '@/components/StatsBar'
 import { WaitlistCapture } from '@/components/WaitlistCapture'
+import { SocialProofToast } from '@/components/SocialProofToast'
 import { createClient } from '@/lib/supabase/client'
 
 const experiences = [
@@ -413,7 +414,9 @@ export default async function HomePage() {
             </div>
           </div>
         </div>
-        
+
+        <SocialProofToast page="home" delayMs={4000} />
+
         {/* Hero Image */}
         <div className="max-w-6xl mx-auto px-6 pb-16">
           <div className="relative rounded-lg overflow-hidden shadow-2xl">

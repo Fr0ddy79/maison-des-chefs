@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { CompareBar } from '@/components/compare/CompareBar'
+import { SocialProofToast } from '@/components/SocialProofToast'
 import { createClient } from '@/lib/supabase/client'
 
 type Service = {
@@ -481,6 +482,8 @@ export default function ChefsPage() {
         onClear={handleClearCompare}
         onRemove={handleRemoveFromCompare}
       />
+
+      <SocialProofToast page="browse" delayMs={3000} />
 
       <Footer />
     </div>
