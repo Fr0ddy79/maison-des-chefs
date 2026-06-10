@@ -34,6 +34,8 @@ export default async function inquiryRoutes(server: FastifyInstance) {
         createdAt: leads.createdAt,
         serviceName: services.name,
         servicePricePerPerson: services.pricePerPerson,
+        dietaryPreferences: leads.dietaryPreferences, // MAI-2642: dietary preference capture
+        nutAllergy: leads.nutAllergy, // MAI-2642: nut allergy flag for chef safety awareness
       })
       .from(leads)
       .innerJoin(services, eq(leads.serviceId, services.id))

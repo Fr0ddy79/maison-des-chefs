@@ -6,7 +6,7 @@ import { users, chefProfiles, services, leads, reviews } from '../db/schema.js';
 import { eq, sql, isNotNull, and, desc } from 'drizzle-orm';
 import { trackChefDiscoveryEvent } from './analytics.js';
 
-export default function buildChefDiscoveryPage(): string {
+export default function buildChefDiscoveryPage(serviceType: string = ''): string {
   // Fetch all available chefs with services
   const chefs = db.select({
     id: users.id,
@@ -34,6 +34,7 @@ export default function buildChefDiscoveryPage(): string {
       name: services.name,
       pricePerPerson: services.pricePerPerson,
       dietaryTags: services.dietaryTags,
+      category: services.category,
     })
       .from(services)
       .where(and(eq(services.chefId, chef.id), eq(services.status, 'published')))
@@ -98,6 +99,52 @@ export default function buildChefDiscoveryPage(): string {
     reviewCount: reviewStats[c.id]?.reviewCount ?? 0,
   })));
 
+  // MAI-2510: Filter by service_type
+  let filteredChefs = chefs;
+  if (serviceType) {
+    const SERVICE_TYPE_KEYWORDS: Record<string, string[]> = {
+      'prix-fixe': ['prix fixe', 'prix-fixe', 'dinner', 'fixe', 'dinner for', 'gala', 'tasting menu', 'multi-course'],
+      'cocktail': ['cocktail', 'canape', 'canapés', 'hors doeuvres', 'hors', 'reception', 'appetizer', 'finger food', 'standing'],
+      'cooking-class': ['cooking class', 'class', 'workshop', 'learn', 'cooking workshop', 'culinary class'],
+      'celebration': ['celebration', 'event', 'catering', 'party', 'anniversary', 'birthday', 'wedding', 'festive'],
+    };
+    const keywords = SERVICE_TYPE_KEYWORDS[serviceType] || [];
+    if (keywords.length > 0) {
+      const serviceTypeLower = serviceType.toLowerCase();
+      filteredChefs = filteredChefs.filter((chef: any) => {
+        const services = chefServices[chef.id] || [];
+        return services.some((svc: any) => {
+          const name = (svc.name || '').toLowerCase();
+          // Also check category field if present
+          const cat = (svc.category || '').toLowerCase();
+          // Check against keywords for this service type
+          for (const kw of keywords) {
+            if (name.includes(kw.toLowerCase()) || cat.includes(kw.toLowerCase())) {
+              return true;
+            }
+          }
+          // Direct match with service_type (e.g., name = "cooking-class")
+          if (name === serviceTypeLower || cat === serviceTypeLower) return true;
+          return false;
+        });
+      });
+    }
+  }
+
+  const filteredChefsJson = JSON.stringify(filteredChefs.map(c => ({
+    ...c,
+    cuisineTypes: JSON.parse(c.cuisineTypes as string || '[]'),
+    services: (chefServices[c.id] || []).map((s: any) => ({
+      ...s,
+      dietaryTags: JSON.parse(s.dietaryTags || '[]'),
+      cuisines: [],
+    })),
+    avgResponseMs: avgResponseTimes[c.id] ?? null,
+    leadCount: leadCounts[c.id] ?? 0,
+    avgRating: reviewStats[c.id]?.avgRating ?? null,
+    reviewCount: reviewStats[c.id]?.reviewCount ?? 0,
+  })));
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -140,10 +187,23 @@ export default function buildChefDiscoveryPage(): string {
   .clear-all-btn:hover { background: #e0e0e0; color: #333; }
 
   .results-area { min-width: 0; }
-  .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+  .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
   .results-count { font-size: 1.1rem; color: #555; }
   .results-count strong { color: #2c3e50; }
   .sort-select { padding: 0.5rem 1rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; background: white; cursor: pointer; }
+
+  /* Search bar styles (MAI-2815) */
+  .search-bar-wrapper { margin-bottom: 0.75rem; position: relative; }
+  .chef-search-input { width: 100%; padding: 0.8rem 1rem 0.8rem 2.75rem; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 0.95rem; font-family: inherit; transition: border-color 0.2s, box-shadow 0.2s; box-sizing: border-box; background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/%3E%3C/svg%3E") no-repeat 1rem center; }
+  .chef-search-input:focus { outline: none; border-color: #c9a227; box-shadow: 0 0 0 3px rgba(201,162,39,0.12); }
+  .chef-search-input::placeholder { color: #bbb; }
+  .search-clear-btn { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 1.1rem; cursor: pointer; color: #aaa; display: none; line-height: 1; padding: 0.25rem; }
+  .search-clear-btn:hover { color: #666; }
+  .search-bar-wrapper.has-value .search-clear-btn { display: block; }
+
+  /* Search results indicator */
+  .search-indicator { font-size: 0.82rem; color: #888; margin-bottom: 0.25rem; display: none; }
+  .search-indicator.visible { display: block; }
 
   .chef-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
   .chef-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s; cursor: pointer; position: relative; }
@@ -288,6 +348,16 @@ export default function buildChefDiscoveryPage(): string {
     </div>
 
     <div class="filter-group">
+      <label>Service Type</label>
+      <div class="filter-options" id="serviceTypeFilters">
+        <label class="filter-option"><input type="checkbox" value="prix-fixe" onchange="applyFilters()"> Prix Fixe / Dinner</label>
+        <label class="filter-option"><input type="checkbox" value="cocktail" onchange="applyFilters()"> Cocktail / Canapés</label>
+        <label class="filter-option"><input type="checkbox" value="cooking-class" onchange="applyFilters()"> Cooking Class</label>
+        <label class="filter-option"><input type="checkbox" value="celebration" onchange="applyFilters()"> Celebration / Event</label>
+      </div>
+    </div>
+
+    <div class="filter-group">
       <label>Dietary Support</label>
       <div class="filter-options" id="dietaryFilters">
         <label class="filter-option"><input type="checkbox" value="vegetarian" onchange="applyFilters()"> Vegetarian</label>
@@ -336,6 +406,20 @@ export default function buildChefDiscoveryPage(): string {
   </aside>
 
   <main class="results-area">
+    <!-- MAI-2815: Search bar -->
+    <div class="search-bar-wrapper" id="searchBarWrapper">
+      <input
+        type="text"
+        id="chefSearchInput"
+        class="chef-search-input"
+        placeholder="Search chefs by name, cuisine, or location..."
+        oninput="handleSearchInput(this.value)"
+        autocomplete="off"
+      >
+      <button class="search-clear-btn" id="searchClearBtn" onclick="clearSearch()" title="Clear search">×</button>
+    </div>
+    <div class="search-indicator" id="searchIndicator"></div>
+
     <div class="results-header">
       <span class="results-count">Showing <strong id="countDisplay">0</strong> chefs</span>
       <select class="sort-select" id="sortSelect" onchange="applyFilters()">
@@ -351,13 +435,13 @@ export default function buildChefDiscoveryPage(): string {
     <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading chefs...</p></div>
     <div id="errorState" class="error-state" style="display:none"><h2>Something went wrong</h2><p>Unable to load chefs.</p></div>
     <div id="emptyState" class="empty-state" style="display:none">
-      <h2>No chefs found</h2>
-      <p>Try adjusting your filters or browse all chefs.</p>
+      <h2 id="emptyStateTitle">No chefs found</h2>
+      <p id="emptyStateMessage">Try adjusting your filters or browse all chefs.</p>
       <div class="empty-actions">
         <button class="empty-action-btn" onclick="resetFilters()">Broaden Filters</button>
         <button class="empty-action-btn secondary" onclick="clearAllFilters()">View All Chefs</button>
       </div>
-      <p class="empty-hint">Tip: Our chefs offer a variety of cuisines and dietary options</p>
+      <p class="empty-hint" id="emptyStateHint">Tip: Our chefs offer a variety of cuisines and dietary options</p>
     </div>
     <div id="chefGrid" class="chef-grid" style="display:none"></div>
   </main>
@@ -439,7 +523,8 @@ export default function buildChefDiscoveryPage(): string {
 <script>
 var API_BASE = '';
 var allChefs = [];
-var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null, sort: 'price_asc', date: '', guests: '', occasion: '' };
+var currentFilters = { cuisines: [], dietary: [], serviceTypes: [], minPrice: null, maxPrice: null, sort: 'price_asc', date: '', guests: '', occasion: '', searchTerm: '' };
+var chefActivityData = {}; // MAI-2763: Booking activity data {chefId: {is_popular, bookings_this_month, is_just_booked, ...}}
 
 // MAI-1079: Track chef discovery page view on load
 (function() {
@@ -482,6 +567,44 @@ var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null
   })();
 })();
 
+// MAI-2763: Fetch booking activity data for all chefs
+(function() {
+  fetch('/api/chefs/activity')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data) {
+        chefActivityData = data;
+        // Update activity badges on already-rendered cards
+        updateActivityBadges();
+      }
+    })
+    .catch(function() {});
+})();
+
+// MAI-2763: Update activity badges on rendered chef cards
+function updateActivityBadges() {
+  for (var chefId in chefActivityData) {
+    var activity = chefActivityData[chefId];
+    var badgeEl = document.getElementById('activityBadge' + chefId);
+    if (badgeEl && activity) {
+      var badges = [];
+      // "Popular" badge: 3+ bookings in last 30 days
+      if (activity.is_popular) {
+        badges.push('<span style="background:#fff3e0;color:#e65100;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.75rem;font-weight:600;margin-right:0.25rem;">🔥 Hot</span>');
+      }
+      // "X bookings this month" - only show if > 0
+      if (activity.bookings_this_month > 0) {
+        badges.push('<span style="background:#e8f5e9;color:#2e7d32;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.75rem;font-weight:600;margin-right:0.25rem;">' + activity.bookings_this_month + ' booking' + (activity.bookings_this_month !== 1 ? 's' : '') + ' this month</span>');
+      }
+      // "Just booked!" indicator: booked within last 48h
+      if (activity.is_just_booked) {
+        badges.push('<span style="background:#fff9c4;color:#f57f17;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.75rem;font-weight:600;">⚡ Just booked!</span>');
+      }
+      badgeEl.innerHTML = badges.join('');
+    }
+  }
+}
+
 // Initialize date input min to today
 (function() {
   var dateInput = document.getElementById('filterDate');
@@ -501,6 +624,7 @@ var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null
   var sort = params.get('sort');
   var cuisines = params.get('cuisines');
   var dietary = params.get('dietary');
+  var serviceTypes = params.get('serviceTypes');
 
   if (date) {
     var dateInput = document.getElementById('filterDate');
@@ -546,6 +670,13 @@ var currentFilters = { cuisines: [], dietary: [], minPrice: null, maxPrice: null
     });
     currentFilters.dietary = dietary.split(',').filter(Boolean);
   }
+  if (serviceTypes) {
+    serviceTypes.split(',').forEach(function(s) {
+      var cb = document.querySelector('#serviceTypeFilters input[value="' + s + '"]');
+      if (cb) cb.checked = true;
+    });
+    currentFilters.serviceTypes = serviceTypes.split(',').filter(Boolean);
+  }
 })();
 
 function updateUrlParams() {
@@ -559,6 +690,7 @@ function updateUrlParams() {
   if (currentFilters.sort && currentFilters.sort !== 'price_asc') params.set('sort', currentFilters.sort);
   if (currentFilters.cuisines.length > 0) params.set('cuisines', currentFilters.cuisines.join(','));
   if (currentFilters.dietary.length > 0) params.set('dietary', currentFilters.dietary.join(','));
+  if (currentFilters.serviceTypes.length > 0) params.set('serviceTypes', currentFilters.serviceTypes.join(','));
 
   var newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
   window.history.replaceState({}, '', newUrl);
@@ -678,6 +810,7 @@ function renderChefCard(chef) {
       ratingHtml +
       '<div class="chef-location">📍 ' + escapeHtml(chef.location || 'Location not set') + '</div>' +
       '<div id="availBadge' + chef.id + '" class="avail-badge" style="margin-bottom:0.4rem;"></div>' +
+      '<div id="activityBadge' + chef.id + '" class="activity-badge" style="margin-bottom:0.4rem;display:flex;gap:0.25rem;flex-wrap:wrap;"></div>' +
       '<div class="cuisine-badges">' + badges + '</div>' +
       '<div class="chef-price">' + priceHtml + '</div>' +
       '<div class="chef-stats">' + responseHtml + '</div>' +
@@ -689,6 +822,7 @@ function renderChefCard(chef) {
 function resetFilters() {
   document.querySelectorAll('#cuisineFilters input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
   document.querySelectorAll('#dietaryFilters input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+  document.querySelectorAll('#serviceTypeFilters input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
   document.getElementById('minPrice').value = '';
   document.getElementById('maxPrice').value = '';
   document.getElementById('filterDate').value = '';
@@ -700,7 +834,43 @@ function resetFilters() {
 function clearAllFilters() {
   resetFilters();
   document.getElementById('sortSelect').value = 'price_asc';
+  clearSearch();
   applyFilters();
+}
+
+// MAI-2815: Search handling with debounce
+var searchDebounceTimer = null;
+function handleSearchInput(value) {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(function() {
+    currentFilters.searchTerm = value.trim();
+    // Update clear button visibility
+    var wrapper = document.getElementById('searchBarWrapper');
+    if (wrapper) {
+      if (value.trim()) {
+        wrapper.classList.add('has-value');
+      } else {
+        wrapper.classList.remove('has-value');
+      }
+    }
+    // Track search usage
+    if (currentFilters.searchTerm) {
+      trackChefDiscoveryEvent({
+        event: 'chef_discovery_search_used',
+        searchTerm: currentFilters.searchTerm,
+        searchLength: currentFilters.searchTerm.length
+      });
+    }
+    applyFilters();
+  }, 200);
+}
+
+function clearSearch() {
+  var input = document.getElementById('chefSearchInput');
+  if (input) input.value = '';
+  var wrapper = document.getElementById('searchBarWrapper');
+  if (wrapper) wrapper.classList.remove('has-value');
+  currentFilters.searchTerm = '';
 }
 
 function applyFilters() {
@@ -709,6 +879,9 @@ function applyFilters() {
 
   var dietaryCheckboxes = document.querySelectorAll('#dietaryFilters input[type="checkbox"]:checked');
   currentFilters.dietary = Array.prototype.map.call(dietaryCheckboxes, function(cb) { return cb.value; });
+
+  var serviceTypeCheckboxes = document.querySelectorAll('#serviceTypeFilters input[type="checkbox"]:checked');
+  currentFilters.serviceTypes = Array.prototype.map.call(serviceTypeCheckboxes, function(cb) { return cb.value; });
 
   var minPriceEl = document.getElementById('minPrice');
   var maxPriceEl = document.getElementById('maxPrice');
@@ -768,6 +941,7 @@ async function fetchChefsFromApi() {
     if (currentFilters.maxPrice != null) params.set('maxPrice', currentFilters.maxPrice.toString());
     if (currentFilters.cuisines.length > 0) params.set('cuisines', currentFilters.cuisines.join(','));
     if (currentFilters.dietary.length > 0) params.set('dietary', currentFilters.dietary.join(','));
+    if (currentFilters.serviceTypes.length > 0) params.set('serviceTypes', currentFilters.serviceTypes.join(','));
 
     var url = API_BASE + '/api/chefs?' + params.toString();
     var response = await fetch(url);
@@ -798,6 +972,15 @@ async function fetchChefsFromApi() {
 
 function renderChefs() {
   var filtered = allChefs.filter(function(chef) {
+    // MAI-2815: Search filter (name, cuisine, location)
+    if (currentFilters.searchTerm) {
+      var term = currentFilters.searchTerm.toLowerCase();
+      var nameMatch = (chef.name || '').toLowerCase().includes(term);
+      var cuisineMatch = (chef.cuisineTypes || []).some(function(c) { return c.toLowerCase().includes(term); });
+      var locationMatch = (chef.location || '').toLowerCase().includes(term);
+      if (!nameMatch && !cuisineMatch && !locationMatch) return false;
+    }
+
     // Cuisine filter
     if (currentFilters.cuisines.length > 0) {
       var chefCuisines = (chef.cuisineTypes || []).map(function(c) { return c.toLowerCase(); });
@@ -814,6 +997,29 @@ function renderChefs() {
         return currentFilters.dietary.every(function(d) { return tags.includes(d.toLowerCase()); });
       });
       if (!hasDietary) return false;
+    }
+
+    // Service type filter (MAI-2510)
+    if (currentFilters.serviceTypes.length > 0) {
+      var serviceTypeKeywords: Record<string, string[]> = {
+        'prix-fixe': ['prix fixe', 'prix-fixe', 'dinner', 'fixe', 'gala', 'tasting menu', 'multi-course'],
+        'cocktail': ['cocktail', 'canape', 'canapés', 'hors doeuvres', 'hors', 'reception', 'appetizer', 'finger food', 'standing'],
+        'cooking-class': ['cooking class', 'class', 'workshop', 'learn', 'cooking workshop', 'culinary class'],
+        'celebration': ['celebration', 'event', 'catering', 'party', 'anniversary', 'birthday', 'wedding', 'festive'],
+      };
+      var hasServiceType = chef.services && chef.services.some(function(s: any) {
+        var name = (s.name || '').toLowerCase();
+        var cat = (s.category || '').toLowerCase();
+        return currentFilters.serviceTypes.some(function(st) {
+          var keywords = serviceTypeKeywords[st] || [];
+          for (var k = 0; k < keywords.length; k++) {
+            if (name.includes(keywords[k]) || cat.includes(keywords[k])) return true;
+          }
+          if (name === st || cat === st) return true;
+          return false;
+        });
+      });
+      if (!hasServiceType) return false;
     }
 
     // Price filter
@@ -851,6 +1057,23 @@ function renderChefs() {
   var grid = document.getElementById('chefGrid');
   if (filtered.length === 0) {
     grid.style.display = 'none';
+    // MAI-2815: Customize empty state message based on context
+    var emptyTitle = document.getElementById('emptyStateTitle');
+    var emptyMsg = document.getElementById('emptyStateMessage');
+    var emptyHint = document.getElementById('emptyStateHint');
+    if (currentFilters.searchTerm) {
+      emptyTitle.textContent = 'No chefs match "' + currentFilters.searchTerm + '"';
+      emptyMsg.textContent = 'Try a different search term or browse all chefs.';
+      emptyHint.textContent = 'Tip: Search by chef name, cuisine (e.g. "Italian"), or location';
+    } else if (currentFilters.cuisines.length > 0 || currentFilters.dietary.length > 0 || currentFilters.serviceTypes.length > 0) {
+      emptyTitle.textContent = 'No chefs match your filters';
+      emptyMsg.textContent = 'Try broadening your filters to see more options.';
+      emptyHint.textContent = 'Tip: Our chefs offer a variety of cuisines and dietary options';
+    } else {
+      emptyTitle.textContent = 'No chefs found';
+      emptyMsg.textContent = 'Try adjusting your filters or browse all chefs.';
+      emptyHint.textContent = 'Tip: Our chefs offer a variety of cuisines and dietary options';
+    }
     document.getElementById('emptyState').style.display = 'block';
   } else {
     document.getElementById('emptyState').style.display = 'none';
@@ -859,6 +1082,8 @@ function renderChefs() {
     grid.innerHTML = html;
     grid.style.display = 'grid';
   }
+  // MAI-2763: Update activity badges after rendering cards
+  updateActivityBadges();
 }
 
 async function loadChefs() {

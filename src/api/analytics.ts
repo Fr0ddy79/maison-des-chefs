@@ -77,6 +77,9 @@ const analyticsEventSchema = z.object({
   utm_campaign: z.string().optional(),
   utm_content: z.string().optional(),
   utm_term: z.string().optional(),
+  // MAI-2815: Chef discovery search bar
+  search_term: z.string().optional(),
+  search_length: z.number().optional(),
 });
 
 function ensureDataDir() {

@@ -56,15 +56,17 @@ import reviewRoutes from './api/reviews.js';
 import notificationRoutes from './api/notifications.js';
 import outreachRoutes from './api/outreach.js';
 import leadsRoutes from './api/leads.js';
+import adminChefApplicationsRoutes from './api/admin-chef-applications.js';
+import chefApplicationRoutes from './api/chef-application.js'; // MAI-2813: Chef application submission
+import buildAdminChefApplicationsPage from './routes/admin-chef-applications-page.js';
 import guestInfoRoutes from './api/guest-info.js';
 import quoteRoutes from './api/quotes.js';
+import cronRoutes from './api/cron.js';
 import availabilityCrudRoutes from './api/availability-crud.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
-declare module './routes/chef-availability-settings-page.js' {
-  export function buildChefAvailabilitySettingsPage(): string;
-}
-import { buildChefAvailabilitySettingsPage } from './routes/chef-availability-settings-page.js';
+import buildChefAvailabilitySettingsPage from './routes/chef-availability-settings-page.js';
+import { buildChefDateAvailabilityPage } from './routes/chef-date-availability-page.js';
 import { buildChefPublicProfilePage } from './routes/chef-public-profile-page.js';
 import buildReviewPage from './routes/review-page.js';
 import buildQuoteDisplayPage from './routes/quote-display-page.js';
@@ -139,6 +141,16 @@ server.register(reviewRoutes, { prefix: '/api' });
 server.register(notificationRoutes, { prefix: '/api/notifications' });
 server.register(outreachRoutes, { prefix: '/api/admin/outreach' });
 server.register(leadsRoutes, { prefix: '/api/leads' });
+server.register(adminChefApplicationsRoutes, { prefix: '/api/admin/chef-applications' }); // MAI-2504: Admin chef application review
+server.register(chefApplicationRoutes, { prefix: '/api/chef-applications' }); // MAI-2813: Chef application submission + notification
+server.register(cronRoutes); // Cron job trigger endpoints
+
+// Admin chef applications page (MAI-2505)
+server.get('/admin/applications', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildAdminChefApplicationsPage();
+});
+
 server.register(guestInfoRoutes);
 server.register(quoteRoutes); // Public - no auth, handles /api/quotes/*
 server.register(availabilityCrudRoutes, { prefix: '/api' }); // MAI-2369: Chef availability CRUD API
@@ -167,10 +179,12 @@ server.get('/chef/profile', async (request, reply) => {
   return buildChefProfilePage();
 });
 
-// Chef discovery page (MAI-849)
+// Chef discovery page (MAI-849/MAI-2510)
 server.get('/chefs', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildChefDiscoveryPage();
+  const url = new URL(request.url, `http://localhost:${process.env.PORT || '3001'}`);
+  const serviceType = url.searchParams.get('service_type') || '';
+  return buildChefDiscoveryPage(serviceType);
 });
 
 // Chef public profile page (MAI-1150: Quick Share preview)
@@ -188,6 +202,12 @@ server.get('/chefs/:id', async (request, reply) => {
 server.get('/chef/settings/availability', async (request, reply) => {
   reply.header('Content-Type', 'text/html; charset=utf-8');
   return buildChefAvailabilitySettingsPage();
+});
+
+// Chef date-specific availability slots (MAI-2625)
+server.get('/chef/availability/slots', async (request, reply) => {
+  reply.header('Content-Type', 'text/html; charset=utf-8');
+  return buildChefDateAvailabilityPage();
 });
 
 // Chef onboarding wizard (MAI-1159)
@@ -225,6 +245,8 @@ server.get('/book/:serviceId', async (request, reply) => {
   const url = new URL(request.url, config.app.url);
   const prefillGuestsParam = url.searchParams.get('guests');
   const guestCount = prefillGuestsParam ? parseInt(prefillGuestsParam, 10) : undefined;
+  // MAI-2574: Read time from URL query param for Book Again pre-fill
+  const prefillTimeParam = url.searchParams.get('time') || undefined;
   // MAI-1778: Read referral code from URL (passed via /?ref=CODE from referral links)
   const referralCodeFromUrl = url.searchParams.get('ref') || undefined;
   // MAI-1867: Read CTA variant from URL (set by service detail page A/B test)
@@ -232,7 +254,7 @@ server.get('/book/:serviceId', async (request, reply) => {
   // MAI-2329: Read lead_form variant from URL (standard vs simplified booking form)
   const leadFormFromUrl = url.searchParams.get('lead_form') === 'simplified' ? 'simplified' : 'standard';
   reply.header('Content-Type', 'text/html; charset=utf-8');
-  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount, referralCodeFromUrl, ctaFromUrl, leadFormFromUrl);
+  return buildBookingPage(parseInt(serviceId), dinerEmail, dinerName, dinerPhone, guestCount, referralCodeFromUrl, ctaFromUrl, leadFormFromUrl, prefillTimeParam);
 });
 
 // Review submission page (MAI-1214)

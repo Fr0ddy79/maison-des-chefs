@@ -543,6 +543,20 @@ export function migrate() {
     // Index may already exist, which is fine
   }
 
+  // MAI-2642: Add dietary preference capture fields to leads
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN dietary_preferences TEXT NOT NULL DEFAULT '[]'`);
+    console.log('Migration: Added dietary_preferences column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`ALTER TABLE leads ADD COLUMN nut_allergy INTEGER NOT NULL DEFAULT 0`);
+    console.log('Migration: Added nut_allergy column to leads');
+  } catch (err) {
+    // Column may already exist, which is fine
+  }
+
   sqlite.close();
   console.log('Migration complete');
 }

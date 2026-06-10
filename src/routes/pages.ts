@@ -828,6 +828,13 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
     .card-inquire-btn:hover { background: #b8922a; }
     .service-inquiry-modal .modal-chef-summary { background: #f8f9fa; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.95rem; color: #333; }
     .service-inquiry-modal .modal-chef-summary strong { color: #2c3e50; }
+    .form-error-alert { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.9rem; color: #856404; animation: slideDown 0.2s ease-out; }
+    .form-error-alert.hidden { display: none; }
+    .form-error-alert .error-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .form-error-alert .error-message { flex: 1; line-height: 1.4; }
+    .form-error-alert .error-dismiss { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #856404; padding: 0; line-height: 1; opacity: 0.7; flex-shrink: 0; }
+    .form-error-alert .error-dismiss:hover { opacity: 1; }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
     .modal-success { text-align: center; padding: 1rem 0; }
     .modal-success .success-icon { font-size: 3rem; margin-bottom: 1rem; }
     .modal-success h3 { font-size: 1.4rem; color: #2c3e50; margin-bottom: 0.75rem; }
@@ -1072,11 +1079,84 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       if (e.target === this) closeCompareModal();
     });
     
+    // Form error display helpers (MAI-2680: Booking Form Error State UI)
+    function getUserFriendlyError(statusCode, responseData, eventDate) {
+      if (statusCode === 409) {
+        var conflictType = responseData?.conflictType || responseData?.error?.match(/NO_AVAILABILITY_SLOT|DATE_BLOCKED|DATE_ALREADY_BOOKED/)?.[0] || '';
+        if (conflictType === 'NO_AVAILABILITY_SLOT' || (responseData?.error && responseData.error.includes('not available'))) {
+          var dateStr = eventDate ? ' on ' + eventDate : '';
+          return 'Chef is not available' + dateStr + '. Please select a different date.';
+        }
+        return responseData?.error || 'Chef is not available on that date. Please select a different date.';
+      }
+      if (statusCode === 429) {
+        return 'Too many requests. Please wait a moment and try again.';
+      }
+      if (statusCode === 400 || statusCode === 500 || statusCode === 404) {
+        return responseData?.message || responseData?.error || 'Something went wrong. Please try again or contact us.';
+      }
+      return responseData?.error || 'Something went wrong. Please try again or contact us.';
+    }
+
+    function showFormError(errorElId, message) {
+      var errorEl = document.getElementById(errorElId);
+      var msgEl = document.getElementById(errorElId.replace('Error', 'ErrorMsg'));
+      if (errorEl && msgEl) {
+        msgEl.textContent = message;
+        errorEl.classList.remove('hidden');
+        errorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    function clearFormError(errorElId) {
+      var errorEl = document.getElementById(errorElId);
+      if (errorEl) {
+        errorEl.classList.add('hidden');
+      }
+    }
+
+    function dismissFormError(errorElId) {
+      clearFormError(errorElId);
+    }
+
+    function trackBookingFormError(details) {
+      var eventData = {
+        event: 'booking_form_error',
+        error_type: details.errorType || 'unknown',
+        status_code: details.statusCode || null,
+        service_id: details.serviceId || null,
+        form_type: details.formType || 'single',
+        auth_status: 'guest',
+        timestamp: new Date().toISOString()
+      };
+      if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', JSON.stringify(eventData));
+      }
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Analytics] Booking form error:', eventData);
+      }
+    }
+
+    // Clear error on input focus for both forms
+    function setupErrorClearOnInput(errorElId, formSelector) {
+      var form = document.querySelector(formSelector);
+      if (form) {
+        form.querySelectorAll('input, textarea, select').forEach(function(input) {
+          input.addEventListener('input', function() {
+            clearFormError(errorElId);
+          });
+        });
+      }
+    }
+    setupErrorClearOnInput('multiInquiryError', '#multiInquiryForm');
+    setupErrorClearOnInput('serviceInquiryError', '#serviceInquiryForm');
+
     // Form submission
     document.getElementById('multiInquiryForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       var form = e.target;
       var submitBtn = document.getElementById('modalSubmitBtn');
+      clearFormError('multiInquiryError');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Sending...';
       
@@ -1106,7 +1186,14 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         var result = await response.json();
 
         if (!response.ok) {
-          alert('Error: ' + (result.error || 'Failed to submit inquiry'));
+          var eventDate = form.eventDate ? form.eventDate.value : null;
+          var friendlyMsg = getUserFriendlyError(response.status, result, eventDate);
+          showFormError('multiInquiryError', friendlyMsg);
+          trackBookingFormError({
+            errorType: result.error || 'submission_error',
+            statusCode: response.status,
+            formType: 'multi'
+          });
           submitBtn.disabled = false;
           submitBtn.textContent = 'Send Inquiry to ' + selectedChefs.length + ' Chef' + (selectedChefs.length > 1 ? 's' : '');
           return;
@@ -1137,7 +1224,13 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         '</div>';
       } catch (err) {
         var isTimeout = err.name === 'AbortError';
-        alert(isTimeout ? 'Request timed out. Please check your connection and try again.' : 'Network error. Please try again.');
+        var networkMsg = isTimeout ? 'Connection lost. Please check your internet and try again.' : 'Connection lost. Please check your internet and try again.';
+        showFormError('multiInquiryError', networkMsg);
+        trackBookingFormError({
+          errorType: isTimeout ? 'timeout' : 'network_error',
+          statusCode: null,
+          formType: 'multi'
+        });
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Inquiry to ' + selectedChefs.length + ' Chef' + (selectedChefs.length > 1 ? 's' : '');
       }
@@ -1194,6 +1287,7 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
       e.preventDefault();
       var form = e.target;
       var submitBtn = document.getElementById('serviceInquirySubmitBtn');
+      clearFormError('serviceInquiryError');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Sending...';
       var formData = {
@@ -1213,7 +1307,16 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
         });
         var result = await response.json();
         if (!response.ok) {
-          alert('Error: ' + (result.error || 'Failed to submit inquiry'));
+          var eventDate = form.eventDate ? form.eventDate.value : null;
+          var friendlyMsg = getUserFriendlyError(response.status, result, eventDate);
+          showFormError('serviceInquiryError', friendlyMsg);
+          var serviceIdInput = document.getElementById('serviceInquiryServiceId');
+          trackBookingFormError({
+            errorType: result.error || result.conflictType || 'submission_error',
+            statusCode: response.status,
+            serviceId: serviceIdInput ? parseInt(serviceIdInput.value, 10) : null,
+            formType: 'single'
+          });
           submitBtn.disabled = false;
           submitBtn.textContent = 'Send Inquiry';
           return;
@@ -1234,7 +1337,14 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
           '<button class="modal-submit-btn" onclick="closeServiceInquiryModal();" style="margin-top:1rem;">Back to Services</button>' +
         '</div>';
       } catch (err) {
-        alert('Network error. Please try again.');
+        showFormError('serviceInquiryError', 'Connection lost. Please check your internet and try again.');
+        var serviceIdInput = document.getElementById('serviceInquiryServiceId');
+        trackBookingFormError({
+          errorType: err.name === 'AbortError' ? 'timeout' : 'network_error',
+          statusCode: null,
+          serviceId: serviceIdInput ? parseInt(serviceIdInput.value, 10) : null,
+          formType: 'single'
+        });
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Inquiry';
       }
@@ -1289,6 +1399,11 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
             <label for="modalMessage">Message to Chefs</label>
             <textarea id="modalMessage" name="message" placeholder="Tell the chefs about your event, dietary requirements, or any special requests..."></textarea>
           </div>
+          <div class="form-error-alert hidden" id="multiInquiryError">
+            <span class="error-icon">⚠️</span>
+            <span class="error-message" id="multiInquiryErrorMsg"></span>
+            <button type="button" class="error-dismiss" onclick="dismissFormError('multiInquiryError')">×</button>
+          </div>
           <button type="submit" class="modal-submit-btn" id="modalSubmitBtn">Send Inquiry to <span id="modalChefCount">0</span> Chef<span id="modalPluralS">s</span></button>
         </form>
       </div>
@@ -1332,6 +1447,11 @@ function buildServicesPage(services: any[], filters: Record<string, string>, cui
           <div class="modal-form-group">
             <label for="serviceInquiryMessage">Message to Chef</label>
             <textarea id="serviceInquiryMessage" name="message" placeholder="Tell the chef about your event, dietary requirements, or any special requests..."></textarea>
+          </div>
+          <div class="form-error-alert hidden" id="serviceInquiryError">
+            <span class="error-icon">⚠️</span>
+            <span class="error-message" id="serviceInquiryErrorMsg"></span>
+            <button type="button" class="error-dismiss" onclick="dismissFormError('serviceInquiryError')">×</button>
           </div>
           <button type="submit" class="modal-submit-btn" id="serviceInquirySubmitBtn">Send Inquiry</button>
         </form>
@@ -1972,6 +2092,11 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .hero-cta-secondary:hover { background: #f0f0f0; transform: translateY(-2px); }
     .hero-trust { margin-top: 2rem; color: rgba(255,255,255,0.6); font-size: 0.9rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
     .hero-trust span { display: flex; align-items: center; gap: 0.4rem; }
+    .service-type-pills { margin-top: 1.25rem; text-align: center; }
+    .pills-label { display: block; color: rgba(255,255,255,0.65); font-size: 0.8rem; margin-bottom: 0.6rem; }
+    .pills-row { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+    .service-pill { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 0.45rem 0.9rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500; text-decoration: none; transition: all 0.2s; white-space: nowrap; }
+    .service-pill:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.35); transform: translateY(-1px); }
     .hero-social-proof { margin-top: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; color: rgba(255,255,255,0.75); font-size: 0.95rem; flex-wrap: wrap; }
     .hero-social-proof .proof-stars { color: #f5c518; letter-spacing: -1px; }
     .hero-social-proof .proof-rating { font-weight: 700; color: white; }
@@ -2119,6 +2244,15 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
         <span>✓ Verified chefs</span>
         <span>✓ Free to browse</span>
         <span>✓ No commitment to book</span>
+      </div>
+      <div class="service-type-pills">
+        <span class="pills-label">Or jump to what you're looking for:</span>
+        <div class="pills-row">
+          <a href="/services?serviceTypes=prix-fixe" class="service-pill">🍽️ Prix Fixe Dinner</a>
+          <a href="/services?serviceTypes=cooking-class" class="service-pill">👨🍳 Cooking Class</a>
+          <a href="/services?serviceTypes=cocktail" class="service-pill">🍸 Cocktail / Canapés</a>
+          <a href="/services?serviceTypes=celebration" class="service-pill">🎉 Celebration / Event</a>
+        </div>
       </div>
     </div>
   </section>

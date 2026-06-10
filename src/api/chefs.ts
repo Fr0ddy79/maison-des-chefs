@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { users, chefProfiles, services, leads, reviews } from '../db/schema.js';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { users, chefProfiles, services, leads, reviews, bookings } from '../db/schema.js';
+import { eq, and, gte, sql, lte, or } from 'drizzle-orm';
 
 const profileSchema = z.object({
   bio: z.string().optional(),
@@ -317,5 +317,132 @@ export default async function chefRoutes(server: FastifyInstance) {
       cuisineTypes: JSON.parse(profile.cuisineTypes as string || '[]'),
       signatureDishes: JSON.parse(profile.signatureDishes as string || '[]'),
     };
+  });
+
+  // MAI-2763: Batch endpoint for chef booking activity (bookings_this_month, last_booked_at)
+  // Returns {[chef_id]: {bookings_this_month: number, last_booked_at: string | null}}
+  server.get('/activity', async (request, reply) => {
+    // Get all available chef IDs
+    const chefProfilesResult = db
+      .select({ chefId: chefProfiles.userId })
+      .from(chefProfiles)
+      .where(eq(chefProfiles.available, true))
+      .all();
+    
+    const chefIds = chefProfilesResult.map(r => r.chefId);
+    if (chefIds.length === 0) {
+      return {};
+    }
+
+    // Calculate date boundaries
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+    // Batch query: count bookings this month per chef
+    const bookingsThisMonthResult = db
+      .select({
+        chefId: bookings.chefId,
+        count: sql<number>`count(*)`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          sql`${bookings.chefId} IN (${sql.join(chefIds.map(id => sql`${id}`), sql`, `)})`,
+          gte(bookings.eventDate, currentMonthStart),
+          sql`${bookings.status} IN ('pending', 'accepted', 'confirmed', 'completed')`
+        )
+      )
+      .groupBy(bookings.chefId)
+      .all();
+
+    // Batch query: count bookings in last 30 days per chef (for "Popular" badge: 3+)
+    const bookingsLast30DaysResult = db
+      .select({
+        chefId: bookings.chefId,
+        count: sql<number>`count(*)`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          sql`${bookings.chefId} IN (${sql.join(chefIds.map(id => sql`${id}`), sql`, `)})`,
+          gte(bookings.eventDate, thirtyDaysAgoStr),
+          sql`${bookings.status} IN ('pending', 'accepted', 'confirmed', 'completed')`
+        )
+      )
+      .groupBy(bookings.chefId)
+      .all();
+
+    // Batch query: last booked timestamp per chef
+    const lastBookedResult = db
+      .select({
+        chefId: bookings.chefId,
+        lastBookedAt: sql<string>`MAX(${bookings.eventDate} || 'T00:00:00')`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          sql`${bookings.chefId} IN (${sql.join(chefIds.map(id => sql`${id}`), sql`, `)})`,
+          sql`${bookings.status} IN ('pending', 'accepted', 'confirmed', 'completed')`
+        )
+      )
+      .groupBy(bookings.chefId)
+      .all();
+
+    // Build result map
+    const activityMap: Record<number, {
+      bookings_this_month: number;
+      bookings_last_30_days: number;
+      last_booked_at: string | null;
+      is_popular: boolean;
+      is_just_booked: boolean;
+    }> = {};
+
+    // Initialize all chefs with zero counts
+    for (const chefId of chefIds) {
+      activityMap[chefId] = {
+        bookings_this_month: 0,
+        bookings_last_30_days: 0,
+        last_booked_at: null,
+        is_popular: false,
+        is_just_booked: false,
+      };
+    }
+
+    // Fill in bookings_this_month
+    for (const row of bookingsThisMonthResult) {
+      if (activityMap[row.chefId]) {
+        activityMap[row.chefId].bookings_this_month = row.count;
+      }
+    }
+
+    // Fill in bookings_last_30_days and is_popular
+    for (const row of bookingsLast30DaysResult) {
+      if (activityMap[row.chefId]) {
+        activityMap[row.chefId].bookings_last_30_days = row.count;
+        activityMap[row.chefId].is_popular = row.count >= 3;
+      }
+    }
+
+    // Fill in last_booked_at and is_just_booked
+    for (const row of lastBookedResult) {
+      if (activityMap[row.chefId] && row.lastBookedAt) {
+        activityMap[row.chefId].last_booked_at = row.lastBookedAt;
+        // Check if last booking was within 48 hours
+        const lastBookedTime = new Date(row.lastBookedAt).getTime();
+        activityMap[row.chefId].is_just_booked = lastBookedTime >= fortyEightHoursAgo.getTime();
+      }
+    }
+
+    // Convert numeric keys to string keys for JSON response
+    const result: Record<string, typeof activityMap[number]> = {};
+    for (const chefId of chefIds) {
+      result[chefId.toString()] = activityMap[chefId];
+    }
+
+    return result;
   });
 }

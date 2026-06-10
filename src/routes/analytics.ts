@@ -152,7 +152,7 @@ export function trackCTAClickEvent(data: {
 
 // MAI-1079: Chef discovery page analytics for funnel visibility
 export function trackChefDiscoveryEvent(data: {
-  event: 'chef_discovery_view' | 'chef_card_view' | 'chef_select' | 'chef_deselect' | 'filter_applied' | 'inquiry_modal_open' | 'inquiry_modal_submit';
+  event: 'chef_discovery_view' | 'chef_card_view' | 'chef_select' | 'chef_deselect' | 'filter_applied' | 'inquiry_modal_open' | 'inquiry_modal_submit' | 'chef_discovery_search_used';
   chefId?: number;
   serviceId?: number;
   filterType?: string;
@@ -160,6 +160,8 @@ export function trackChefDiscoveryEvent(data: {
   selectedCount?: number;
   guestCount?: number;
   cuisineTypes?: string[];
+  searchTerm?: string;
+  searchLength?: number;
 }): void {
   const eventData = {
     event: data.event,
@@ -171,7 +173,10 @@ export function trackChefDiscoveryEvent(data: {
     guest_count: data.guestCount ?? null,
     cuisine_types: data.cuisineTypes || null,
     auth_status: 'guest',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    // MAI-2815: search fields
+    search_term: data.searchTerm || null,
+    search_length: data.searchLength ?? null,
   };
 
   // Send to analytics API (fire-and-forget)

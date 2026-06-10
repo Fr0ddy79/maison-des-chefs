@@ -232,6 +232,9 @@ export const leads = sqliteTable('leads', {
   // MAI-2311: Checkout abandonment tracking
   checkoutPageVisitedAt: integer('checkout_page_visited_at', { mode: 'timestamp' }), // When diner visited checkout page
   checkoutAbandonmentEmailSentAt: integer('checkout_abandonment_email_sent_at', { mode: 'timestamp' }), // When abandonment recovery email was sent
+  // MAI-2642: Dietary preference capture for safety-critical information
+  dietaryPreferences: text('dietary_preferences').notNull().default('[]'), // JSON array of dietary preferences
+  nutAllergy: integer('nut_allergy', { mode: 'boolean' }).notNull().default(false), // nut allergy flag for chef safety awareness
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
@@ -281,6 +284,23 @@ export const availability = sqliteTable('availability', {
 
 // chef_blocked_dates (MAI-2131) reuses the existing MAI-1251 table.
 // The existing chefBlockedDates model (above) is used for blocked-date operations.
+
+// MAI-2482/MAI-2504: Chef applications for admin review workflow
+// Stores chef applications that admins can approve or reject
+// When approved: creates users entry (chef role) + chef_profiles entry
+export const chefApplications = sqliteTable('chef_applications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  location: text('location').notNull().default(''),
+  cuisineTypes: text('cuisine_types').notNull().default('[]'), // JSON array
+  yearsExperience: integer('years_experience').notNull().default(0),
+  bio: text('bio'),
+  status: text('status', { enum: ['pending', 'approved', 'rejected'] }).notNull().default('pending'),
+  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
 
 // Chef verification submissions (MAI-1326)
 export const chefVerificationSubmissions = sqliteTable('chef_verification_submissions', {

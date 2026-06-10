@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { services, users, chefProfiles, bookings, leads } from '../db/schema.js';
 import { eq, gte, lte, sql, and } from 'drizzle-orm';
 
-export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number, referralCodeFromUrl?: string, ctaFromUrl?: string, leadFormFromUrl?: string): Promise<string> {
+export default async function buildBookingPage(serviceId: number, dinerEmail: string, dinerName: string, dinerPhone: string, prefillGuests?: number, referralCodeFromUrl?: string, ctaFromUrl?: string, leadFormFromUrl?: string, prefillTime?: string): Promise<string> {
   // Simple query without complex joins to avoid drizzle issues
   const serviceBase = db.select({
     id: services.id,
@@ -386,6 +386,8 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
     const serviceId = ${service.id};
     // MAI-2329: Booking form variant (standard vs simplified) for A/B test tracking
     const formVariant = '${leadFormFromUrl || 'standard'}';
+    // MAI-2574: Pre-fill time from URL param (Book Again functionality)
+    const prefillTime = '${prefillTime || ''}';
 
     // MAI-2361: Pre-fill from diner_email cookie via /api/guest/info
     // This handles cases where server-side cookie pre-fill may be incomplete
@@ -535,6 +537,16 @@ export default async function buildBookingPage(serviceId: number, dinerEmail: st
                     timeOptions += '<option value="' + ts.startTime + '-' + ts.endTime + '">' + label + '</option>';
                   }
                   preferredTimeSelect.innerHTML = timeOptions;
+                  // MAI-2574: Pre-fill time from URL param if it matches an available slot
+                  if (prefillTime) {
+                    var timeOpts = preferredTimeSelect.options;
+                    for (var j = 0; j < timeOpts.length; j++) {
+                      if (timeOpts[j].value === prefillTime) {
+                        preferredTimeSelect.selectedIndex = j;
+                        break;
+                      }
+                    }
+                  }
                 }
               }
             }

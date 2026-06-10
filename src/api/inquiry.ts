@@ -19,6 +19,9 @@ const createInquirySchema = z.object({
   message: z.string().optional(),
   referralCode: z.string().optional(), // MAI-1778: referral code from referral link
   formVariant: z.string().optional().default('standard'), // MAI-2329: booking form variant for A/B test tracking
+  // MAI-2642: Dietary preference capture for chef safety awareness
+  dietaryPreferences: z.array(z.string()).optional().default([]),
+  nutAllergy: z.boolean().optional().default(false),
 });
 
 const BOOKING_STATUS_TOKEN_EXPIRY_DAYS = 30;
@@ -146,6 +149,8 @@ export default async function inquiryRoutes(server: FastifyInstance) {
       inquiryReceivedAt: now, // MAI-1745: SLA start
       slaDeadlineAt: slaDeadline, // MAI-1745: SLA deadline (+48h)
       referralCode: body.referralCode || null, // MAI-1778: track referral source
+      dietaryPreferences: JSON.stringify(body.dietaryPreferences || []), // MAI-2642: dietary preference capture
+      nutAllergy: body.nutAllergy || false, // MAI-2642: nut allergy flag for chef safety awareness
     }).returning().all()[0];
 
     // MAI-805: Pass booking status URL to email
