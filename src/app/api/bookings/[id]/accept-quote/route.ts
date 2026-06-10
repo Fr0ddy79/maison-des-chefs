@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendQuoteConfirmationEmail } from '@/lib/email/resend'
+import { createCheckoutSession, getStripeApiKeyStatus } from '@/lib/stripe'
 
 // POST /api/bookings/[id]/accept-quote
-// Accept a quoted booking - diner accepts the chef's quote
+// Accept a quoted booking - diner accepts the chef's quote and initiates payment
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -83,11 +83,11 @@ export async function POST(
       }
     }
 
-    // Accept the quote: update status and quote_status
+    // Accept the quote: update status to payment_pending and quote_status to accepted
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
-        status: 'confirmed',
+        status: 'payment_pending',
         quote_status: 'accepted'
       })
       .eq('id', bookingId)
@@ -116,25 +116,112 @@ export async function POST(
         .eq('id', slot.id)
     }
 
-    // Send confirmation email (non-blocking)
-    sendQuoteConfirmationEmail({
-      bookingId,
-      chefId: booking.chef_id,
-      dinerId: booking.diner_id,
-      action: 'accepted'
-    }).catch(err => {
-      console.error('[Email] Failed to send quote acceptance email:', err)
+    // Fetch chef details for the checkout description
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', booking.chef_id)
+      .single()
+
+    // Fetch diner email
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', authUser.id)
+      .single()
+
+    if (!dinerProfile?.email) {
+      // Rollback status if we can't proceed with checkout
+      await supabase
+        .from('bookings')
+        .update({ status: 'pending', quote_status: 'pending' })
+        .eq('id', bookingId)
+      
+      return NextResponse.json(
+        { error: 'Diner email not found' },
+        { status: 400 }
+      )
+    }
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+    const formattedDate = new Date(booking.booking_date).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     })
+
+    // Calculate amount in cents (quote_amount is in dollars)
+    const amountInCents = Math.round((booking.quote_amount || booking.total_price) * 100)
+
+    // Build success and cancel URLs
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'
+    const successUrl = `${baseUrl}/dashboard/bookings?payment=success&booking_id=${bookingId}`
+    const cancelUrl = `${baseUrl}/dashboard/bookings?payment=cancelled&booking_id=${bookingId}`
+
+    // Create Stripe Checkout session
+    const result = await createCheckoutSession({
+      bookingId,
+      amount: amountInCents,
+      customerEmail: dinerProfile.email,
+      chefName,
+      bookingDate: formattedDate,
+      successUrl,
+      cancelUrl,
+    })
+
+    if (!result.success) {
+      // Check if it was a placeholder key scenario
+      if (result.logged) {
+        // Return a mock response for placeholder key scenario
+        // Keep status as payment_pending since the flow is correct
+        return NextResponse.json(
+          {
+            message: 'Quote accepted. Redirecting to payment (placeholder mode).',
+            booking: {
+              id: booking.id,
+              status: 'payment_pending',
+              quote_status: 'accepted',
+              quote_amount: booking.quote_amount
+            },
+            checkoutUrl: `${baseUrl}/dashboard/bookings?payment=pending&booking_id=${bookingId}`,
+            note: 'Stripe is in placeholder mode. Set STRIPE_SECRET_KEY to enable real payments.',
+          },
+          { status: 200 }
+        )
+      }
+
+      // Rollback status on failure
+      await supabase
+        .from('bookings')
+        .update({ status: 'pending', quote_status: 'pending' })
+        .eq('id', bookingId)
+
+      return NextResponse.json(
+        { error: result.error || 'Failed to create checkout session' },
+        { status: 500 }
+      )
+    }
+
+    // Update booking with checkout session ID
+    await supabase
+      .from('bookings')
+      .update({
+        checkout_session_id: result.sessionId,
+        payment_status: 'pending',
+      })
+      .eq('id', bookingId)
 
     return NextResponse.json(
       {
-        message: 'Quote accepted successfully',
+        message: 'Quote accepted. Redirecting to payment.',
         booking: {
           id: booking.id,
-          status: 'confirmed',
+          status: 'payment_pending',
           quote_status: 'accepted',
           quote_amount: booking.quote_amount
-        }
+        },
+        checkoutUrl: result.url,
       },
       { status: 200 }
     )

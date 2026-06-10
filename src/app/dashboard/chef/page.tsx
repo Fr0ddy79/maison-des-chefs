@@ -204,7 +204,8 @@ export default function ChefDashboard() {
       }
 
       setProfileCompleteness({ score, elements, isFirstLogin })
-      setShowSetupPrompt(isFirstLogin && score < 100)
+      // Show persistent banner until profile is >80% complete
+      setShowSetupPrompt(score < 80)
 
       // Fetch analytics
       setLoadingAnalytics(true)

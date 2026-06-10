@@ -1012,3 +1012,63 @@ export async function sendBookingCancellationEmail({
     return { success: false, error: 'Unexpected error' }
   }
 }
+
+interface SendProfileCompletionReminderParams {
+  chefId: string
+  chefEmail: string
+  chefName: string
+  completionScore: number
+  missingElements: string[]
+}
+
+// Send profile completion reminder email to chefs with <50% completion after 7 days
+export async function sendProfileCompletionReminderEmail({
+  chefId,
+  chefEmail,
+  chefName,
+  completionScore,
+  missingElements,
+}: SendProfileCompletionReminderParams): Promise<{ success: boolean; error?: string }> {
+  try {
+    const missingText = missingElements.length > 0
+      ? `<ul style="margin: 10px 0; padding-left: 20px;">
+          ${missingElements.map(el => `<li style="margin: 5px 0;">${el}</li>`).join('')}
+        </ul>`
+      : ''
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">Complete Your Chef Profile</h1>
+        <p>Hi <strong>${chefName}</strong>,</p>
+        <p>It's been a week since you joined Maison des Chefs, and we noticed your profile isn't quite ready yet. Chefs with complete profiles receive <strong>3x more booking requests</strong>!</p>
+        
+        <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <p style="margin: 0;"><strong>Your Profile Completion:</strong> ${completionScore}%</p>
+        </div>
+        
+        <p><strong>To get started, please add:</strong></p>
+        ${missingText}
+        
+        <p style="margin-top: 20px;">A complete profile only takes a few minutes to set up, but it makes a huge difference in attracting diners and getting booked.</p>
+        
+        <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/dashboard/chef" style="display: inline-block; background: #c9a84c; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 15px;">
+          Complete Your Profile
+        </a>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    await sendEmailOrLog({
+      to: chefEmail,
+      subject: `Your Chef Profile is Only ${completionScore}% Complete — Here's What to Add`,
+      html,
+      fallbackLog: `[Email] Profile completion reminder to chef ${chefEmail} (${completionScore}% complete)`,
+    })
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending profile completion reminder:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}

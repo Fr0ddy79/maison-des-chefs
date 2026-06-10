@@ -120,6 +120,7 @@ export default function GuestBookingPage() {
 
   const statusConfig: Record<string, { bg: string; color: string; label: string }> = {
     pending: { bg: '#fef9c3', color: '#a16207', label: 'Pending' },
+    payment_pending: { bg: '#dbeafe', color: '#1d4ed8', label: 'Payment Required' },
     confirmed: { bg: '#dcfce7', color: '#15803d', label: 'Confirmed' },
     completed: { bg: '#dbeafe', color: '#1d4ed8', label: 'Completed' },
     cancelled: { bg: '#fee2e2', color: '#dc2626', label: 'Cancelled' },
@@ -271,6 +272,38 @@ export default function GuestBookingPage() {
                     })}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Payment Required Section - Show for payment_pending status */}
+            {booking.status === 'payment_pending' && booking.quote_status === 'accepted' && (
+              <div 
+                className="border-t pt-4 mt-4 rounded-lg p-4"
+                style={{ 
+                  backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                  borderColor: 'rgba(59, 130, 246, 0.2)'
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#3b82f6', color: 'white' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-medium" style={{ color: '#1d4ed8' }}>
+                      Payment Required
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                      Your booking is awaiting payment. Please complete the payment to confirm your reservation.
+                    </p>
+                    {booking.quote_amount && (
+                      <p className="text-lg font-semibold mt-2" style={{ color: 'var(--color-mdc-accent)' }}>
+                        Amount: ${booking.quote_amount.toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

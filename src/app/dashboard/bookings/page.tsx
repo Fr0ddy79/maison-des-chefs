@@ -122,7 +122,14 @@ export default function BookingStatusPage() {
       const data = await res.json()
       
       if (res.ok) {
-        setActionResult({ bookingId, type: 'accepted', message: 'Quote accepted! Your booking is now confirmed.' })
+        // If checkoutUrl is returned, redirect to Stripe checkout
+        if (data.checkoutUrl) {
+          window.location.href = data.checkoutUrl
+          return
+        }
+        
+        // Fallback for placeholder mode - show message and refresh
+        setActionResult({ bookingId, type: 'accepted', message: 'Quote accepted! Redirecting to payment...' })
         // Refresh bookings
         const { data: updated } = await supabase
           .from('bookings')
@@ -138,6 +145,28 @@ export default function BookingStatusPage() {
         setBookings((updated as any[]) || [])
       } else {
         alert(data.error || 'Failed to accept quote. Please try again.')
+      }
+    } catch (err) {
+      alert('Something went wrong. Please try again.')
+    }
+    setProcessingBooking(null)
+  }
+
+  async function handlePayNow(bookingId: string) {
+    setProcessingBooking(bookingId)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/checkout`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      
+      if (res.ok && data.url) {
+        window.location.href = data.url
+      } else if (res.ok && data.note) {
+        // Placeholder mode - redirect to bookings page with pending status
+        window.location.href = `/dashboard/bookings?payment=pending&booking_id=${bookingId}`
+      } else {
+        alert(data.error || 'Failed to create checkout session. Please try again.')
       }
     } catch (err) {
       alert('Something went wrong. Please try again.')
@@ -655,8 +684,48 @@ export default function BookingStatusPage() {
                     </div>
                   )}
 
-                  {/* Already Processed (Accepted/Declined) */}
-                  {(booking.quote_status === 'accepted' || booking.quote_status === 'declined') && (
+                  {/* Payment Pending - Show Pay Now button */}
+                  {booking.status === 'payment_pending' && (
+                    <div 
+                      className="p-6 border-t"
+                      style={{ 
+                        backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                        borderColor: 'rgba(59, 130, 246, 0.2)'
+                      }}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: '#3b82f6', color: 'white' }}>
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
+                            Payment Required
+                          </h4>
+                          <p className="mt-2 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>
+                            Your quote has been accepted. Please complete payment to confirm your booking.
+                          </p>
+                          {booking.quote_amount && (
+                            <p className="mt-2 text-2xl font-bold" style={{ color: 'var(--color-mdc-accent)' }}>
+                              ${booking.quote_amount.toLocaleString()}
+                            </p>
+                          )}
+                          <button
+                            onClick={() => handlePayNow(booking.id)}
+                            disabled={processingBooking === booking.id}
+                            className="mt-4 px-6 py-3 rounded font-medium text-white transition-colors disabled:opacity-50"
+                            style={{ backgroundColor: '#3b82f6' }}
+                          >
+                            {processingBooking === booking.id ? 'Redirecting...' : '💳 Pay Now'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Already Processed (Accepted/Declined) - Show only if not payment_pending */}
+                  {(booking.quote_status === 'accepted' || booking.quote_status === 'declined') && booking.status !== 'payment_pending' && (
                     <div 
                       className="p-4 border-t"
                       style={{ 
@@ -977,6 +1046,15 @@ function StatusBadge({ status, quoteStatus }: { status: string; quoteStatus: str
     return (
       <span className="inline-block px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: '#fef9c3', color: '#a16207' }}>
         Quote Pending
+      </span>
+    )
+  }
+
+  // Payment pending is a special status requiring payment
+  if (status === 'payment_pending') {
+    return (
+      <span className="inline-block px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: '#dbeafe', color: '#1d4ed8' }}>
+        Payment Required
       </span>
     )
   }

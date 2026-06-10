@@ -100,13 +100,14 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
       return
     }
 
-    // Update booking with payment details
+    // Update booking with payment details and set status to confirmed
     const { error } = await supabase
       .from('bookings')
       .update({
         payment_status: 'paid',
         payment_intent_id: session.payment_intent as string || null,
         checkout_session_id: session.id,
+        status: 'confirmed', // Move from payment_pending to confirmed on successful payment
       })
       .eq('id', bookingId)
 

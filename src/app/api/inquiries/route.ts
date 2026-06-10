@@ -83,6 +83,48 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // Check profile completeness before allowing inquiry acceptance
+    // Minimum threshold: photo + bio + 1 service + 1 availability slot
+    if (status === 'accepted') {
+      const { data: chefProfile } = await supabase
+        .from('chef_profiles')
+        .select('bio, cuisines')
+        .eq('id', authUser.id)
+        .single()
+
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', authUser.id)
+        .single()
+
+      const { data: services } = await supabase
+        .from('services')
+        .select('id')
+        .eq('chef_id', authUser.id)
+        .limit(1)
+
+      const { data: availability } = await supabase
+        .from('availability')
+        .select('id')
+        .eq('chef_id', authUser.id)
+        .limit(1)
+
+      const hasPhoto = !!(userProfile?.avatar_url)
+      const hasBio = !!(chefProfile?.bio && chefProfile.bio.length > 0)
+      const hasService = services && services.length > 0
+      const hasAvailability = availability && availability.length > 0
+
+      if (!hasPhoto || !hasBio || !hasService || !hasAvailability) {
+        return NextResponse.json({
+          error: 'Your profile must be complete before you can accept bookings. Please add: ' +
+            [!hasPhoto ? 'profile photo' : null, !hasBio ? 'bio' : null, !hasService ? 'at least one service' : null, !hasAvailability ? 'availability slots' : null]
+              .filter(Boolean)
+              .join(', ')
+        }, { status: 403 })
+      }
+    }
+
     // Fetch the inquiry
     const { data: inquiry, error: fetchError } = await supabase
       .from('inquiries')

@@ -296,7 +296,16 @@ export default function AdminDashboard() {
 
           {/* Chefs */}
           <div className="rounded-lg p-6 bg-white border shadow-sm">
-            <h2 className="text-xl mb-4" style={{ fontFamily: 'var(--font-serif)' }}>Chefs</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl" style={{ fontFamily: 'var(--font-serif)' }}>Chefs</h2>
+              <Link
+                href="/admin/chefs"
+                className="text-sm font-medium hover:underline"
+                style={{ color: 'var(--color-mdc-accent)' }}
+              >
+                View All →
+              </Link>
+            </div>
             {chefs.length === 0 ? (
               <p className="text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>No chefs registered.</p>
             ) : (
