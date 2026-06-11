@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { WaitlistCapture } from './WaitlistCapture'
 
 const COOKIE_NAME = 'ab_hero_cta_variant'
 
@@ -137,6 +138,11 @@ export function HeroCTA() {
           ))}
         </div>
       )}
+
+      {/* Waitlist capture — hero section placement for max conversion */}
+      <div className="mt-6">
+        <WaitlistCapture />
+      </div>
 
       {showDebug && ready && (
         <div className="mt-4 text-xs p-2 bg-gray-100 rounded">
