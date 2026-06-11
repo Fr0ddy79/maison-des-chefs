@@ -5,7 +5,9 @@ import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
+import { CompareSummaryCTA } from '@/components/compare/CompareSummaryCTA'
 import { createClient } from '@/lib/supabase/client'
+import { useCompareSummaryVariant } from '@/lib/useCompareSummaryVariant'
 
 interface Chef {
   id: string
@@ -104,6 +106,8 @@ function ComparePageContent() {
     fetchChefs()
   }, [searchParams, router])
 
+  const summaryVariant = useCompareSummaryVariant(searchParams.get('compare_summary_variant') as 'control' | 'summary_cta' | null)
+
   if (loading) {
     return (
       <div className="flex flex-col min-h-screen">
@@ -144,6 +148,11 @@ function ComparePageContent() {
               Side-by-side comparison of {chefs.length} chefs
             </p>
           </div>
+
+          {/* Summary CTA block — shown only for summary_cta variant */}
+          {summaryVariant === 'summary_cta' && chefs.length >= 2 && (
+            <CompareSummaryCTA chefs={chefs} />
+          )}
 
           {/* Comparison Grid */}
           <div className="overflow-x-auto">
