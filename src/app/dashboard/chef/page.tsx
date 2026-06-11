@@ -102,6 +102,7 @@ export default function ChefDashboard() {
   const [reviewResponseText, setReviewResponseText] = useState('')
   const [submittingReviewResponse, setSubmittingReviewResponse] = useState(false)
   const [reviewResponseSuccess, setReviewResponseSuccess] = useState<string | null>(null)
+  const [completingBooking, setCompletingBooking] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -686,6 +687,39 @@ export default function ChefDashboard() {
     setSubmittingReviewResponse(false)
   }
 
+  async function handleCompleteBooking(bookingId: string) {
+    if (completingBooking) return
+    setCompletingBooking(bookingId)
+
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/complete`, {
+        method: 'PATCH',
+      })
+      const data = await res.json()
+
+      if (res.ok) {
+        // Refresh upcoming bookings
+        const { data: updatedData } = await supabase
+          .from('bookings')
+          .select(`
+            id, booking_date, start_time, guest_count, total_price, status, quote_status,
+            special_requests, dietary_restrictions, allergies,
+            services:service_id (title),
+            profiles:diner_id (full_name)
+          `)
+          .eq('chef_id', user.id)
+          .in('status', ['pending', 'confirmed'])
+          .order('booking_date', { ascending: true })
+        setUpcomingBookings((updatedData as any[]) || [])
+      } else {
+        alert(data.error || 'Failed to mark booking as completed')
+      }
+    } catch (err) {
+      alert('Failed to mark booking as completed. Please try again.')
+    }
+    setCompletingBooking(null)
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-mdc-bg)' }}>
@@ -1094,6 +1128,16 @@ export default function ChefDashboard() {
                               {booking.status}
                             </span>
                             <p className="mt-2 font-semibold">${booking.total_price}</p>
+                            {booking.status === 'confirmed' && (
+                              <button
+                                onClick={() => handleCompleteBooking(booking.id)}
+                                disabled={completingBooking === booking.id}
+                                className="mt-2 text-xs px-3 py-1.5 rounded font-medium transition-colors disabled:opacity-50"
+                                style={{ backgroundColor: '#15803d', color: 'white' }}
+                              >
+                                {completingBooking === booking.id ? 'Completing...' : '✓ Mark Complete'}
+                              </button>
+                            )}
                           </div>
                         </div>
                       )
