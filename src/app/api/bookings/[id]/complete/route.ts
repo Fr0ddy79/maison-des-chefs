@@ -4,7 +4,7 @@ import { sendBookingReviewReminderEmail } from '@/lib/email/resend'
 
 // PATCH /api/bookings/[id]/complete
 // Chef marks their confirmed booking as completed
-// Triggers review reminder email (placeholder for now)
+// Triggers review reminder email to diner
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

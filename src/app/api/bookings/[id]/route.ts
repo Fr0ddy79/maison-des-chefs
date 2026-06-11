@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendBookingCancellationEmail } from '@/lib/email/resend'
+import { sendBookingCancellationEmail, sendBookingModificationConfirmationEmail } from '@/lib/email/resend'
 
 // PATCH /api/bookings/[id]
 // Cancel or modify a booking
@@ -296,6 +296,29 @@ export async function PATCH(
         .select('*')
         .eq('id', bookingId)
         .single()
+
+      // Fetch chef's display name for the confirmation email
+      const { data: chefProfile } = await supabase
+        .from('chef_profiles')
+        .select('display_name')
+        .eq('id', booking.chef_id)
+        .single()
+
+      const chefName = chefProfile?.display_name || 'Your chef'
+
+      // Send modification confirmation email to diner (fire-and-forget)
+      sendBookingModificationConfirmationEmail({
+        bookingId,
+        dinerId: booking.diner_id,
+        chefName,
+        oldBookingDate: booking.booking_date,
+        oldStartTime: booking.start_time,
+        newBookingDate: new_booking_date,
+        newStartTime: new_start_time,
+        guestCount: booking.guest_count,
+      }).catch(err => {
+        console.error('[Email] Failed to send booking modification confirmation:', err)
+      })
 
       return NextResponse.json(
         {
