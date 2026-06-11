@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Navigation } from '@/components/Navigation'
 import { Footer } from '@/components/Footer'
 import { trackServicePageView } from '@/lib/analytics'
+import { ChefProfileStickyCTA } from '@/components/ChefProfileStickyCTA'
 
 interface Service {
   id: string
@@ -383,6 +384,11 @@ export function ChefProfileClient({ chef, services, reviews }: ChefProfileClient
         </div>
       </div>
 
+      <ChefProfileStickyCTA
+        chefId={chef.id}
+        chefName={displayName}
+        bookingUrl={bookingUrl}
+      />
       <Footer />
       </div>
     </>
