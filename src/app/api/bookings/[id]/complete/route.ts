@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sendBookingReviewReminderEmail } from '@/lib/email/resend'
 
 // PATCH /api/bookings/[id]/complete
 // Chef marks their confirmed booking as completed
@@ -70,10 +71,24 @@ export async function PATCH(
       )
     }
 
-    // TODO: Trigger review reminder email (placeholder)
-    // This will be implemented once email infrastructure is ready
-    // sendReviewReminderEmail({ bookingId, chefId: booking.chef_id, dinerId: booking.diner_id })
-    //   .catch(err => console.error('[Email] Failed to send review reminder:', err))
+    // Fetch chef's display name for the email
+    const { data: chefProfile } = await supabase
+      .from('chef_profiles')
+      .select('display_name')
+      .eq('id', booking.chef_id)
+      .single()
+
+    const chefName = chefProfile?.display_name || 'Your chef'
+
+    // Fire-and-forget: send review reminder email to diner
+    // Email failure does not block the booking completion response
+    sendBookingReviewReminderEmail({
+      bookingId,
+      chefId: booking.chef_id,
+      dinerId: booking.diner_id,
+      chefName,
+      bookingDate: booking.booking_date,
+    }).catch(err => console.error('[Email] Failed to send review reminder:', err))
 
     return NextResponse.json(
       {

@@ -1072,3 +1072,190 @@ export async function sendProfileCompletionReminderEmail({
     return { success: false, error: 'Unexpected error' }
   }
 }
+
+interface SendBookingModificationConfirmationParams {
+  bookingId: string
+  dinerId: string
+  chefName: string
+  oldBookingDate: string
+  oldStartTime: string | null
+  newBookingDate: string
+  newStartTime: string | null
+  guestCount: number | null
+}
+
+interface SendBookingReviewReminderParams {
+  bookingId: string
+  chefId: string
+  dinerId: string
+  chefName: string
+  bookingDate: string
+}
+
+// Send booking modification confirmation email to diner
+export async function sendBookingModificationConfirmationEmail({
+  bookingId,
+  dinerId,
+  chefName,
+  oldBookingDate,
+  oldStartTime,
+  newBookingDate,
+  newStartTime,
+  guestCount,
+}: SendBookingModificationConfirmationParams): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch diner's email and name
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const dinerEmail = dinerProfile?.email
+    const dinerName = dinerProfile?.full_name || 'Dear guest'
+
+    if (!dinerEmail) {
+      console.error('[Email] Diner email not found for diner_id:', dinerId)
+      return { success: false, error: 'Diner email not found' }
+    }
+
+    const formatDate = (dateStr: string) =>
+      new Date(dateStr).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+
+    const formattedOldDate = formatDate(oldBookingDate)
+    const formattedNewDate = formatDate(newBookingDate)
+    const oldTimeText = oldStartTime ? `at ${oldStartTime}` : ''
+    const newTimeText = newStartTime ? `at ${newStartTime}` : ''
+    const guestText = guestCount ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}` : ''
+    const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/bookings`
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">Booking Updated</h1>
+        <p>Dear ${dinerName},</p>
+        <p>Your booking with <strong>${chefName}</strong> has been updated.</p>
+        
+        <div style="background: #fee2e2; border-radius: 8px; padding: 16px; margin: 20px 0; border-left: 4px solid #dc2626;">
+          <p style="margin: 0 0 8px 0; color: #991b1b; font-weight: 600;">Previous Booking</p>
+          <p style="margin: 0; color: #666;"><s>${formattedOldDate} ${oldTimeText}</s></p>
+        </div>
+        
+        <div style="background: #dcfce7; border-radius: 8px; padding: 16px; margin: 20px 0; border-left: 4px solid #16a34a;">
+          <p style="margin: 0 0 8px 0; color: #166534; font-weight: 600;">Updated Booking</p>
+          <p style="margin: 0; font-size: 18px; font-weight: 600; color: #1a1a1a;">${formattedNewDate} ${newTimeText}</p>
+        </div>
+        
+        ${guestText ? `<p><strong>Party Size:</strong> ${guestText}</p>` : ''}
+        <p><strong>Reference ID:</strong> ${bookingId}</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${bookingUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">View Your Booking</a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const result = await sendEmailOrLog({
+      to: dinerEmail,
+      subject: `Booking Updated — ${chefName}`,
+      html,
+      fallbackLog: `[Email] Booking modification confirmation to ${dinerEmail} for booking ${bookingId}`,
+    })
+
+    if (!result.success) {
+      return { success: false, error: result.error }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending booking modification confirmation:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}
+
+// Send review reminder email to diner after chef marks booking as completed
+export async function sendBookingReviewReminderEmail({
+  bookingId,
+  chefId,
+  dinerId,
+  chefName,
+  bookingDate,
+}: SendBookingReviewReminderParams): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Fetch diner's email and name
+    const { data: dinerProfile } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', dinerId)
+      .single()
+
+    const dinerEmail = dinerProfile?.email
+    const dinerName = dinerProfile?.full_name || 'Dear guest'
+
+    if (!dinerEmail) {
+      console.error('[Email] Diner email not found for diner_id:', dinerId)
+      return { success: false, error: 'Diner email not found' }
+    }
+
+    const formattedDate = new Date(bookingDate).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+
+    const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/bookings?review_booking=${bookingId}`
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #1a1a1a;">How Was Your Experience?</h1>
+        <p>Dear ${dinerName},</p>
+        <p>We hope you enjoyed your dining experience with <strong>${chefName}</strong> on <strong>${formattedDate}</strong>!</p>
+        
+        <p style="margin: 30px 0;">How was your experience? Your feedback helps other diners discover great chefs and helps ${chefName} grow their business.</p>
+        
+        <!-- 5-star rating visual -->
+        <div style="text-align: center; margin: 30px 0;">
+          <div style="display: inline-block; font-size: 40px; letter-spacing: 8px; color: #f59e0b;">
+            ★★★★★
+          </div>
+        </div>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${reviewUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">
+            Leave a Review
+          </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 20px;">Thank you for choosing Maison des Chefs. We look forward to serving you again!</p>
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">— The Maison des Chefs Team</p>
+      </div>
+    `
+
+    const result = await sendEmailOrLog({
+      to: dinerEmail,
+      subject: `How was your experience with ${chefName}?`,
+      html,
+      fallbackLog: `[Email] Review reminder to diner ${dinerEmail} for booking ${bookingId}`,
+    })
+
+    if (!result.success) {
+      return { success: false, error: result.error }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[Email] Error sending booking review reminder:', err)
+    return { success: false, error: 'Unexpected error' }
+  }
+}
