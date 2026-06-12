@@ -75,10 +75,11 @@ export function SocialProofToast({ page = 'home', delayMs = 4000 }: SocialProofT
   // Fetch real activity data on mount
   useEffect(() => {
     let controller: AbortController
+    let timeoutId: ReturnType<typeof setTimeout>
 
     async function fetchActivity() {
       controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+      timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
 
       try {
         const res = await fetch('/api/social-proof/recent-activity', {
@@ -106,7 +107,7 @@ export function SocialProofToast({ page = 'home', delayMs = 4000 }: SocialProofT
     const intervalId = setInterval(fetchActivity, REFRESH_INTERVAL_MS)
 
     return () => {
-      clearTimeout(timeoutId as ReturnType<typeof setTimeout>)
+      clearTimeout(timeoutId)
       clearInterval(intervalId)
       controller?.abort()
     }
