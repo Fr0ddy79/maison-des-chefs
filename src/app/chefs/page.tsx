@@ -94,13 +94,15 @@ function StarRating({ rating }: { rating: number }) {
   )
 }
 
-type BadgeType = 'available' | 'fully_booked' | 'inquire'
+type BadgeType = 'available' | 'fully_booked' | 'inquire' | 'almost_gone' | 'popular'
 
-function AvailabilityBadge({ status }: { status: BadgeType }) {
+function AvailabilityBadge({ status, slotCount }: { status: BadgeType; slotCount?: number }) {
   const styles: Record<BadgeType, { bg: string; text: string; label: string }> = {
     available: { bg: '#22c55e1a', text: '#16a34a', label: 'Available' },
     fully_booked: { bg: '#6b72801a', text: '#4b5563', label: 'Fully Booked' },
     inquire: { bg: '#eab3081a', text: '#a16207', label: 'Inquire for Dates' },
+    almost_gone: { bg: '#ef44441a', text: '#dc2626', label: slotCount !== undefined ? `Only ${slotCount} slot${slotCount !== 1 ? 's' : ''} left` : 'Almost Gone' },
+    popular: { bg: 'rgba(201,168,76,0.15)', text: '#A68A3A', label: 'Popular this week' },
   }
   const { bg, text, label } = styles[status]
   return (
@@ -235,11 +237,13 @@ export default function ChefsPage() {
     setCompareList([])
   }
 
-  function getBadgeStatus(chefId: string): BadgeType {
+  function getBadgeStatus(chefId: string): { status: BadgeType; slotCount?: number } {
     const slot = availability[chefId]
-    if (!slot || slot.total === 0) return 'inquire'
-    if (slot.available > 0) return 'available'
-    return 'fully_booked'
+    if (!slot || slot.total === 0) return { status: 'inquire' }
+    if (slot.available === 0) return { status: 'fully_booked' }
+    if (slot.available <= 2) return { status: 'almost_gone', slotCount: slot.available }
+    if (slot.total >= 5 && slot.available / slot.total <= 0.2) return { status: 'popular' }
+    return { status: 'available' }
   }
 
   return (
@@ -382,7 +386,7 @@ export default function ChefsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {filteredChefs.map((chef) => {
                       const isCompared = compareList.some(c => c.id === chef.id)
-                      const badgeStatus = getBadgeStatus(chef.id)
+                      const { status: badgeStatus, slotCount } = getBadgeStatus(chef.id)
                       return (
                         <div
                           key={chef.id}
@@ -432,7 +436,7 @@ export default function ChefsPage() {
                               <p className="mt-0.5 text-sm" style={{ color: 'var(--color-mdc-text-muted)' }}>{chef.location}</p>
 
                               <div className="flex flex-wrap gap-1.5 mt-2">
-                                <AvailabilityBadge status={badgeStatus} />
+                                <AvailabilityBadge status={badgeStatus} slotCount={slotCount} />
                                 {chef.services && chef.services.length > 0 && (() => {
                                   const { badges, extraCount } = getServiceBadges(chef.services)
                                   return (
