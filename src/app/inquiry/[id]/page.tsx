@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { SocialShareButtons } from '@/components/SocialShareButtons'
 
 interface InquiryDetail {
   id: string
@@ -339,6 +340,16 @@ export default function InquiryStatusPage() {
             </div>
           </div>
         </div>
+
+        {/* Social Share Buttons - shown when booking is confirmed */}
+        {inquiry.status === 'confirmed' && (
+          <div className="mt-6 rounded-lg p-6 bg-white border shadow-sm">
+            <SocialShareButtons
+              chefName={inquiry.chef_profiles?.full_name || 'Unknown'}
+              chefId={inquiry.chef_id}
+            />
+          </div>
+        )}
 
         {/* Message Thread - shown when booking is confirmed */}
         {inquiry.status === 'confirmed' && booking && (

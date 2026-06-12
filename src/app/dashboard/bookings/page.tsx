@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ReviewForm } from '@/components/ReviewForm'
+import { SocialShareButtons } from '@/components/SocialShareButtons'
 
 interface Booking {
   id: string
@@ -777,6 +778,16 @@ export default function BookingStatusPage() {
                           Message Chef
                         </button>
                       </div>
+
+                      {/* Social Share Buttons - Show for completed bookings */}
+                      {booking.status === 'completed' && (
+                        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-mdc-border)' }}>
+                          <SocialShareButtons
+                            chefName={booking.chef_profiles?.display_name || 'Chef'}
+                            chefId={booking.chef_id}
+                          />
+                        </div>
+                      )}
 
                       {/* Leave a Review Button - Show only if no review exists */}
                       {booking.status === 'completed' && !reviewStatuses[booking.id] && (
