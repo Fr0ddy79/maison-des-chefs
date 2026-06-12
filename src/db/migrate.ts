@@ -557,6 +557,84 @@ export function migrate() {
     // Column may already exist, which is fine
   }
 
+  // MAI-2865: Create waitlist_subscriptions table for pre-launch email capture
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS waitlist_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        utm_source TEXT,
+        utm_medium TEXT,
+        utm_campaign TEXT,
+        utm_content TEXT,
+        utm_term TEXT,
+        source_page TEXT NOT NULL DEFAULT 'homepage',
+        created_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created waitlist_subscriptions table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS waitlist_email_idx ON waitlist_subscriptions(email)`);
+    console.log('Migration: Created waitlist_email_idx index');
+  } catch (err) {
+    // Index may already exist, which is fine
+  }
+
+  // MAI-2897/MAI-2408: Create analytics_events table for A/B test data persistence
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS analytics_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        service_id INTEGER,
+        chef_id INTEGER,
+        variant TEXT,
+        form_variant TEXT,
+        card_variant TEXT,
+        cta_variant TEXT,
+        referrer TEXT,
+        utm_source TEXT,
+        utm_medium TEXT,
+        utm_campaign TEXT,
+        utm_content TEXT,
+        utm_term TEXT,
+        event_data TEXT NOT NULL DEFAULT '{}',
+        lead_id INTEGER,
+        guest_count INTEGER,
+        event_date TEXT,
+        event_timestamp TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    console.log('Migration: Created analytics_events table');
+  } catch (err) {
+    // Table may already exist, which is fine
+  }
+  // Create indexes for common query patterns
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS analytics_event_idx ON analytics_events(event)`);
+    console.log('Migration: Created analytics_event_idx index');
+  } catch (err) { /* index may already exist */ }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS analytics_service_id_idx ON analytics_events(service_id)`);
+    console.log('Migration: Created analytics_service_id_idx index');
+  } catch (err) { /* index may already exist */ }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS analytics_chef_id_idx ON analytics_events(chef_id)`);
+    console.log('Migration: Created analytics_chef_id_idx index');
+  } catch (err) { /* index may already exist */ }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS analytics_variant_idx ON analytics_events(variant)`);
+    console.log('Migration: Created analytics_variant_idx index');
+  } catch (err) { /* index may already exist */ }
+  try {
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS analytics_timestamp_idx ON analytics_events(event_timestamp)`);
+    console.log('Migration: Created analytics_timestamp_idx index');
+  } catch (err) { /* index may already exist */ }
+
   sqlite.close();
   console.log('Migration complete');
 }

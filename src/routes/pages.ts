@@ -2097,6 +2097,22 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
     .pills-row { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
     .service-pill { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 0.45rem 0.9rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500; text-decoration: none; transition: all 0.2s; white-space: nowrap; }
     .service-pill:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.35); transform: translateY(-1px); }
+
+    /* Hero waitlist capture - compact inline form */
+    .hero-waitlist { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(255,255,255,0.15); }
+    .hero-waitlist-label { color: rgba(255,255,255,0.75); font-size: 0.85rem; margin-bottom: 0.75rem; font-weight: 500; }
+    .hero-waitlist-form { display: flex; gap: 0.5rem; max-width: 420px; margin: 0 auto; }
+    .hero-waitlist-input { flex: 1; padding: 0.6rem 0.85rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); font-size: 0.9rem; background: white; color: #333; min-width: 0; }
+    .hero-waitlist-input::placeholder { color: #999; }
+    .hero-waitlist-input:focus { outline: none; border-color: #c9a227; box-shadow: 0 0 0 2px rgba(201,162,39,0.2); }
+    .hero-waitlist-btn { padding: 0.6rem 1.25rem; border-radius: 6px; font-weight: 600; font-size: 0.9rem; background: #c9a227; color: white; border: none; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+    .hero-waitlist-btn:hover { background: #b8922a; }
+    .hero-waitlist-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .hero-waitlist-error { color: #fca5a5; font-size: 0.8rem; margin-top: 0.5rem; text-align: left; }
+    .hero-waitlist-success { text-align: center; padding: 1rem; }
+    .hero-waitlist-success-icon { width: 40px; height: 40px; margin: 0 auto 0.75rem; border-radius: 50%; background: rgba(61,122,90,0.2); display: flex; align-items: center; justify-content: center; font-size: 1.25rem; }
+    .hero-waitlist-success p { color: white; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem; }
+    .hero-waitlist-success span { color: rgba(255,255,255,0.7); font-size: 0.8rem; }
     .hero-social-proof { margin-top: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; color: rgba(255,255,255,0.75); font-size: 0.95rem; flex-wrap: wrap; }
     .hero-social-proof .proof-stars { color: #f5c518; letter-spacing: -1px; }
     .hero-social-proof .proof-rating { font-weight: 700; color: white; }
@@ -2170,6 +2186,8 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
       .stats-bar { grid-template-columns: 1fr; margin: 0 1rem 0; }
       .hero-ctas { flex-direction: column; align-items: center; }
       .hero-ctas a { width: 100%; max-width: 300px; }
+      .hero-waitlist-form { flex-direction: column; }
+      .hero-waitlist-form .hero-waitlist-btn { width: 100%; }
     }
   </style>
 </head>
@@ -2252,6 +2270,20 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
           <a href="/services?serviceTypes=cooking-class" class="service-pill">👨🍳 Cooking Class</a>
           <a href="/services?serviceTypes=cocktail" class="service-pill">🍸 Cocktail / Canapés</a>
           <a href="/services?serviceTypes=celebration" class="service-pill">🎉 Celebration / Event</a>
+        </div>
+      </div>
+      <!-- Hero waitlist capture - MAI-2865: captures emails at peak attention point -->
+      <div class="hero-waitlist" id="hero-waitlist">
+        <p class="hero-waitlist-label">Be the first to know when we launch in your area</p>
+        <form class="hero-waitlist-form" id="hero-waitlist-form">
+          <input type="email" class="hero-waitlist-input" id="hero-waitlist-email" placeholder="your@email.com" required>
+          <button type="submit" class="hero-waitlist-btn" id="hero-waitlist-btn">Notify Me</button>
+        </form>
+        <p class="hero-waitlist-error" id="hero-waitlist-error" style="display:none;"></p>
+        <div class="hero-waitlist-success" id="hero-waitlist-success" style="display:none;">
+          <div class="hero-waitlist-success-icon">✓</div>
+          <p>You're on the list!</p>
+          <span>We'll notify you when we launch.</span>
         </div>
       </div>
     </div>
@@ -2380,6 +2412,108 @@ export function buildHomePage(stats: { chefCount: number; serviceCount: number; 
       };
       navigator.sendBeacon('/api/analytics/event', JSON.stringify(payload));
       console.log('[Analytics] Homepage view:', payload);
+    })();
+
+    // MAI-2865: Hero waitlist capture - UTM-aware email subscription
+    (function() {
+      // Capture UTM params from URL and store in sessionStorage
+      function captureUTM() {
+        const params = new URLSearchParams(window.location.search);
+        const utmData = {};
+        const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+        utmKeys.forEach(function(key) {
+          const val = params.get(key);
+          if (val) {
+            utmData[key] = val;
+            try { sessionStorage.setItem(key, val); } catch(e) {}
+          }
+        });
+        return utmData;
+      }
+
+      // Get stored UTM data
+      function getStoredUTM() {
+        const utmData = {};
+        const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+        utmKeys.forEach(function(key) {
+          try {
+            const val = sessionStorage.getItem(key);
+            if (val) utmData[key] = val;
+          } catch(e) {}
+        });
+        return utmData;
+      }
+
+      // Initialize UTM capture on load
+      captureUTM();
+
+      const form = document.getElementById('hero-waitlist-form');
+      const emailInput = document.getElementById('hero-waitlist-email');
+      const btn = document.getElementById('hero-waitlist-btn');
+      const errorEl = document.getElementById('hero-waitlist-error');
+      const successEl = document.getElementById('hero-waitlist-success');
+
+      if (!form) return;
+
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        errorEl.style.display = 'none';
+
+        const email = emailInput.value.trim();
+
+        // Validate email
+        if (!email) {
+          errorEl.textContent = 'Email is required';
+          errorEl.style.display = 'block';
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errorEl.textContent = 'Please enter a valid email address';
+          errorEl.style.display = 'block';
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        const utmData = getStoredUTM();
+        const payload = Object.assign({ email: email }, utmData);
+
+        fetch('/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(function(response) {
+          return response.json().then(function(data) {
+            return { status: response.status, data: data };
+          });
+        })
+        .then(function(result) {
+          // Success (new subscription)
+          if (result.status === 200 && result.data.success) {
+            form.style.display = 'none';
+            successEl.style.display = 'block';
+          }
+          // Already subscribed (400 with specific error message)
+          else if (result.status === 400 && result.data.error && result.data.error.toLowerCase().indexOf('already') !== -1) {
+            form.style.display = 'none';
+            successEl.style.display = 'block';
+            successEl.querySelector('p').textContent = "You're already on the list!";
+            successEl.querySelector('span').textContent = "We'll be in touch with exclusive updates.";
+          }
+          // Other errors
+          else {
+            throw new Error(result.data.error || 'Something went wrong');
+          }
+        })
+        .catch(function(err) {
+          errorEl.textContent = err.message || 'Network error. Please try again.';
+          errorEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Notify Me';
+        });
+      });
     })();
   </script>
 </body>

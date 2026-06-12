@@ -58,6 +58,7 @@ import outreachRoutes from './api/outreach.js';
 import leadsRoutes from './api/leads.js';
 import adminChefApplicationsRoutes from './api/admin-chef-applications.js';
 import chefApplicationRoutes from './api/chef-application.js'; // MAI-2813: Chef application submission
+import subscribeRoutes from './api/subscribe.js'; // MAI-2865: Waitlist email capture
 import buildAdminChefApplicationsPage from './routes/admin-chef-applications-page.js';
 import guestInfoRoutes from './api/guest-info.js';
 import quoteRoutes from './api/quotes.js';
@@ -143,6 +144,7 @@ server.register(outreachRoutes, { prefix: '/api/admin/outreach' });
 server.register(leadsRoutes, { prefix: '/api/leads' });
 server.register(adminChefApplicationsRoutes, { prefix: '/api/admin/chef-applications' }); // MAI-2504: Admin chef application review
 server.register(chefApplicationRoutes, { prefix: '/api/chef-applications' }); // MAI-2813: Chef application submission + notification
+server.register(subscribeRoutes, { prefix: '/api/subscribe' }); // MAI-2865: Waitlist email capture
 server.register(cronRoutes); // Cron job trigger endpoints
 
 // Admin chef applications page (MAI-2505)

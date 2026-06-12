@@ -372,3 +372,63 @@ export const referralCodes = sqliteTable('referral_codes', {
     dinerIndex: uniqueIndex('referral_diner_idx').on(table.dinerId),
   };
 });
+
+// MAI-2865: Waitlist email capture for pre-launch audience building
+export const waitlistSubscriptions = sqliteTable('waitlist_subscriptions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  email: text('email').notNull(),
+  // UTM parameters for attribution (MAI-2333: UTM parameter capture)
+  utmSource: text('utm_source'),
+  utmMedium: text('utm_medium'),
+  utmCampaign: text('utm_campaign'),
+  utmContent: text('utm_content'),
+  utmTerm: text('utm_term'),
+  // Location context
+  sourcePage: text('source_page').notNull().default('homepage'), // where the signup occurred
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => {
+  return {
+    emailIndex: uniqueIndex('waitlist_email_idx').on(table.email),
+  };
+});
+
+// MAI-2897/MAI-2408: Analytics events table for A/B test data persistence
+// Stores all analytics events in SQLite for SQL-based querying and analysis
+export const analyticsEvents = sqliteTable('analytics_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  // Core event fields
+  event: text('event').notNull(), // e.g., 'booking_form_viewed', 'booking_form_submitted', 'service_page_view'
+  serviceId: integer('service_id'), // optional service context
+  chefId: integer('chef_id'), // optional chef context
+  // A/B test variant tracking
+  variant: text('variant'), // e.g., 'control', 'experiential', 'directBooking'
+  // Form-specific variants (MAI-2329: Booking form A/B test)
+  formVariant: text('form_variant'),
+  cardVariant: text('card_variant'),
+  ctaVariant: text('cta_variant'),
+  // Attribution fields
+  referrer: text('referrer'),
+  utmSource: text('utm_source'),
+  utmMedium: text('utm_medium'),
+  utmCampaign: text('utm_campaign'),
+  utmContent: text('utm_content'),
+  utmTerm: text('utm_term'),
+  // Event-specific data (JSON for flexibility)
+  eventData: text('event_data').notNull().default('{}'), // JSON string with event-specific fields
+  // Booking context (for booking form events)
+  leadId: integer('lead_id'),
+  guestCount: integer('guest_count'),
+  eventDate: text('event_date'),
+  // Timestamp when event occurred (from client)
+  eventTimestamp: text('event_timestamp').notNull(), // ISO-8601 string from client
+  // Server-side creation time
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => {
+  return {
+    eventIndex: uniqueIndex('analytics_event_idx').on(table.event),
+    serviceIdIndex: uniqueIndex('analytics_service_id_idx').on(table.serviceId),
+    chefIdIndex: uniqueIndex('analytics_chef_id_idx').on(table.chefId),
+    variantIndex: uniqueIndex('analytics_variant_idx').on(table.variant),
+    timestampIndex: uniqueIndex('analytics_timestamp_idx').on(table.eventTimestamp),
+  };
+});

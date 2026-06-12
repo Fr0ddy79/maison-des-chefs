@@ -2,12 +2,14 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { db } from '../db/index.js';
+import { analyticsEvents } from '../db/schema.js';
 
 const analyticsEventSchema = z.object({
   event: z.string(),
   service_id: z.number().optional(),
   chef_id: z.number().optional(),
-  auth_status: z.string(),
+  auth_status: z.string().optional(),
   timestamp: z.string(),
   lead_id: z.number().optional(),
   error: z.string().optional(),
@@ -115,10 +117,151 @@ export default async function analyticsRoutes(server: FastifyInstance) {
     try {
       const body = analyticsEventSchema.parse(request.body);
       
-      // Persist to JSONL files
+      // Persist to JSONL files (keep for dev/backward compatibility)
       persistEvent(body, 'analytics_events.jsonl');
       if (isABTestEvent(body)) {
         persistEvent(body, 'ab_test_events.jsonl');
+      }
+
+      // MAI-2897/MAI-2408: Insert analytics event to SQLite database for SQL querying
+      try {
+        // Extract top-level fields for indexed columns, rest goes into event_data JSON
+        const {
+          event,
+          service_id,
+          chef_id,
+          variant,
+          form_variant,
+          card_variant,
+          cta_variant,
+          referrer,
+          utm_source,
+          utm_medium,
+          utm_campaign,
+          utm_content,
+          utm_term,
+          lead_id,
+          guest_count,
+          event_date,
+          timestamp,
+          // Fields that go into event_data JSON
+          auth_status,
+          error,
+          cta_text,
+          price_per_person,
+          cuisine_type,
+          code,
+          channel,
+          bookingId,
+          guestCount,
+          originating_service_id,
+          filter_type,
+          filter_value,
+          selected_count,
+          cuisine_types,
+          quote_amount,
+          lead_status,
+          referral_code,
+          timeToRespondMs,
+          leadAgeHours,
+          location,
+          cta_position,
+          date,
+          exit_intent_offer_type,
+          exit_intent_email,
+          checkout_abandonment_email_sent,
+          checkout_abandonment_recovered,
+          addon_id,
+          addon_name,
+          addon_price,
+          total_selected,
+          sessionId,
+          exit_intent_shown,
+          exit_intent_accepted,
+          exit_intent_declined,
+          booking_page_exit_intent_shown,
+          booking_page_exit_intent_accepted,
+          booking_page_exit_intent_declined,
+          booking_page_exit_intent_email,
+          has_email,
+          what_happens_after_payment_viewed,
+          what_happens_after_payment_collapsed,
+          search_term,
+          search_length,
+          ...extraFields
+        } = body as any;
+
+        const eventData = JSON.stringify({
+          auth_status,
+          error,
+          cta_text,
+          price_per_person,
+          cuisine_type,
+          code,
+          channel,
+          booking_id: bookingId,
+          guest_count: guestCount ?? guest_count,
+          originating_service_id,
+          filter_type,
+          filter_value,
+          selected_count,
+          cuisine_types,
+          quote_amount,
+          lead_status,
+          referral_code,
+          time_to_respond_ms: timeToRespondMs,
+          lead_age_hours: leadAgeHours,
+          location,
+          cta_position,
+          date,
+          exit_intent_offer_type,
+          exit_intent_email,
+          checkout_abandonment_email_sent,
+          checkout_abandonment_recovered,
+          addon_id,
+          addon_name,
+          addon_price,
+          total_selected,
+          session_id: sessionId,
+          exit_intent_shown,
+          exit_intent_accepted,
+          exit_intent_declined,
+          booking_page_exit_intent_shown,
+          booking_page_exit_intent_accepted,
+          booking_page_exit_intent_declined,
+          booking_page_exit_intent_email,
+          has_email,
+          what_happens_after_payment_viewed,
+          what_happens_after_payment_collapsed,
+          search_term,
+          search_length,
+          ...extraFields,
+        });
+
+        // Use .run() to execute the synchronous insert (better-sqlite3 is sync)
+        db.insert(analyticsEvents).values({
+          event,
+          serviceId: service_id ?? null,
+          chefId: chef_id ?? null,
+          variant: variant ?? null,
+          formVariant: form_variant ?? null,
+          cardVariant: card_variant ?? null,
+          ctaVariant: cta_variant ?? null,
+          referrer: referrer ?? null,
+          utmSource: utm_source ?? null,
+          utmMedium: utm_medium ?? null,
+          utmCampaign: utm_campaign ?? null,
+          utmContent: utm_content ?? null,
+          utmTerm: utm_term ?? null,
+          eventData,
+          leadId: lead_id ?? null,
+          guestCount: (guestCount ?? guest_count) ?? null,
+          eventDate: event_date ?? null,
+          eventTimestamp: timestamp ?? new Date().toISOString(),
+        }).run();
+      } catch (dbErr) {
+        // Non-blocking: log but don't fail the request
+        console.error('[Analytics] DB insert failed:', dbErr);
       }
 
       // Log analytics event
