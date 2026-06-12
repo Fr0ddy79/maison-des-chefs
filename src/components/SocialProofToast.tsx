@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 type ToastPage = 'home' | 'browse'
 
@@ -24,6 +24,18 @@ const MESSAGES: Record<ToastPage, string[]> = {
 
 const TOAST_DURATION_MS = 5000
 const CYCLE_DELAY_MS = 800
+const FETCH_TIMEOUT_MS = 2000
+const REFETCH_INTERVAL_MS = 60000
+
+interface Activity {
+  id: string
+  chef_name: string
+  city: string
+  inquiry_date: string
+  guest_count: number
+  service_type: string
+  created_at: string
+}
 
 interface SocialProofToastProps {
   page?: ToastPage
@@ -31,13 +43,104 @@ interface SocialProofToastProps {
   delayMs?: number
 }
 
+function isWithinWeek(dateStr: string): boolean {
+  if (!dateStr) return false
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  return diffDays >= 0 && diffDays <= 7
+}
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return 'soon'
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return 'today'
+  if (diffDays === 1) return 'yesterday'
+  if (diffDays < 7) return `${diffDays} days ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function composeMessage(activity: Activity): string {
+  // Template 1: Has exact data (guest count + date)
+  if (activity.guest_count > 0 && activity.inquiry_date) {
+    const formattedDate = formatDate(activity.inquiry_date)
+    return `🍽️ ${activity.guest_count} guest${activity.guest_count !== 1 ? 's' : ''} booked Chef ${activity.chef_name} for ${formattedDate}`
+  }
+  // Template 2: Date within 7 days
+  if (isWithinWeek(activity.inquiry_date)) {
+    return `🥂 Someone booked Chef ${activity.chef_name} for this weekend`
+  }
+  // Template 3: Generic fallback
+  return `👨‍🍳 Chef ${activity.chef_name} just received a new inquiry`
+}
+
 export function SocialProofToast({ page = 'home', delayMs = 4000 }: SocialProofToastProps) {
   const [visible, setVisible] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [dismissed, setDismissed] = useState(false)
   const [fadingOut, setFadingOut] = useState(false)
+  const [messages, setMessages] = useState<string[]>(MESSAGES[page])
+  const [activities, setActivities] = useState<Activity[]>([])
+  const fetchedRef = useRef(false)
 
-  const messages = MESSAGES[page]
+  // Fetch real activity data
+  useEffect(() => {
+    if (fetchedRef.current) return
+    fetchedRef.current = true
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+    fetch('/api/social-proof/recent-activity', { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data: { activities: Activity[] }) => {
+        clearTimeout(timeoutId)
+        if (data.activities && data.activities.length > 0) {
+          setActivities(data.activities)
+          setMessages(data.activities.map(composeMessage))
+        }
+      })
+      .catch((err) => {
+        clearTimeout(timeoutId)
+        // Non-blocking — keep using static messages
+        console.log('[SocialProofToast] Using static fallback:', err.message)
+      })
+
+    return () => {
+      clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [])
+
+  // Re-fetch every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetch('/api/social-proof/recent-activity')
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then((data: { activities: Activity[] }) => {
+          if (data.activities && data.activities.length > 0) {
+            setActivities(data.activities)
+            setMessages(data.activities.map(composeMessage))
+          }
+        })
+        .catch(() => {
+          // Non-blocking
+        })
+    }, REFETCH_INTERVAL_MS)
+
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     // Only show once per session

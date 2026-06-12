@@ -63,6 +63,7 @@ import buildAdminChefApplicationsPage from './routes/admin-chef-applications-pag
 import guestInfoRoutes from './api/guest-info.js';
 import quoteRoutes from './api/quotes.js';
 import cronRoutes from './api/cron.js';
+import socialProofRoutes from './api/social-proof/recent-activity/route.js';
 import availabilityCrudRoutes from './api/availability-crud.js';
 import buildChefProfilePage from './routes/chef-profile-page.js';
 import buildChefOnboardingPage from './routes/chef-onboarding-page.js';
@@ -145,6 +146,7 @@ server.register(leadsRoutes, { prefix: '/api/leads' });
 server.register(adminChefApplicationsRoutes, { prefix: '/api/admin/chef-applications' }); // MAI-2504: Admin chef application review
 server.register(chefApplicationRoutes, { prefix: '/api/chef-applications' }); // MAI-2813: Chef application submission + notification
 server.register(subscribeRoutes, { prefix: '/api/subscribe' }); // MAI-2865: Waitlist email capture
+server.register(socialProofRoutes, { prefix: '/api/social-proof' }); // MAI-2929: Social proof toast real data
 server.register(cronRoutes); // Cron job trigger endpoints
 
 // Admin chef applications page (MAI-2505)
