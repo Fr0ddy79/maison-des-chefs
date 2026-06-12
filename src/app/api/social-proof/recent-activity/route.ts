@@ -46,7 +46,8 @@ export async function GET() {
       return NextResponse.json({ activities: [] }, { status: 200 })
     }
 
-    const typedData = (data || []) as InquiryRow[]
+    // Supabase returns joined relations as arrays — cast through unknown first
+    const typedData = (data || []) as unknown as InquiryRow[]
     if (typedData.length === 0) {
       return NextResponse.json({ activities: [] }, { status: 200 })
     }
@@ -56,11 +57,14 @@ export async function GET() {
     const activities = []
 
     for (const inquiry of typedData) {
-      const chef = inquiry.chef_profiles
+      const chefArr = Array.isArray(inquiry.chef_profiles) ? inquiry.chef_profiles : [inquiry.chef_profiles].filter(Boolean)
+      const chef = chefArr[0]
       if (!chef?.id || seen.has(chef.id)) continue
       seen.add(chef.id)
 
-      const serviceType = inquiry.services?.service_type || 'private chef experience'
+      const serviceArr = Array.isArray(inquiry.services) ? inquiry.services : [inquiry.services].filter(Boolean)
+      const service = serviceArr[0]
+      const serviceType = service?.service_type || 'private chef experience'
       const guestCount = inquiry.guest_count || 2
 
       activities.push({
