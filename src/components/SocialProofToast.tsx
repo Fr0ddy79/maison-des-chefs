@@ -24,6 +24,40 @@ const MESSAGES: Record<ToastPage, string[]> = {
 
 const TOAST_DURATION_MS = 5000
 const CYCLE_DELAY_MS = 800
+const API_TIMEOUT_MS = 2000
+const REFRESH_INTERVAL_MS = 60000
+
+interface Activity {
+  id: string
+  chef_name: string
+  city: string
+  inquiry_date: string
+  guest_count: number
+  service_type: string
+  created_at: string
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00')
+  const now = new Date()
+  const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return 'today'
+  if (diffDays === 1) return 'tomorrow'
+  if (diffDays === -1) return 'yesterday'
+  if (diffDays > 1 && diffDays <= 7) return 'this weekend'
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function buildActivityMessages(activities: Activity[]): string[] {
+  return activities.map((a) => {
+    const dateLabel = formatDate(a.inquiry_date)
+    if (a.guest_count >= 2) {
+      return `🍽️ ${a.guest_count} guests booked ${a.chef_name} for ${dateLabel}`
+    }
+    return `👨‍🍳 ${a.chef_name} just received a new inquiry`
+  })
+}
 
 interface SocialProofToastProps {
   page?: ToastPage
@@ -36,8 +70,47 @@ export function SocialProofToast({ page = 'home', delayMs = 4000 }: SocialProofT
   const [currentIndex, setCurrentIndex] = useState(0)
   const [dismissed, setDismissed] = useState(false)
   const [fadingOut, setFadingOut] = useState(false)
+  const [messages, setMessages] = useState<string[]>(MESSAGES[page])
 
-  const messages = MESSAGES[page]
+  // Fetch real activity data on mount
+  useEffect(() => {
+    let controller: AbortController
+
+    async function fetchActivity() {
+      controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+
+      try {
+        const res = await fetch('/api/social-proof/recent-activity', {
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+
+        if (!res.ok) return
+
+        const json = await res.json()
+        const activities: Activity[] = json.activities || []
+
+        if (activities.length > 0) {
+          const realMessages = buildActivityMessages(activities)
+          setMessages(realMessages)
+        }
+      } catch {
+        // Timeout or fetch error — keep static messages
+      }
+    }
+
+    fetchActivity()
+
+    // Refresh every 60 seconds
+    const intervalId = setInterval(fetchActivity, REFRESH_INTERVAL_MS)
+
+    return () => {
+      clearTimeout(timeoutId as ReturnType<typeof setTimeout>)
+      clearInterval(intervalId)
+      controller?.abort()
+    }
+  }, [])
 
   useEffect(() => {
     // Only show once per session
